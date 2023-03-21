@@ -4,6 +4,7 @@
 #include <proto/exec.h>
 #include <exec/resident.h>
 #include <exec/libraries.h>
+#include <exec/devices.h>
 #include <exec/errors.h>
 #include <exec/ports.h>
 #include <exec/tasks.h>
@@ -29,6 +30,8 @@ typedef struct Drive {
 struct IDEUnit {
     struct Unit io_unit;
     struct ConfigDev *cd;
+    struct ExecBase *SysBase;
+    struct timerequest *TimeReq;
     Drive *drive;
     UBYTE unitNum;
     BOOL  primary;
@@ -37,21 +40,23 @@ struct IDEUnit {
     UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
+    UWORD blockSize;
 };
 
 struct DeviceBase {
     struct Library lib;
     struct ExecBase *SysBase;
+    struct Library *ExpansionBase;
     struct Library *TimerBase;
     struct Task    *Task;
     struct MsgPort *TaskMP;
+    struct MsgPort *TimerMP;
+    struct timerequest *TimeReq;
     BPTR   saved_seg_list;
     BOOL   is_open;
     UBYTE  num_boards;
     UBYTE  num_units;
     struct IDEUnit *units;
-    struct Task *task;
-    struct MsgPort msgport;
 };
 
 
@@ -59,7 +64,7 @@ struct DeviceBase {
                           if invoked from a macro, macro arguments are expanded). */
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
-#define DEVICE_NAME "2nd.scsi.device"
+#define DEVICE_NAME "2nd.liv2ride.device"
 #define DEVICE_DATE "(3 March 2023)"
 #define DEVICE_ID_STRING "scsi " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
 #define DEVICE_VERSION 123

@@ -1,6 +1,8 @@
 PROJECT=liv2ride
 CC=m68k-amigaos-gcc
-CFLAGS=-Os -lamiga -nostartfiles -mcpu=68000 -fomit-frame-pointer -Wall -Wno-multichar -Wno-pointer-sign
+DEBUG=0
+CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -DDEBUG=$(DEBUG)
+
 .PHONY:	clean all
 all:	$(PROJECT)
 
@@ -8,10 +10,10 @@ OBJ = driver.o \
       ata.o \
 	  idetask.o
 
-SRCS = $(OBJ:%.o=%.c) *.h
+SRCS = $(OBJ:%.o=%.c)
 
 liv2ride: $(SRCS)	
-	${CC} -o $@ $(CFLAGS) $(SRCS)
+	${CC} -o $@ $(CFLAGS) $(SRCS) -lamiga -lgcc -ldebug -lnix13
 
 clean:
 	-rm $(PROJECT)

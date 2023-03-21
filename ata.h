@@ -34,6 +34,7 @@
 
 #define ATA_CMD_IDENTIFY 0xEC
 #define ATA_CMD_READ     0x20
+#define ATA_CMD_WRITE    0x30
 
 // Identify data word offsets
 #define ata_identify_cylinders       1
@@ -50,9 +51,14 @@
 #define ata_capability_lba (1<<9)
 #define ata_capability_dma (1<<8)
 
-
 bool ata_wait_busy(struct IDEUnit *);
+bool ata_wait_ready(struct IDEUnit *);
+bool ata_wait_drq(struct IDEUnit *);
+
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
+BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit);
+BYTE ata_write(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit);
+
 
 #endif

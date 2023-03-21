@@ -1,7 +1,16 @@
 {
     "files.associations": {
         "exec.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "errors.h": "c",
+        "dos.h": "c",
+        "execbase.h": "c",
+        "types.h": "c",
+        "debug_protos.h": "c",
+        "alib_protos.h": "c",
+        "ports.h": "c",
+        "trackdisk.h": "c",
+        "expansion.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

@@ -1,12 +1,8 @@
 #include <stdbool.h>
 #include "device.h"
 
-#define TASK_NAME "ide.task"
+#define TASK_NAME "idetask"
+#define TASK_PRIORITY 0
+#define TASK_STACK_SIZE 65535
 
-void  __attribute__((used)) ide_task();
-
-struct TaskData {
-    struct DeviceBase *dev;
-    bool   failure;
-};
-
+void ide_task();
