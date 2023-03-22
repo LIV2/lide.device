@@ -1,22 +1,27 @@
 #ifndef _DEVICE_H
 #define _DEVICE_H
 
-#include <proto/exec.h>
-#include <exec/resident.h>
-#include <exec/libraries.h>
 #include <exec/devices.h>
 #include <exec/errors.h>
+#include <exec/libraries.h>
 #include <exec/ports.h>
+#include <exec/resident.h>
 #include <exec/tasks.h>
 #include <libraries/dos.h>
+#include <proto/exec.h>
 
 
 #define MANUF_ID  2092
 #define DEV_ID    6
 #define MAX_UNITS 4
 
-
-typedef struct Drive {
+/**
+ * Drive struct
+ * 
+ * Each register spaced 512 bytes apart
+ * To use this code with other boards you may need to adjust these sizes
+*/
+struct Drive {
     UWORD data[256];
     UBYTE error_features[512];
     UBYTE sectorCount[512];
@@ -25,14 +30,14 @@ typedef struct Drive {
     UBYTE lbaHigh[512];
     UBYTE devHead[512];
     UBYTE status_command[512];
-} Drive;
+};
 
 struct IDEUnit {
     struct Unit io_unit;
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct timerequest *TimeReq;
-    Drive *drive;
+    struct Drive *drive;
     UBYTE unitNum;
     BOOL  primary;
     BOOL  present;

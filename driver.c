@@ -13,12 +13,13 @@
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <string.h>
-
 #include <stdio.h>
 
-#include "idetask.h"
-#include "device.h"
 #include "ata.h"
+#include "device.h"
+#include "idetask.h"
+#include "newstyle.h"
+#include "td64.h"
 
 #if DEBUG
 #include <clib/debug_protos.h>
@@ -53,6 +54,12 @@ char device_name[] = DEVICE_NAME;
 const char device_id_string[] = DEVICE_ID_STRING;
 const char task_name[] = TASK_NAME;
 
+
+/** set_dev_name
+ * 
+ * Try to set a unique drive name
+ * will prepend 2nd/3rd/4th. etc to the beginning of device_name 
+*/
 char * set_dev_name(struct DeviceBase *dev) {
     struct ExecBase *SysBase = dev->SysBase;
 
@@ -66,7 +73,7 @@ char * set_dev_name(struct DeviceBase *dev) {
             *(ULONG *)devName = device_prefix[i]; // Add prefix to start of device name string in a hacky way
         } else {
 #if DEBUG > 0
-            KPrintF("Device name: %s",devName);
+            KPrintF("Device name: %s\n",devName);
 #endif
             return devName;
         }
@@ -77,7 +84,12 @@ char * set_dev_name(struct DeviceBase *dev) {
     return NULL;
 }
 
-void Cleanup(struct DeviceBase *dev) {
+/**
+ * Cleanup
+ * 
+ * Free used resources back to the system
+*/
+static void Cleanup(struct DeviceBase *dev) {
 #if DEBUG > 0
     KPrintF("Cleaning up...\n");
 #endif
@@ -89,8 +101,11 @@ void Cleanup(struct DeviceBase *dev) {
     if (dev->units) FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
 }
 
-//static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
-
+/**
+ * init_device
+ *
+ * Scan for drives and initialize the driver if any are found
+*/
 static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
 {
     dev->SysBase = SysBase;
@@ -229,21 +244,38 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running expunge()\n");
 #endif
-/*
+
     if (dev->lib.lib_OpenCnt != 0)
     {
         dev->lib.lib_Flags |= LIBF_DELEXP;
         return 0;
     }
+    
+    if (dev->Task != NULL) {
 
-    FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
+        struct MsgPort *mp = NULL;
+        struct IOStdReq *ioreq = NULL;
+        
+        if ((mp = CreatePort(NULL,0)) == NULL)
+            return 0;
+        if ((ioreq = CreateStdIO(mp)) == NULL) {
+            DeletePort(mp);
+            return 0;
+        }
+
+        ioreq->io_Command = CMD_DIE;
+
+        PutMsg(dev->TaskMP,(struct Message *)ioreq);
+        WaitPort(mp);
+
+        if (ioreq) DeleteStdIO(ioreq);
+        if (mp) DeletePort(mp);
+    }
 
     BPTR seg_list = dev->saved_seg_list;
     Remove(&dev->lib.lib_Node);
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
     return seg_list;
-*/
-    return 0;
 }
 
 /* device dependent open function 
@@ -255,9 +287,13 @@ static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct 
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running open() for unitnum %x%x\n",unitnum);
 #endif
-    
-    ioreq->io_Error = IOERR_OPENFAIL;
     ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
+    ioreq->io_Error = IOERR_OPENFAIL;
+
+    if (dev->Task == NULL) {
+        ioreq->io_Error = IOERR_OPENFAIL;
+    }
+
 
     if (unitnum >= MAX_UNITS || dev->units[unitnum].present == false) {
         ioreq->io_Error = TDERR_BadUnitNum;
@@ -285,37 +321,101 @@ static BPTR __attribute__((used)) close(struct DeviceBase *dev asm("a6"), struct
     KPrintF((CONST_STRPTR) "running close()\n");
 #endif
     dev->lib.lib_OpenCnt--;
-/*  No Expunge yet...
-
-    ioreq->io_Device = NULL;
-    ioreq->io_Unit = NULL;
-
 
     if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
         return expunge(dev);
-*/
+
     return 0;
 }
 
-/* device dependent beginio function */
+
+static UWORD supported_commands[] =
+{
+    CMD_CLEAR,
+    CMD_UPDATE,
+    CMD_READ,
+    CMD_WRITE,
+    TD_PROTSTATUS,
+    TD_CHANGENUM,
+    TD_CHANGESTATE,
+    TD_GETDRIVETYPE,
+    TD_PROTSTATUS,
+    TD_READ64,
+    TD_WRITE64,
+    TD_FORMAT64,
+    NSCMD_DEVICEQUERY,
+    NSCMD_TD_READ64,
+    NSCMD_TD_WRITE64,
+    NSCMD_TD_FORMAT64,
+    0
+};
+
+/**
+ * begin_io
+ * 
+ * Action an IO Request
+*/
 static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running begin_io()\n");
 #endif
-//    struct ExecBase *SysBase = dev->SysBase;
+    ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
     ioreq->io_Error = TDERR_NotSpecified;
+
+    if (dev->Task == NULL) {
+        ioreq->io_Error = IOERR_OPENFAIL;
+    }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
     
     switch (ioreq->io_Command) {
+        case CMD_CLEAR:
+        case CMD_UPDATE:
+        
+        case TD_CHANGENUM:
+            ioreq->io_Actual = 1;
+            ioreq->io_Error  = 0;
+            break;
+        case TD_CHANGESTATE:
+        case TD_GETDRIVETYPE:
+        case TD_PROTSTATUS:
+            ioreq->io_Actual = 0;
+            ioreq->io_Error = 0;
+            break;
+
         case HD_SCSICMD:
         case CMD_READ:
+        case TD_FORMAT:
+        case CMD_WRITE:
+        case TD_READ64:
+        case TD_WRITE64:
+        case TD_FORMAT64:
+        case NSCMD_TD_READ64:
+        case NSCMD_TD_WRITE64:
+        case NSCMD_TD_FORMAT64:
             ioreq->io_Flags &= ~IOF_QUICK;
             PutMsg(dev->TaskMP,&ioreq->io_Message);
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "IO queued\n");
 #endif
+            break;
+
+        case NSCMD_DEVICEQUERY:
+            if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
+            {
+                struct NSDeviceQueryResult *result = ioreq->io_Data;
+                result->DevQueryFormat = 0;
+                result->SizeAvailable = sizeof(struct NSDeviceQueryResult);
+                result->DeviceType = NSDEVTYPE_TRACKDISK;
+                result->DeviceSubType = 0;
+                result->SupportedCommands = supported_commands;
+                ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
+                ioreq->io_Error = 0;
+            }
+            else {
+                ioreq->io_Error = IOERR_BADLENGTH;
+            }
             break;
 
         default:
@@ -330,7 +430,11 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
 
 }
 
-/* device dependent abortio function */
+/**
+ * abort_io
+ * 
+ * Abort io request
+*/
 static ULONG __attribute__((used)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
 #if DEBUG >= 2
@@ -351,13 +455,17 @@ static const ULONG device_vectors[] =
         -1 //function table end marker
     };
 
-
-static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"), struct ExecBase *SysPtr asm("a6"))
+/**
+ * init
+ * 
+ * Create the device and add it to the system if init_device succeeds
+*/
+static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"), struct ExecBase *sb asm("a6"))
 {
     #if DEBUG >= 1
     KPrintF("Init driver.\n");
     #endif
-    SysBase = SysPtr;
+    SysBase = sb;
     struct Device *mydev = (struct Device *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                         NULL,                      // InitStruct data
                                                         (APTR)init_device,         // Init function

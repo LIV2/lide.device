@@ -1,3 +1,4 @@
+#include <devices/scsidisk.h>
 #include <exec/execbase.h>
 #include <exec/types.h>
 #include <exec/devices.h>
@@ -16,10 +17,15 @@
 #include <clib/debug_protos.h>
 #endif
 
-#define NOTIMER
+#define WAIT_TIMEOUT_MS 500
 
-#define WAIT_TIMEOUT_MS 100
-
+/**
+ * ata_wait_not_busy
+ * 
+ * Wait with a timeout for the unit to report that it is not busy
+ *
+ * returns false on timeout
+*/
 bool ata_wait_not_busy(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
@@ -40,6 +46,14 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
     }
 }
 
+
+/**
+ * ata_wait_ready
+ * 
+ * Wait with a timeout for the unit to report that it is ready
+ * 
+ * returns false on timeout
+*/
 bool ata_wait_ready(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
@@ -59,27 +73,43 @@ bool ata_wait_ready(struct IDEUnit *unit) {
     }
 }
 
+/**
+ * ata_wait_drq
+ * 
+ * Wait with a timeout for the unit to set drq
+ * 
+ * returns false on timeout
+*/
 bool ata_wait_drq(struct IDEUnit *unit) {
+/*
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval start, now;
     GetSysTime(&start);
 #endif
-
+*/
 #if DEBUG >= 2
     KPrintF("wait_drq\n");
 #endif
 
     while (1) {
         if (*(volatile BYTE *)unit->drive->status_command& ata_drq) return true;
-
+/*
 #ifndef NOTIMER
         GetSysTime(&now);
         if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) return false;
 #endif
+*/
     }
 }
 
+/**
+ * ata_identify
+ * 
+ * Send an IDENTIFY command to the device and place the results in the buffer
+ * 
+ * returns fals on error
+*/
 bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
 #ifndef NOTIMER
@@ -97,9 +127,8 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
     volatile UBYTE *status = unit->drive->status_command;
 
-    UBYTE curstatus = *status;
 #if DEBUG >= 2
-    KPrintF("Drive Status: %04x%04x %04x%04x\n",status, curstatus);
+    KPrintF("Drive Status: %04x%04x %04x%04x\n",status, *status);
 #endif
     if (*status == 0) return false; // No drive there?
 
@@ -130,6 +159,13 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     return true;
 }
 
+/**
+ * ata_init_unit
+ * 
+ * Initialize a unit, check if it is there and responding
+ * 
+ * returns false on error
+*/
 bool ata_init_unit(struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
 
@@ -190,14 +226,29 @@ bool ata_init_unit(struct IDEUnit *unit) {
     return true;
 }
 
+/**
+ * ata_read
+ * 
+ * Read a block from the unit
+ * @param buffer Destination buffer
+ * @param lba LBA Address
+ * @param count Number of blocks to transfer
+ * @param actual Pointer to the io reqquests io_Actual 
+ * @param unit Pointer to the unit structure
+*/
 BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit) {
+#if DEBUG > 1
+KPrintF("ata_read");
+#endif
+
     *actual = 0;
+    if (count == 0) return TDERR_TooFewSecs;
 
     BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
     *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
 
     if (!ata_wait_ready(unit))
-        return TDERR_NotSpecified;
+        return HFERR_BadStatus;
 
     *unit->drive->sectorCount    = count;
     *unit->drive->lbaLow         = (UBYTE)(lba);
@@ -208,8 +259,15 @@ BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUni
 
     UWORD offset = 0;
     for (int block = 0; block < count; block++) {
-        if (!ata_wait_drq(unit) || (*unit->drive->error_features && ata_error))
+        if (!ata_wait_drq(unit))
+            return HFERR_BadStatus;
+
+        if (*unit->drive->error_features && ata_error) {
+#if DEBUG > 1
+KPrintF("ATA ERROR!!!");
+#endif
             return TDERR_NotSpecified;
+        }
 
         for (int i=0; i<(unit->blockSize / 2); i++) {
             ((UWORD *)buffer)[offset] = *unit->drive->data;
@@ -221,14 +279,30 @@ BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUni
     return 0;
 }
 
+
+/**
+ * ata_write
+ * 
+ * Read a block from the unit
+ * @param buffer Source buffer
+ * @param lba LBA Address
+ * @param count Number of blocks to transfer
+ * @param actual Pointer to the io reqquests io_Actual 
+ * @param unit Pointer to the unit structure
+*/
 BYTE ata_write(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit) {
+#if DEBUG > 1
+KPrintF("ata_write");
+#endif
     *actual = 0;
+
+    if (count == 0) return TDERR_TooFewSecs;
 
     BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
     *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
 
     if (!ata_wait_ready(unit))
-        return TDERR_NotSpecified;
+        return HFERR_BadStatus;
 
     *unit->drive->sectorCount    = count;
     *unit->drive->lbaLow         = (UBYTE)(lba);
@@ -239,8 +313,15 @@ BYTE ata_write(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUn
 
     UWORD offset = 0;
     for (int block = 0; block < count; block++) {
-        if (!ata_wait_drq(unit) || (unit->drive->error_features && ata_error))
+        if (!ata_wait_drq(unit))
+            return HFERR_BadStatus;
+
+        if (*unit->drive->error_features && ata_error) {
+#if DEBUG > 1
+KPrintF("ATA ERROR!!!");
+#endif
             return TDERR_NotSpecified;
+        }
 
         for (int i=0; i<(unit->blockSize / 2); i++) {
             *unit->drive->data = ((UWORD *)buffer)[offset];
