@@ -1,14 +1,12 @@
 #include <devices/scsidisk.h>
-#include <exec/execbase.h>
-#include <exec/types.h>
-#include <exec/devices.h>
 #include <devices/timer.h>
+#include <devices/trackdisk.h>
+#include <inline/timer.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
-#include <devices/trackdisk.h>
+
 #include <stdbool.h>
 #include <stdio.h>
-#include <inline/timer.h>
 
 #include "device.h"
 #include "ata.h"
@@ -41,7 +39,12 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
 
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) return false;
+        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+#if DEBUG >= 2
+            KPrintF("wait_not_busy timeout\n");
+#endif
+            return false;
+        }
 #endif
     }
 }
@@ -68,7 +71,12 @@ bool ata_wait_ready(struct IDEUnit *unit) {
 
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) return false;
+        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+#if DEBUG >= 2
+            KPrintF("wait_ready timeout\n");
+#endif
+            return false;
+        }
 #endif
     }
 }
@@ -81,25 +89,29 @@ bool ata_wait_ready(struct IDEUnit *unit) {
  * returns false on timeout
 */
 bool ata_wait_drq(struct IDEUnit *unit) {
-/*
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval start, now;
     GetSysTime(&start);
 #endif
-*/
+
 #if DEBUG >= 2
     KPrintF("wait_drq\n");
 #endif
 
     while (1) {
         if (*(volatile BYTE *)unit->drive->status_command& ata_drq) return true;
-/*
+
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) return false;
+        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+#if DEBUG >= 2
+            KPrintF("wait_drq timeout\n");
 #endif
-*/
+            return false;
+        }
+#endif
+
     }
 }
 
@@ -227,73 +239,26 @@ bool ata_init_unit(struct IDEUnit *unit) {
 }
 
 /**
- * ata_read
+ * ata_transfer
  * 
- * Read a block from the unit
- * @param buffer Destination buffer
- * @param lba LBA Address
- * @param count Number of blocks to transfer
- * @param actual Pointer to the io reqquests io_Actual 
- * @param unit Pointer to the unit structure
-*/
-BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit) {
-#if DEBUG > 1
-KPrintF("ata_read");
-#endif
-
-    *actual = 0;
-    if (count == 0) return TDERR_TooFewSecs;
-
-    BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
-    *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
-
-    if (!ata_wait_ready(unit))
-        return HFERR_BadStatus;
-
-    *unit->drive->sectorCount    = count;
-    *unit->drive->lbaLow         = (UBYTE)(lba);
-    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-    *unit->drive->error_features = 0;
-    *unit->drive->status_command = ATA_CMD_READ;
-
-    UWORD offset = 0;
-    for (int block = 0; block < count; block++) {
-        if (!ata_wait_drq(unit))
-            return HFERR_BadStatus;
-
-        if (*unit->drive->error_features && ata_error) {
-#if DEBUG > 1
-KPrintF("ATA ERROR!!!");
-#endif
-            return TDERR_NotSpecified;
-        }
-
-        for (int i=0; i<(unit->blockSize / 2); i++) {
-            ((UWORD *)buffer)[offset] = *unit->drive->data;
-            offset++;
-        }
-        *actual += unit->blockSize;
-    }
-
-    return 0;
-}
-
-
-/**
- * ata_write
- * 
- * Read a block from the unit
+ * Read/write a block from/to the unit
  * @param buffer Source buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
- * @param actual Pointer to the io reqquests io_Actual 
+ * @param actual Pointer to the io requests io_Actual 
  * @param unit Pointer to the unit structure
+ * @param direction READ/WRITE
 */
-BYTE ata_write(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit) {
-#if DEBUG > 1
-KPrintF("ata_write");
+BYTE ata_transfer(APTR *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
+#if DEBUG >= 2
+if (direction == READ) {
+    KPrintF("ata_read");
+} else {
+    KPrintF("ata_write");
+}
 #endif
+    ULONG subcount;
+    UWORD offset = 0;
     *actual = 0;
 
     if (count == 0) return TDERR_TooFewSecs;
@@ -301,33 +266,50 @@ KPrintF("ata_write");
     BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
     *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
 
-    if (!ata_wait_ready(unit))
-        return HFERR_BadStatus;
+    // None of this max_transfer 1FE00 nonsense!
+    while (count > 0) {
+        if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
+            subcount = MAX_TRANSFER_SECTORS;
+        } else {
+            subcount = count;                // Get any remainders
+        }
 
-    *unit->drive->sectorCount    = count;
-    *unit->drive->lbaLow         = (UBYTE)(lba);
-    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-    *unit->drive->error_features = 0;
-    *unit->drive->status_command = ATA_CMD_WRITE;
-
-    UWORD offset = 0;
-    for (int block = 0; block < count; block++) {
-        if (!ata_wait_drq(unit))
+        if (!ata_wait_ready(unit))
             return HFERR_BadStatus;
 
-        if (*unit->drive->error_features && ata_error) {
-#if DEBUG > 1
-KPrintF("ATA ERROR!!!");
-#endif
-            return TDERR_NotSpecified;
+        *unit->drive->sectorCount    = (subcount & 0xFF); // Count value of 0 indicates to transfer 256 sectors
+        *unit->drive->lbaLow         = (UBYTE)(lba);
+        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
+        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+        *unit->drive->error_features = 0;
+        *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+
+        for (int block = 0; block < subcount; block++) {
+            if (!ata_wait_drq(unit))
+                return HFERR_BadStatus;
+
+            if (*unit->drive->error_features && ata_error) {
+                #if DEBUG >= 1
+                KPrintF("ATA ERROR!!!");
+                #endif
+                return TDERR_NotSpecified;
+            }
+            if (direction == READ) {
+                for (int i=0; i<(unit->blockSize / 4); i++) {
+                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                    offset++;
+                }
+            } else {
+                for (int i=0; i<(unit->blockSize / 4); i++) {
+                    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
+                    offset++;
+                }
+            }
+
+            *actual += unit->blockSize;
         }
 
-        for (int i=0; i<(unit->blockSize / 2); i++) {
-            *unit->drive->data = ((UWORD *)buffer)[offset];
-            offset++;
-        }
-        *actual += unit->blockSize;
+        count -= subcount;
     }
 
     return 0;

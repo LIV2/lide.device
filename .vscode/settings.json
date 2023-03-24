@@ -10,7 +10,12 @@
         "alib_protos.h": "c",
         "ports.h": "c",
         "trackdisk.h": "c",
-        "expansion.h": "c"
+        "expansion.h": "c",
+        "libraries.h": "c",
+        "resident.h": "c",
+        "alib.h": "c",
+        "timer.h": "c",
+        "stdbool.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

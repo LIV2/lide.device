@@ -1,13 +1,13 @@
 #ifndef _ATA_H
 #define _ATA_H
 
-#include <proto/exec.h>
-#include <exec/resident.h>
-#include <exec/libraries.h>
-#include <exec/errors.h>
-#include <libraries/dos.h>
 #include <stdbool.h>
 #include "device.h"
+
+#define MAX_TRANSFER_SECTORS 255 // Max amount of sectors to transfer per read/write command
+#if MAX_TRANSFER_SECTORS > 256
+#error "MAX_TRANSFER_SECTORS cannot be larger than 256"
+#endif
 
 #define CHANNEL_0 0x1000
 #define CHANNEL_1 0x2000
@@ -51,14 +51,18 @@
 #define ata_capability_lba (1<<9)
 #define ata_capability_dma (1<<8)
 
+enum xfer_dir {
+    READ,
+    WRITE
+};
+
 bool ata_wait_busy(struct IDEUnit *);
 bool ata_wait_ready(struct IDEUnit *);
 bool ata_wait_drq(struct IDEUnit *);
 
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
-BYTE ata_read(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit);
-BYTE ata_write(APTR *buffer, ULONG lba, UBYTE count, ULONG *actual, struct IDEUnit *unit);
+BYTE ata_transfer(APTR *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir);
 
 
 #endif

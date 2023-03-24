@@ -1,12 +1,7 @@
 #include <devices/scsidisk.h>
-#include <devices/trackdisk.h>
-#include <exec/devices.h>
 #include <exec/errors.h>
-#include <exec/execbase.h>
-#include <exec/ports.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
-#include <proto/expansion.h>
 #include <string.h>
 
 #include "ata.h"
@@ -28,26 +23,28 @@
 */
 static void handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
-    struct SCSI_CDB_6 *cdb_6;
-    struct SCSI_CDB_10 *cdb_10;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
+
     APTR  data    = (APTR)scsi_command->scsi_Data;
     APTR  command = (APTR)scsi_command->scsi_Command;
+
     ULONG lba;
-    UWORD count;
+    ULONG count;
     UBYTE error = 0;
+
+    enum xfer_dir direction = WRITE;
 
 #if DEBUG >= 2
     KPrintF("Command %04x%04x\n",*scsi_command->scsi_Command);
 #endif
     switch (scsi_command->scsi_Command[0]) {
-        case SCSICMD_TEST_UNIT_READY:
+        case SCSI_CMD_TEST_UNIT_READY:
             scsi_command->scsi_Actual = 0;
             error = 0;
             break;
 
-        case SCSICMD_INQUIRY:
-            ((struct SCSI_Inquiry *)data)->peripheral_type = 0;
+        case SCSI_CMD_INQUIRY:
+            ((struct SCSI_Inquiry *)data)->peripheral_type = unit->device_type;
             ((struct SCSI_Inquiry *)data)->removable_media = 0;
             ((struct SCSI_Inquiry *)data)->version         = 0;
             ((struct SCSI_Inquiry *)data)->response_format = 2;
@@ -70,7 +67,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             error = 0;
             break;
 
-        case SCSICMD_READ_CAPACITY_10:
+        case SCSI_CMD_READ_CAPACITY_10:
             if (data == NULL) {
                 error = IOERR_BADADDRESS;
                 break;
@@ -82,53 +79,29 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             error = 0;
             break;
 
-        case SCSICMD_READ_6:
+        case SCSI_CMD_READ_6:
+            direction = READ;
+        case SCSI_CMD_WRITE_6:
+            lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) | 
+                       ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
+                       ((struct SCSI_CDB_6 *)command)->lba_low);
+    
+            count = ((struct SCSI_CDB_6 *)command)->length;
+            goto do_scsi_transfer;
 
-            if (data == NULL) {
-                error = IOERR_BADADDRESS;
-                break;
-            }
+        case SCSI_CMD_READ_10:
+            direction = READ;
+        case SCSI_CMD_WRITE_10:
+            lba    = ((struct SCSI_CDB_10 *)command)->lba;
+            count  = ((struct SCSI_CDB_10 *)command)->length;
 
-            cdb_6 = (struct SCSI_CDB_6 *)command;
-            lba   = (((cdb_6->lba_high & 0x1F) << 16) | cdb_6->lba_mid << 8 | cdb_6->lba_low);
-            count = cdb_6->length;
-            error = ata_read(data,lba,count,&scsi_command->scsi_Actual,unit);
-            break;
-
-        case SCSICMD_READ_10:
-            if (data == NULL) {
-                error = IOERR_BADADDRESS;
-                break;
-            }
-
-            cdb_10 = (struct SCSI_CDB_10 *)command;
-            lba    = cdb_10->lba;
-            count  = cdb_10->length;
-            error  = ata_read(data,lba,count,&scsi_command->scsi_Actual,unit);
-            break;
-
-        case SCSICMD_WRITE_6:
-            if (data == NULL) {
-                error = IOERR_BADADDRESS;
-                break;
-            }
-
-            cdb_6 = (struct SCSI_CDB_6 *)command;
-            lba   = (((cdb_6->lba_high & 0x1F) << 16) | cdb_6->lba_mid << 8 | cdb_6->lba_low);
-            count = cdb_6->length;
-            error = ata_write(data,lba,count,&scsi_command->scsi_Actual,unit);
-            break;
-
-        case SCSICMD_WRITE_10:
+do_scsi_transfer:
            if (data == NULL) {
                 error = IOERR_BADADDRESS;
                 break;
             }
 
-            cdb_10 = (struct SCSI_CDB_10 *)command;
-            lba    = cdb_10->lba;
-            count  = cdb_10->length;
-            error  = ata_write(data,lba,count,&scsi_command->scsi_Actual,unit);
+            error  = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction);
             break;
 
         default:
@@ -138,7 +111,10 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
-    scsi_command->scsi_SenseActual = 0;
+
+    if (error != 0) scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
+    scsi_command->scsi_SenseActual = 0; // TODO: Add Sense data
+
 }
 
 /**
@@ -156,6 +132,8 @@ void ide_task () {
     UWORD blocksize;
     ULONG lba;
     ULONG count;
+    enum xfer_dir direction = WRITE;
+
 
 #if DEBUG >= 1
     KPrintF("Task waiting for init\n");
@@ -182,32 +160,25 @@ void ide_task () {
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
             unit = (struct IDEUnit *)ioreq->io_Unit;
+
             switch (ioreq->io_Command) {
-
                 case CMD_READ:
-                    ioreq->io_Actual = 0;
-
                 case TD_READ64:
                 case NSCMD_TD_READ64:
-                    blocksize = ((struct IDEUnit *)ioreq->io_Unit)->blockSize;
-                    lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) / (UWORD)blocksize);           
-                    count = (ioreq->io_Length/(UWORD)blocksize);
-                    ioreq->io_Error = ata_read(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
-                    break;
+                    direction = READ;
 
                 case CMD_WRITE:
-                    ioreq->io_Actual = 0;
-
                 case TD_WRITE64:
                 case TD_FORMAT64:
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:
                     blocksize = ((struct IDEUnit *)ioreq->io_Unit)->blockSize;
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) / (UWORD)blocksize);
-                    count = (ioreq->io_Length/(UWORD)blocksize);
-                    ioreq->io_Error = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                    count = (ioreq->io_Length/blocksize);
+                    ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     break;
 
+                /* SCSI Direct */
                 case HD_SCSICMD:
                     handle_scsi_command(ioreq);
                     break;

@@ -1,17 +1,13 @@
 #include <devices/scsidisk.h>
 #include <devices/timer.h>
 #include <devices/trackdisk.h>
-#include <exec/devices.h>
 #include <exec/errors.h>
 #include <exec/execbase.h>
-#include <exec/libraries.h>
-#include <exec/ports.h>
 #include <exec/resident.h>
-#include <libraries/dos.h>
-#include <libraries/dos.h>
 #include <proto/alib.h> 
 #include <proto/exec.h>
 #include <proto/expansion.h>
+
 #include <string.h>
 #include <stdio.h>
 
@@ -55,7 +51,8 @@ const char device_id_string[] = DEVICE_ID_STRING;
 const char task_name[] = TASK_NAME;
 
 
-/** set_dev_name
+/**
+ * set_dev_name
  * 
  * Try to set a unique drive name
  * will prepend 2nd/3rd/4th. etc to the beginning of device_name 
@@ -94,7 +91,7 @@ static void Cleanup(struct DeviceBase *dev) {
     KPrintF("Cleaning up...\n");
 #endif
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
+    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq->tr_node.io_Device);
     if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
     if (dev->TimerMP) DeletePort(dev->TimerMP);
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
@@ -110,26 +107,27 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
 {
     dev->SysBase = SysBase;
 #if DEBUG >= 1
-    KPrintF("InitDev %08x\n",dev);
+    KPrintF("Init dev, base: %08x\n",dev);
 #endif
-    struct Library  *ExpansionBase = NULL;
+    struct Library *ExpansionBase = NULL;
 
     char *devName;
 
     if (!(devName = set_dev_name(dev))) return NULL;
 
     /* save pointer to our loaded code (the SegList) */
-    dev->saved_seg_list = seg_list;
+    dev->saved_seg_list       = seg_list;
     dev->lib.lib_Node.ln_Type = NT_DEVICE;
     dev->lib.lib_Node.ln_Name = devName;
-    dev->lib.lib_Flags = LIBF_SUMUSED | LIBF_CHANGED;
-    dev->lib.lib_Version = DEVICE_VERSION;
-    dev->lib.lib_Revision = DEVICE_REVISION;
-    dev->lib.lib_IdString = (APTR)device_id_string;
-    dev->is_open = FALSE;
+    dev->lib.lib_Flags        = LIBF_SUMUSED | LIBF_CHANGED;
+    dev->lib.lib_Version      = DEVICE_VERSION;
+    dev->lib.lib_Revision     = DEVICE_REVISION;
+    dev->lib.lib_IdString     = (APTR)device_id_string;
+    
+    dev->is_open    = FALSE;
     dev->num_boards = 0;
-    dev->num_units = 0;
-    dev->TaskMP = NULL;
+    dev->num_units  = 0;
+    dev->TaskMP     = NULL;
 
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
@@ -177,12 +175,14 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
     KPrintF("Claiming board %04x%04x\n",(ULONG)cd->cd_BoardAddr);
 #endif   
             for (BYTE i=0; i<2; i++) {
-                dev->units[i].SysBase = SysBase;
-                dev->units[i].TimeReq = dev->TimeReq;
-                dev->units[i].cd = cd;
-                dev->units[i].primary = ((i%2) == 1) ? false : true;
-                dev->units[i].channel = ((i%4) < 2) ? 0 : 1;
-#if DEBUG >= 1
+                dev->units[i].SysBase      = SysBase;
+                dev->units[i].TimeReq      = dev->TimeReq;
+                dev->units[i].cd           = cd;
+                dev->units[i].primary      = ((i%2) == 1) ? false : true;
+                dev->units[i].channel      = ((i%4) < 2) ? 0 : 1;
+                dev->units[i].change_count = 1;
+                dev->units[i].device_type  = DG_DIRECT_ACCESS;
+#if DEBUG >= 2
     KPrintF("testing unit %x%x\n",i);
 #endif          
                 if (ata_init_unit(&dev->units[i])) {
@@ -197,10 +197,10 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
     KPrintF("Detected %x%x drives, %x%x boards\n",dev->num_units, dev->num_boards);
 #endif
     if (dev->num_units > 0) {
-        // Start the IDE Task
 #if DEBUG >= 1
         KPrintF("Start the Task\n");
 #endif
+        // Start the IDE Task
         dev->Task = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
         if (!dev->Task) {
 #if DEBUG >= 1
@@ -252,6 +252,7 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
     }
     
     if (dev->Task != NULL) {
+        // Shut down ide_task
 
         struct MsgPort *mp = NULL;
         struct IOStdReq *ioreq = NULL;
@@ -263,15 +264,16 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
             return 0;
         }
 
-        ioreq->io_Command = CMD_DIE;
+        ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
 
         PutMsg(dev->TaskMP,(struct Message *)ioreq);
-        WaitPort(mp);
+        WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
 
         if (ioreq) DeleteStdIO(ioreq);
         if (mp) DeletePort(mp);
     }
 
+    Cleanup(dev);
     BPTR seg_list = dev->saved_seg_list;
     Remove(&dev->lib.lib_Node);
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
@@ -287,7 +289,6 @@ static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct 
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running open() for unitnum %x%x\n",unitnum);
 #endif
-    ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
     ioreq->io_Error = IOERR_OPENFAIL;
 
     if (dev->Task == NULL) {
@@ -310,6 +311,26 @@ static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct 
     dev->lib.lib_OpenCnt++;
     ioreq->io_Error = 0; //Success
 }
+
+
+static void td_get_geometry(struct IOStdReq *ioreq) {
+    struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
+    struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
+    
+    geometry->dg_SectorSize   = unit->blockSize;
+    geometry->dg_TotalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
+    geometry->dg_Cylinders    = unit->cylinders;
+    geometry->dg_CylSectors   = (unit->sectorsPerTrack * unit->heads);
+    geometry->dg_Heads        = unit->heads;
+    geometry->dg_TrackSectors = unit->sectorsPerTrack;
+    geometry->dg_BufMemType   = MEMF_PUBLIC;
+    geometry->dg_DeviceType   = unit->device_type;
+    geometry->dg_Flags        = 0;
+
+    ioreq->io_Error = 0;
+    ioreq->io_Actual = sizeof(struct DriveGeometry);
+}
+
 
 /* device dependent close function 
 !!! CAUTION: This function runs in a forbidden state !!!
@@ -353,14 +374,13 @@ static UWORD supported_commands[] =
 /**
  * begin_io
  * 
- * Action an IO Request
+ * Handle immediate requests and send any others to ide_task
 */
 static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running begin_io()\n");
 #endif
-    ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
     ioreq->io_Error = TDERR_NotSpecified;
 
     if (dev->Task == NULL) {
@@ -372,28 +392,46 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:
-        
-        case TD_CHANGENUM:
-            ioreq->io_Actual = 1;
+            ioreq->io_Actual = 0;
             ioreq->io_Error  = 0;
             break;
-        case TD_CHANGESTATE:
-        case TD_GETDRIVETYPE:
-        case TD_PROTSTATUS:
-            ioreq->io_Actual = 0;
-            ioreq->io_Error = 0;
+
+        case TD_CHANGENUM:
+            ioreq->io_Actual = ((struct IDEUnit *)ioreq->io_Unit)->change_count;
+            ioreq->io_Error  = 0;
             break;
 
-        case HD_SCSICMD:
+        case TD_GETDRIVETYPE:
+            ioreq->io_Actual = ((struct IDEUnit *)ioreq->io_Unit)->device_type;
+            ioreq->io_Error  = 0;
+            break;
+
+        case TD_CHANGESTATE:
+            ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->present) ? 0 : 1;
+            ioreq->io_Error  = 0;
+            break;
+
+        case TD_PROTSTATUS:
+            ioreq->io_Actual = 0; // Not protected
+            ioreq->io_Error  = 0;
+            break;
+
+        case TD_GETGEOMETRY:
+            td_get_geometry(ioreq);
+            break;            
+
         case CMD_READ:
-        case TD_FORMAT:
         case CMD_WRITE:
+            ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+        case TD_FORMAT:
         case TD_READ64:
         case TD_WRITE64:
         case TD_FORMAT64:
         case NSCMD_TD_READ64:
         case NSCMD_TD_WRITE64:
         case NSCMD_TD_FORMAT64:
+        case HD_SCSICMD:
+            // Send all of these to ide_task
             ioreq->io_Flags &= ~IOF_QUICK;
             PutMsg(dev->TaskMP,&ioreq->io_Message);
 #if DEBUG >= 2
@@ -405,11 +443,13 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
             if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
             {
                 struct NSDeviceQueryResult *result = ioreq->io_Data;
-                result->DevQueryFormat = 0;
-                result->SizeAvailable = sizeof(struct NSDeviceQueryResult);
-                result->DeviceType = NSDEVTYPE_TRACKDISK;
-                result->DeviceSubType = 0;
+
+                result->DevQueryFormat    = 0;
+                result->SizeAvailable     = sizeof(struct NSDeviceQueryResult);
+                result->DeviceType        = NSDEVTYPE_TRACKDISK;
+                result->DeviceSubType     = 0;
                 result->SupportedCommands = supported_commands;
+
                 ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
                 ioreq->io_Error = 0;
             }
@@ -422,7 +462,6 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
 #if DEBUG >= 2
             KPrintF("Unknown command %x%x\n", ioreq->io_Command);
 #endif
-            ioreq->io_Flags |= IOF_QUICK;
             ioreq->io_Error = IOERR_NOCMD;
             ReplyMsg(&ioreq->io_Message);
 

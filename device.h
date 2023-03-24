@@ -1,16 +1,6 @@
 #ifndef _DEVICE_H
 #define _DEVICE_H
 
-#include <exec/devices.h>
-#include <exec/errors.h>
-#include <exec/libraries.h>
-#include <exec/ports.h>
-#include <exec/resident.h>
-#include <exec/tasks.h>
-#include <libraries/dos.h>
-#include <proto/exec.h>
-
-
 #define MANUF_ID  2092
 #define DEV_ID    6
 #define MAX_UNITS 4
@@ -42,10 +32,12 @@ struct IDEUnit {
     BOOL  primary;
     BOOL  present;
     UBYTE channel;
+    UBYTE device_type;
     UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
     UWORD blockSize;
+    ULONG change_count;
 };
 
 struct DeviceBase {
@@ -71,7 +63,7 @@ struct DeviceBase {
 
 #define DEVICE_NAME "2nd.liv2ride.device"
 #define DEVICE_DATE "(3 March 2023)"
-#define DEVICE_ID_STRING "scsi " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
+#define DEVICE_ID_STRING "liv2ride " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
 #define DEVICE_VERSION 123
 #define DEVICE_REVISION 0
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
