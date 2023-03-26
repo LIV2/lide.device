@@ -73,7 +73,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
             }
         
-            ((struct SCSI_CAPACITY_10 *)data)->lba = (unit->sectorsPerTrack * unit->cylinders * unit->heads);
+            ((struct SCSI_CAPACITY_10 *)data)->lba = ((unit->sectorsPerTrack * unit->cylinders * unit->heads) - 1);
             ((struct SCSI_CAPACITY_10 *)data)->block_size = unit->blockSize;
             scsi_command->scsi_Actual = 8;
             error = 0;
@@ -160,6 +160,7 @@ void ide_task () {
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
             unit = (struct IDEUnit *)ioreq->io_Unit;
+            direction = WRITE;
 
             switch (ioreq->io_Command) {
                 case CMD_READ:

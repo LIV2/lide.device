@@ -3,6 +3,7 @@
 #include <devices/trackdisk.h>
 #include <inline/timer.h>
 #include <proto/exec.h>
+#include <proto/alib.h>
 #include <proto/expansion.h>
 
 #include <stdbool.h>
@@ -11,9 +12,9 @@
 #include "device.h"
 #include "ata.h"
 
-#if DEBUG
+//#if DEBUG
 #include <clib/debug_protos.h>
-#endif
+//#endif
 
 #define WAIT_TIMEOUT_MS 500
 
@@ -130,7 +131,6 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     GetSysTime(&start);
 #endif
     *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
-
     *unit->drive->sectorCount = 0;
     *unit->drive->lbaLow  = 0;
     *unit->drive->lbaMid  = 0;
@@ -249,7 +249,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
  * @param unit Pointer to the unit structure
  * @param direction READ/WRITE
 */
-BYTE ata_transfer(APTR *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
+BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
 #if DEBUG >= 2
 if (direction == READ) {
     KPrintF("ata_read");
@@ -258,7 +258,7 @@ if (direction == READ) {
 }
 #endif
     ULONG subcount;
-    UWORD offset = 0;
+    ULONG offset = 0;
     *actual = 0;
 
     if (count == 0) return TDERR_TooFewSecs;
@@ -274,7 +274,7 @@ if (direction == READ) {
             subcount = count;                // Get any remainders
         }
 
-        if (!ata_wait_ready(unit))
+        if (!ata_wait_not_busy(unit))
             return HFERR_BadStatus;
 
         *unit->drive->sectorCount    = (subcount & 0xFF); // Count value of 0 indicates to transfer 256 sectors
@@ -283,6 +283,7 @@ if (direction == READ) {
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
         *unit->drive->error_features = 0;
         *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+
 
         for (int block = 0; block < subcount; block++) {
             if (!ata_wait_drq(unit))
@@ -294,17 +295,75 @@ if (direction == READ) {
                 #endif
                 return TDERR_NotSpecified;
             }
+
             if (direction == READ) {
-                for (int i=0; i<(unit->blockSize / 4); i++) {
-                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
-                    offset++;
-                }
+
+                // for (int i=0; i<(unit->blockSize / 2); i++) {
+                //     ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                //     offset++;
+                // }
+                
+                asm volatile ("movem.l d0-d7/a0-a6,-(sp)\n\t"
+                    "moveq  #48,d7\n\t"
+                    "move.l %0,a0\n\t"
+                    "move.l %1,a5\n\t"
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 1
+                    
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 2
+                    
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 3
+                    
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 4
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 5
+                    
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 6
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                  
+                    "add.l   d7,a0\n\t" // 7
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
+                    "add.l   d7,a0\n\t" // 8
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
+                    "add.l   d7,a0\n\t" // 9
+
+                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                    "add.l   d7,a0\n\t" // 10
+
+                    "movem.l 16(a5),d0-d6/a1\n\t"
+                    "movem.l d0-d6/a1,(a0)\n\t"
+
+                    "movem.l (sp)+,d0-d7/a0-a6"
+                    :
+                    :"p" (buffer + offset),"p" ((UBYTE *)unit->drive->error_features - 48)
+                    );
+                    offset += 512;
+               
             } else {
-                for (int i=0; i<(unit->blockSize / 4); i++) {
+                for (int i=0; i<(unit->blockSize / 2); i++) {
                     *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
                     offset++;
                 }
             }
+
 
             *actual += unit->blockSize;
         }

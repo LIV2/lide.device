@@ -4,7 +4,7 @@
 #include <exec/errors.h>
 #include <exec/execbase.h>
 #include <exec/resident.h>
-#include <proto/alib.h> 
+#include <proto/alib.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 
@@ -53,9 +53,9 @@ const char task_name[] = TASK_NAME;
 
 /**
  * set_dev_name
- * 
+ *
  * Try to set a unique drive name
- * will prepend 2nd/3rd/4th. etc to the beginning of device_name 
+ * will prepend 2nd/3rd/4th. etc to the beginning of device_name
 */
 char * set_dev_name(struct DeviceBase *dev) {
     struct ExecBase *SysBase = dev->SysBase;
@@ -83,7 +83,7 @@ char * set_dev_name(struct DeviceBase *dev) {
 
 /**
  * Cleanup
- * 
+ *
  * Free used resources back to the system
 */
 static void Cleanup(struct DeviceBase *dev) {
@@ -123,7 +123,7 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
     dev->lib.lib_Version      = DEVICE_VERSION;
     dev->lib.lib_Revision     = DEVICE_REVISION;
     dev->lib.lib_IdString     = (APTR)device_id_string;
-    
+
     dev->is_open    = FALSE;
     dev->num_boards = 0;
     dev->num_units  = 0;
@@ -173,7 +173,7 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
             dev->num_boards++;
 #if DEBUG >= 2
     KPrintF("Claiming board %04x%04x\n",(ULONG)cd->cd_BoardAddr);
-#endif   
+#endif
             for (BYTE i=0; i<2; i++) {
                 dev->units[i].SysBase      = SysBase;
                 dev->units[i].TimeReq      = dev->TimeReq;
@@ -184,7 +184,7 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
                 dev->units[i].device_type  = DG_DIRECT_ACCESS;
 #if DEBUG >= 2
     KPrintF("testing unit %x%x\n",i);
-#endif          
+#endif
                 if (ata_init_unit(&dev->units[i])) {
                     dev->num_units++;
                 }
@@ -235,9 +235,9 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
     }
 }
 
-/* device dependent expunge function 
-!!! CAUTION: This function runs in a forbidden state !!! 
-This call is guaranteed to be single-threaded; only one task 
+/* device dependent expunge function
+!!! CAUTION: This function runs in a forbidden state !!!
+This call is guaranteed to be single-threaded; only one task
 will execute your Expunge at a time. */
 static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
 {
@@ -250,13 +250,13 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
         dev->lib.lib_Flags |= LIBF_DELEXP;
         return 0;
     }
-    
+
     if (dev->Task != NULL) {
         // Shut down ide_task
 
         struct MsgPort *mp = NULL;
         struct IOStdReq *ioreq = NULL;
-        
+
         if ((mp = CreatePort(NULL,0)) == NULL)
             return 0;
         if ((ioreq = CreateStdIO(mp)) == NULL) {
@@ -280,9 +280,9 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
     return seg_list;
 }
 
-/* device dependent open function 
+/* device dependent open function
 !!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task 
+This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
@@ -316,7 +316,7 @@ static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct 
 static void td_get_geometry(struct IOStdReq *ioreq) {
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
-    
+
     geometry->dg_SectorSize   = unit->blockSize;
     geometry->dg_TotalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
     geometry->dg_Cylinders    = unit->cylinders;
@@ -332,9 +332,9 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
 }
 
 
-/* device dependent close function 
+/* device dependent close function
 !!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task 
+This call is guaranteed to be single-threaded; only one task
 will execute your Close at a time. */
 static BPTR __attribute__((used)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
@@ -360,6 +360,7 @@ static UWORD supported_commands[] =
     TD_CHANGENUM,
     TD_CHANGESTATE,
     TD_GETDRIVETYPE,
+    TD_GETGEOMETRY,
     TD_PROTSTATUS,
     TD_READ64,
     TD_WRITE64,
@@ -368,12 +369,13 @@ static UWORD supported_commands[] =
     NSCMD_TD_READ64,
     NSCMD_TD_WRITE64,
     NSCMD_TD_FORMAT64,
+    HD_SCSICMD,
     0
 };
 
 /**
  * begin_io
- * 
+ *
  * Handle immediate requests and send any others to ide_task
 */
 static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
@@ -388,7 +390,7 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
-    
+
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:
@@ -418,7 +420,7 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
 
         case TD_GETGEOMETRY:
             td_get_geometry(ioreq);
-            break;            
+            break;
 
         case CMD_READ:
         case CMD_WRITE:
@@ -471,7 +473,7 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
 
 /**
  * abort_io
- * 
+ *
  * Abort io request
 */
 static ULONG __attribute__((used)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
@@ -496,7 +498,7 @@ static const ULONG device_vectors[] =
 
 /**
  * init
- * 
+ *
  * Create the device and add it to the system if init_device succeeds
 */
 static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"), struct ExecBase *sb asm("a6"))
@@ -510,11 +512,11 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"), stru
                                                         (APTR)init_device,         // Init function
                                                         sizeof(struct DeviceBase), // Library data size
                                                         seg_list);                 // Segment list
-    
+
     if (mydev != NULL) {
     #if DEBUG >= 1
     KPrintF("Add Device.\n");
-    #endif       
+    #endif
         AddDevice((struct Device *)mydev);
     }
     return (struct Library *)mydev;
