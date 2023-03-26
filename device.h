@@ -27,7 +27,7 @@ struct IDEUnit {
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct timerequest *TimeReq;
-    struct Drive *drive;
+    volatile struct Drive *drive;
     UBYTE unitNum;
     BOOL  primary;
     BOOL  present;
@@ -41,19 +41,19 @@ struct IDEUnit {
 };
 
 struct DeviceBase {
-    struct Library lib;
-    struct ExecBase *SysBase;
-    struct Library *ExpansionBase;
-    struct Library *TimerBase;
+    struct   Library lib;
+    struct   ExecBase *SysBase;
+    struct   Library *ExpansionBase;
+    struct   Library *TimerBase;
     struct Task    *Task;
     struct MsgPort *TaskMP;
     struct MsgPort *TimerMP;
-    struct timerequest *TimeReq;
-    BPTR   saved_seg_list;
-    BOOL   is_open;
-    UBYTE  num_boards;
-    UBYTE  num_units;
-    struct IDEUnit *units;
+    struct   timerequest *TimeReq;
+    BPTR     saved_seg_list;
+    BOOL     is_open;
+    UBYTE    num_boards;
+    UBYTE    num_units;
+    struct   IDEUnit *units;
 };
 
 

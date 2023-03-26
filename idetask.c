@@ -17,7 +17,7 @@
 
 /**
  * handle_scsi_command
- * 
+ *
  * Handle SCSI Direct commands
  * @param ioreq IO Request
 */
@@ -25,8 +25,8 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
-    APTR  data    = (APTR)scsi_command->scsi_Data;
-    APTR  command = (APTR)scsi_command->scsi_Command;
+    UBYTE  *data    = (APTR)scsi_command->scsi_Data;
+    UBYTE  *command = (APTR)scsi_command->scsi_Command;
 
     ULONG lba;
     ULONG count;
@@ -67,12 +67,68 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             error = 0;
             break;
 
+        case SCSI_CMD_MODE_SENSE_6:
+            if (data == NULL) {
+                error = IOERR_BADADDRESS;
+                break;
+            }
+
+            UBYTE page    = command[2] & 0x3F;
+
+            UBYTE subpage = command[3];
+
+            if (subpage != 0) {
+                error = HFERR_BadStatus;
+                break;
+            }
+
+            UBYTE *data_length = data;   // Mode data length
+            data[1] = unit->device_type; // Mode parameter: Media type
+            data[2] = 0;                 // DPOFUA
+            data[3] = 0;                 // Block descriptor length
+            
+            *data_length = 3;
+
+            UBYTE idx = 4;
+            if (page == 0x3F || page == 0x03) {
+                data[idx++] = 0x03; // Page Code: Format Parameters
+                data[idx++] = 0x16; // Page length
+                for (int i=0; i <8; i++) {
+                    data[idx++] = 0;
+                }
+                data[idx++] = (unit->sectorsPerTrack >> 8);
+                data[idx++] = unit->sectorsPerTrack;
+                data[idx++] = (unit->blockSize >> 8);
+                data[idx++] = unit->blockSize;
+                for (int i=0; i<12; i++) {
+                    data[idx++] = 0;
+                }
+            }
+
+            if (page == 0x3F || page == 0x04) {
+                data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
+                data[idx++] = 0x16; // Page length
+                data[idx++] = 0;
+                data[idx++] = (unit->cylinders >> 8);
+                data[idx++] = unit->cylinders;
+                data[idx++] = unit->heads;
+                for (int i=0; i<18; i++) {
+                    data[idx++] = 0;
+                }
+            }
+
+            *data_length += (idx + 1);
+            error = 0;
+
+            scsi_command->scsi_Actual = *data_length + 1;
+            break;
+
         case SCSI_CMD_READ_CAPACITY_10:
             if (data == NULL) {
                 error = IOERR_BADADDRESS;
                 break;
             }
-        
+
             ((struct SCSI_CAPACITY_10 *)data)->lba = ((unit->sectorsPerTrack * unit->cylinders * unit->heads) - 1);
             ((struct SCSI_CAPACITY_10 *)data)->block_size = unit->blockSize;
             scsi_command->scsi_Actual = 8;
@@ -82,10 +138,10 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
         case SCSI_CMD_READ_6:
             direction = READ;
         case SCSI_CMD_WRITE_6:
-            lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) | 
+            lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
                        ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
                        ((struct SCSI_CDB_6 *)command)->lba_low);
-    
+
             count = ((struct SCSI_CDB_6 *)command)->length;
             goto do_scsi_transfer;
 
@@ -114,12 +170,11 @@ do_scsi_transfer:
 
     if (error != 0) scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
     scsi_command->scsi_SenseActual = 0; // TODO: Add Sense data
-
 }
 
 /**
  * ide_task
- * 
+ *
  * This is a task to complete IO Requests for all units
  * Requests are sent here from begin_io via the dev->TaskMP Message port
 */
@@ -138,10 +193,11 @@ void ide_task () {
 #if DEBUG >= 1
     KPrintF("Task waiting for init\n");
 #endif
+
     while (task->tc_UserData == NULL); // Wait for TaskBase to be populated
-    
+
     struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
-    
+
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
         dev->Task = NULL; // Failed to create MP, let the device know

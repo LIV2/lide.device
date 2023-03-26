@@ -17,9 +17,9 @@
 #include "newstyle.h"
 #include "td64.h"
 
-#if DEBUG
+//#if DEBUG
 #include <clib/debug_protos.h>
-#endif
+//#endif
 
 struct ExecBase *SysBase;
 
@@ -86,12 +86,18 @@ char * set_dev_name(struct DeviceBase *dev) {
  *
  * Free used resources back to the system
 */
-static void Cleanup(struct DeviceBase *dev) {
+void Cleanup(struct DeviceBase *dev) {
 #if DEBUG > 0
     KPrintF("Cleaning up...\n");
 #endif
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq->tr_node.io_Device);
+    for (int i=0; i < MAX_UNITS; i++) {
+        // Un-claim the boards
+        if (dev->units[i].cd != NULL) {
+            dev->units[i].cd->cd_Flags |= CDF_CONFIGME;
+        }
+    }
+    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
     if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
     if (dev->TimerMP) DeletePort(dev->TimerMP);
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
@@ -103,7 +109,7 @@ static void Cleanup(struct DeviceBase *dev) {
  *
  * Scan for drives and initialize the driver if any are found
 */
-static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
+struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
 {
     dev->SysBase = SysBase;
 #if DEBUG >= 1
@@ -127,7 +133,6 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
     dev->is_open    = FALSE;
     dev->num_boards = 0;
     dev->num_units  = 0;
-    dev->TaskMP     = NULL;
 
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
@@ -168,8 +173,8 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
             return NULL;
         }
 
-        //if (cd->cd_Flags & CDF_CONFIGME) {
-        //    cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
+        if (cd->cd_Flags & CDF_CONFIGME) {
+            cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
 #if DEBUG >= 2
     KPrintF("Claiming board %04x%04x\n",(ULONG)cd->cd_BoardAddr);
@@ -190,7 +195,7 @@ static struct Library __attribute__((used)) * init_device(struct ExecBase *SysBa
                 }
             }
             if (dev->num_units == MAX_UNITS) break;
-        //}
+        }
     }
 
 #if DEBUG >= 1
@@ -439,7 +444,7 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "IO queued\n");
 #endif
-            break;
+            return;
 
         case NSCMD_DEVICEQUERY:
             if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
@@ -465,10 +470,10 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
             KPrintF("Unknown command %x%x\n", ioreq->io_Command);
 #endif
             ioreq->io_Error = IOERR_NOCMD;
-            ReplyMsg(&ioreq->io_Message);
-
     }
-
+    if (!ioreq->io_Flags & IOF_QUICK) {
+            ReplyMsg(&ioreq->io_Message);
+    }
 }
 
 /**

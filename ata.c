@@ -12,9 +12,9 @@
 #include "device.h"
 #include "ata.h"
 
-//#if DEBUG
+#if DEBUG
 #include <clib/debug_protos.h>
-//#endif
+#endif
 
 #define WAIT_TIMEOUT_MS 500
 
@@ -28,8 +28,11 @@
 bool ata_wait_not_busy(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval start, now;
-    GetSysTime(&start);
+    struct timeval now, then;
+    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
+    then.tv_secs  = 0;
+    GetSysTime(&now);
+    AddTime(&then,&now);
 #endif
 #if DEBUG >= 2
     KPrintF("wait_not_busy\n");
@@ -40,7 +43,7 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
 
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+        if (CmpTime(&then,&now) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_not_busy timeout\n");
 #endif
@@ -61,8 +64,11 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
 bool ata_wait_ready(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval start, now;
-    GetSysTime(&start);
+    struct timeval now, then;
+    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
+    then.tv_secs  = 0;
+    GetSysTime(&now);
+    AddTime(&then,&now);
 #endif
 #if DEBUG >= 2
     KPrintF("wait_ready_enter\n");
@@ -72,7 +78,7 @@ bool ata_wait_ready(struct IDEUnit *unit) {
 
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+        if (CmpTime(&then,&now) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_ready timeout\n");
 #endif
@@ -92,8 +98,11 @@ bool ata_wait_ready(struct IDEUnit *unit) {
 bool ata_wait_drq(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval start, now;
-    GetSysTime(&start);
+    struct timeval now, then;
+    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
+    then.tv_secs  = 0;
+    GetSysTime(&now);
+    AddTime(&then,&now);
 #endif
 
 #if DEBUG >= 2
@@ -105,7 +114,7 @@ bool ata_wait_drq(struct IDEUnit *unit) {
 
 #ifndef NOTIMER
         GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) {
+        if (CmpTime(&then,&now) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_drq timeout\n");
 #endif
@@ -199,7 +208,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
-        if ((*(volatile UBYTE *)((void *)unit->drive->data + i) & 0xC0) != 0xC0) {
+        if ((*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
             dev_found = true;
 #if DEBUG >= 1
             KPrintF("Something there?\n");
@@ -298,64 +307,64 @@ if (direction == READ) {
 
             if (direction == READ) {
 
-                // for (int i=0; i<(unit->blockSize / 2); i++) {
-                //     ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
-                //     offset++;
-                // }
+                for (int i=0; i<(unit->blockSize / 2); i++) {
+                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                    offset++;
+                }
                 
-                asm volatile ("movem.l d0-d7/a0-a6,-(sp)\n\t"
-                    "moveq  #48,d7\n\t"
-                    "move.l %0,a0\n\t"
-                    "move.l %1,a5\n\t"
+                // asm volatile ("movem.l d0-d7/a0-a6,-(sp)\n\t"
+                //     "moveq  #48,d7\n\t"
+                //     "move.l %0,a0\n\t"
+                //     "move.l %1,a5\n\t"
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 1
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 1
                     
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 2
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 2
                     
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 3
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 3
                     
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 4
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 4
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 5
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 5
                     
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 6
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 6
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                  
-                    "add.l   d7,a0\n\t" // 7
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                  
+                //     "add.l   d7,a0\n\t" // 7
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
-                    "add.l   d7,a0\n\t" // 8
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
+                //     "add.l   d7,a0\n\t" // 8
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
-                    "add.l   d7,a0\n\t" // 9
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
+                //     "add.l   d7,a0\n\t" // 9
 
-                    "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                    "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                    "add.l   d7,a0\n\t" // 10
+                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
+                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
+                //     "add.l   d7,a0\n\t" // 10
 
-                    "movem.l 16(a5),d0-d6/a1\n\t"
-                    "movem.l d0-d6/a1,(a0)\n\t"
+                //     "movem.l 16(a5),d0-d6/a1\n\t"
+                //     "movem.l d0-d6/a1,(a0)\n\t"
 
-                    "movem.l (sp)+,d0-d7/a0-a6"
-                    :
-                    :"p" (buffer + offset),"p" ((UBYTE *)unit->drive->error_features - 48)
-                    );
-                    offset += 512;
+                //     "movem.l (sp)+,d0-d7/a0-a6"
+                //     :
+                //     :"p" (buffer + offset),"p" ((UBYTE *)unit->drive->error_features - 48)
+                //     );
+                //     offset += 512;
                
             } else {
                 for (int i=0; i<(unit->blockSize / 2); i++) {
