@@ -206,7 +206,6 @@ void ide_task () {
     }
 
     dev->TaskMP = mp;
-
     dev->TaskActive = true;
 
     while (1) {
