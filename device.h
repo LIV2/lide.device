@@ -41,13 +41,14 @@ struct IDEUnit {
 };
 
 struct DeviceBase {
-    struct   Library lib;
-    struct   ExecBase *SysBase;
-    struct   Library *ExpansionBase;
-    struct   Library *TimerBase;
-    struct Task    *Task;
-    struct MsgPort *TaskMP;
-    struct MsgPort *TimerMP;
+    struct Library  lib;
+    struct ExecBase *SysBase;
+    struct Library  *ExpansionBase;
+    struct Library  *TimerBase;
+    struct Task     *volatile Task;
+    struct MsgPort  *TaskMP;
+    volatile bool   TaskActive;
+    struct MsgPort  *TimerMP;
     struct   timerequest *TimeReq;
     BPTR     saved_seg_list;
     BOOL     is_open;

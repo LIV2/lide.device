@@ -17,9 +17,9 @@
 #include "newstyle.h"
 #include "td64.h"
 
-//#if DEBUG
+#if DEBUG
 #include <clib/debug_protos.h>
-//#endif
+#endif
 
 struct ExecBase *SysBase;
 
@@ -133,6 +133,9 @@ struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm(
     dev->is_open    = FALSE;
     dev->num_boards = 0;
     dev->num_units  = 0;
+    dev->TaskMP     = NULL;
+    dev->Task       = NULL;
+    dev->TaskActive = false;
 
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
@@ -220,7 +223,7 @@ struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm(
         }
         dev->Task->tc_UserData = (APTR *)dev;
         // Wait for task to init
-        while (dev->TaskMP == NULL) {
+        while (dev->TaskActive == false) {
             // If dev->task has been set to NULL it means the task failed to start
              if (dev->Task == NULL) {
 #if DEBUG >= 1
@@ -506,12 +509,12 @@ static const ULONG device_vectors[] =
  *
  * Create the device and add it to the system if init_device succeeds
 */
-static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"), struct ExecBase *sb asm("a6"))
+static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
     #if DEBUG >= 1
     KPrintF("Init driver.\n");
     #endif
-    SysBase = sb;
+    SysBase = *(struct ExecBase **)4UL;
     struct Device *mydev = (struct Device *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                         NULL,                      // InitStruct data
                                                         (APTR)init_device,         // Init function

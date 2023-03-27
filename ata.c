@@ -247,6 +247,97 @@ bool ata_init_unit(struct IDEUnit *unit) {
     return true;
 }
 
+void read_fast (void *source, void *destinaton) {
+    asm volatile ("moveq  #48,d7\n\t"
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 1
+    
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 2
+    
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 3
+    
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 4
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 5
+    
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 6
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                  
+    "add.l   d7,%1\n\t" // 7
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
+    "add.l   d7,%1\n\t" // 8
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
+    "add.l   d7,%1\n\t" // 9
+
+    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    "add.l   d7,%1\n\t" // 10
+
+    "movem.l 16(%0),d0-d6/a1\n\t"
+    "movem.l d0-d6/a1,(%1)\n\t"
+    :
+    :"a" (source),"a" (destinaton)
+    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
+    );
+}
+
+void write_fast (void *source, void *destinaton) {
+    asm volatile (
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+    
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                  
+
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
+
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
+
+    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
+    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
+
+    "movem.l (%0)+,d0-d6/a1\n\t"
+    "movem.l d0-d6/a1,(%1)\n\t"
+    :
+    :"a" (source),"a" (destinaton)
+    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
+    );
+}
+
 /**
  * ata_transfer
  * 
@@ -307,70 +398,21 @@ if (direction == READ) {
 
             if (direction == READ) {
 
-                for (int i=0; i<(unit->blockSize / 2); i++) {
-                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
-                    offset++;
-                }
-                
-                // asm volatile ("movem.l d0-d7/a0-a6,-(sp)\n\t"
-                //     "moveq  #48,d7\n\t"
-                //     "move.l %0,a0\n\t"
-                //     "move.l %1,a5\n\t"
+                // for (int i=0; i<(unit->blockSize / 2); i++) {
+                //     ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                //     offset++;
+                // }
+                read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
+                offset += 512;
 
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 1
-                    
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 2
-                    
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 3
-                    
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 4
-
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 5
-                    
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 6
-
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                  
-                //     "add.l   d7,a0\n\t" // 7
-
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
-                //     "add.l   d7,a0\n\t" // 8
-
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"                   
-                //     "add.l   d7,a0\n\t" // 9
-
-                //     "movem.l (a5),d0-d6/a1-a4/a6\n\t"
-                //     "movem.l d0-d6/a1-a4/a6,(a0)\n\t"
-                //     "add.l   d7,a0\n\t" // 10
-
-                //     "movem.l 16(a5),d0-d6/a1\n\t"
-                //     "movem.l d0-d6/a1,(a0)\n\t"
-
-                //     "movem.l (sp)+,d0-d7/a0-a6"
-                //     :
-                //     :"p" (buffer + offset),"p" ((UBYTE *)unit->drive->error_features - 48)
-                //     );
-                //     offset += 512;
-               
             } else {
-                for (int i=0; i<(unit->blockSize / 2); i++) {
-                    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
-                    offset++;
-                }
+                //for (int i=0; i<(unit->blockSize / 2); i++) {
+                //    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
+                //    offset++;
+                //}
+                write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
+                offset += 512;
+
             }
 
 

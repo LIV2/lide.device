@@ -112,7 +112,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 data[idx++] = (unit->cylinders >> 8);
                 data[idx++] = unit->cylinders;
                 data[idx++] = unit->heads;
-                for (int i=0; i<18; i++) {
+                for (int i=0; i<19; i++) {
                     data[idx++] = 0;
                 }
             }
@@ -193,11 +193,10 @@ void ide_task () {
 #if DEBUG >= 1
     KPrintF("Task waiting for init\n");
 #endif
+    void * volatile task_data = task->tc_UserData;
+    while (task_data == NULL); // Wait for Task Data to be populated
 
-    while (task->tc_UserData == NULL); // Wait for TaskBase to be populated
-
-    struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
-
+    struct DeviceBase *dev = task->tc_UserData;
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
         dev->Task = NULL; // Failed to create MP, let the device know
@@ -206,6 +205,8 @@ void ide_task () {
     }
 
     dev->TaskMP = mp;
+
+    dev->TaskActive = true;
 
     while (1) {
         // Main loop, handle IO Requests as they comee in.
