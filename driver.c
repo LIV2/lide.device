@@ -16,6 +16,7 @@
 #include "idetask.h"
 #include "newstyle.h"
 #include "td64.h"
+#include "mounter.h"
 
 #if DEBUG
 #include <clib/debug_protos.h>
@@ -110,6 +111,7 @@ void Cleanup(struct DeviceBase *dev) {
  * Scan for drives and initialize the driver if any are found
 */
 struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
+//struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
 {
     dev->SysBase = SysBase;
 #if DEBUG >= 1
@@ -221,7 +223,8 @@ struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm(
             KPrintF("Task created!, waiting for init\n");
 #endif
         }
-        dev->Task->tc_UserData = (APTR *)dev;
+        dev->Task->tc_UserData = dev;
+
         // Wait for task to init
         while (dev->TaskActive == false) {
             // If dev->task has been set to NULL it means the task failed to start
@@ -515,7 +518,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     KPrintF("Init driver.\n");
     #endif
     SysBase = *(struct ExecBase **)4UL;
-    struct Device *mydev = (struct Device *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
+    struct DeviceBase *mydev = (struct Device *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                         NULL,                      // InitStruct data
                                                         (APTR)init_device,         // Init function
                                                         sizeof(struct DeviceBase), // Library data size
@@ -527,5 +530,6 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     #endif
         AddDevice((struct Device *)mydev);
     }
+    mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
     return (struct Library *)mydev;
 }

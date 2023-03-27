@@ -45,7 +45,7 @@ struct DeviceBase {
     struct ExecBase *SysBase;
     struct Library  *ExpansionBase;
     struct Library  *TimerBase;
-    struct Task     *volatile Task;
+    struct Task     *Task;
     struct MsgPort  *TaskMP;
     volatile bool   TaskActive;
     struct MsgPort  *TimerMP;

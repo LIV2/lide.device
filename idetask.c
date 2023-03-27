@@ -180,7 +180,7 @@ do_scsi_transfer:
 */
 void ide_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    struct Task *task = FindTask(NULL);
+    struct Task volatile *task = FindTask(NULL);
     struct MsgPort *mp;
     struct IOStdReq *ioreq;
     struct IDEUnit *unit;
@@ -191,12 +191,13 @@ void ide_task () {
 
 
 #if DEBUG >= 1
-    KPrintF("Task waiting for init\n");
+    KPrintF("Task: waiting for init\n");
 #endif
-    void * volatile task_data = task->tc_UserData;
-    while (task_data == NULL); // Wait for Task Data to be populated
-
-    struct DeviceBase *dev = task->tc_UserData;
+    while (task->tc_UserData == NULL); // Wait for Task Data to be populated
+    struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
+#if DEBUG >= 1
+    KPrintF("Task: CreatePort()\n");
+#endif
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
         dev->Task = NULL; // Failed to create MP, let the device know
