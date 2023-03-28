@@ -27,10 +27,10 @@
 
 #define drv_sel_secondary (1<<4)
 
-#define ata_busy  (1<<7)
-#define ata_ready (1<<6)
-#define ata_drq   (1<<3)
-#define ata_error (1<<0)
+#define ata_flag_busy  (1<<7)
+#define ata_flag_ready (1<<6)
+#define ata_flag_drq   (1<<3)
+#define ata_flag_error (1<<0)
 
 #define ATA_CMD_IDENTIFY 0xEC
 #define ATA_CMD_READ     0x20
@@ -56,13 +56,13 @@ enum xfer_dir {
     WRITE
 };
 
-bool ata_wait_busy(struct IDEUnit *);
-bool ata_wait_ready(struct IDEUnit *);
-bool ata_wait_drq(struct IDEUnit *);
 
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir);
+void read_fast (void *, void *);
+void write_fast (void *, void *);
+
 
 
 #endif

@@ -1,7 +1,16 @@
 PROJECT=liv2ride
 CC=m68k-amigaos-gcc
-DEBUG=0
-CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -DDEBUG=$(DEBUG) -O3 -fomit-frame-pointer -Wno-unused-value -fno-delete-null-pointer-checks
+CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign  -Wno-unused-value -Og -fomit-frame-pointer -fno-delete-null-pointer-checks -msmall-code -s
+LDFLAGS=-lamiga -lgcc -lc
+AS=m68k-amigaos-as
+
+ifdef DEBUG
+CFLAGS+= -DDEBUG=$(DEBUG)
+LDFLAGS+= -ldebug
+.PHONY: $(PROJECT)
+endif
+
+LDFLAGS+= -lnix13
 
 .PHONY:	clean all
 all:	$(PROJECT)
@@ -11,10 +20,13 @@ OBJ = driver.o \
 	  idetask.o \
 	  mounter.o
 
-SRCS = $(OBJ:%.o=%.c)
+ASMOBJ = endskip.o
 
-liv2ride: $(SRCS)	
-	${CC} -o $@ $(CFLAGS) $(SRCS) -lamiga -lgcc -ldebug -lnix13
+SRCS = $(OBJ:%.o=%.c)
+SRCS += $(ASMOBJ:%.o=%.S)
+
+$(PROJECT): $(SRCS)
+	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)
 
 clean:
 	-rm $(PROJECT)

@@ -35,7 +35,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     enum xfer_dir direction = WRITE;
 
 #if DEBUG >= 2
-    KPrintF("Command %04x%04x\n",*scsi_command->scsi_Command);
+    KPrintF("Command %ld\n",*scsi_command->scsi_Command);
 #endif
     switch (scsi_command->scsi_Command[0]) {
         case SCSI_CMD_TEST_UNIT_READY:
@@ -178,13 +178,13 @@ do_scsi_transfer:
  * This is a task to complete IO Requests for all units
  * Requests are sent here from begin_io via the dev->TaskMP Message port
 */
-void ide_task () {
+void __attribute__((noreturn)) ide_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct Task volatile *task = FindTask(NULL);
     struct MsgPort *mp;
     struct IOStdReq *ioreq;
     struct IDEUnit *unit;
-    UWORD blocksize;
+    UWORD blockShift;
     ULONG lba;
     ULONG count;
     enum xfer_dir direction = WRITE;
@@ -230,9 +230,9 @@ void ide_task () {
                 case TD_FORMAT64:
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:
-                    blocksize = ((struct IDEUnit *)ioreq->io_Unit)->blockSize;
-                    lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) / (UWORD)blocksize);
-                    count = (ioreq->io_Length/blocksize);
+                    blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
+                    lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
+                    count = (ioreq->io_Length >> blockShift);
                     ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     break;
 
@@ -249,6 +249,7 @@ void ide_task () {
                     DeletePort(mp);
                     dev->TaskMP = NULL;
                     dev->Task = NULL;
+                    dev->TaskActive = false;
                     ReplyMsg(&ioreq->io_Message);
                     RemTask(NULL);
                     Wait(0);

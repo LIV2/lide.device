@@ -33,11 +33,13 @@ struct IDEUnit {
     BOOL  present;
     UBYTE channel;
     UBYTE device_type;
+    ULONG change_count;
     UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
     UWORD blockSize;
-    ULONG change_count;
+    UWORD blockShift;
+    UBYTE last_error[5];
 };
 
 struct DeviceBase {

@@ -25,7 +25,7 @@
  *
  * returns false on timeout
 */
-bool ata_wait_not_busy(struct IDEUnit *unit) {
+static bool ata_wait_not_busy(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval now, then;
@@ -39,7 +39,7 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
 #endif
 
     while (1) {
-        if ((*(volatile BYTE *)unit->drive->status_command & ata_busy) == 0) return true;
+        if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
 
 #ifndef NOTIMER
         GetSysTime(&now);
@@ -61,7 +61,7 @@ bool ata_wait_not_busy(struct IDEUnit *unit) {
  * 
  * returns false on timeout
 */
-bool ata_wait_ready(struct IDEUnit *unit) {
+static bool ata_wait_ready(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval now, then;
@@ -74,7 +74,7 @@ bool ata_wait_ready(struct IDEUnit *unit) {
     KPrintF("wait_ready_enter\n");
 #endif
     while (1) {
-        if (*(volatile BYTE *)unit->drive->status_command & ata_ready) return true;
+        if (*(volatile BYTE *)unit->drive->status_command & ata_flag_ready) return true;
 
 #ifndef NOTIMER
         GetSysTime(&now);
@@ -95,7 +95,7 @@ bool ata_wait_ready(struct IDEUnit *unit) {
  * 
  * returns false on timeout
 */
-bool ata_wait_drq(struct IDEUnit *unit) {
+static bool ata_wait_drq(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval now, then;
@@ -110,7 +110,7 @@ bool ata_wait_drq(struct IDEUnit *unit) {
 #endif
 
     while (1) {
-        if (*(volatile BYTE *)unit->drive->status_command& ata_drq) return true;
+        if (*(volatile BYTE *)unit->drive->status_command& ata_flag_drq) return true;
 
 #ifndef NOTIMER
         GetSysTime(&now);
@@ -149,11 +149,11 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     volatile UBYTE *status = unit->drive->status_command;
 
 #if DEBUG >= 2
-    KPrintF("Drive Status: %04x%04x %04x%04x\n",status, *status);
+    KPrintF("Drive Status: %08lx %08lx\n",status, *status);
 #endif
     if (*status == 0) return false; // No drive there?
 
-    while ((*status & (ata_drq | ata_error)) == 0) { 
+    while ((*status & (ata_flag_drq | ata_flag_error)) == 0) { 
         // Wait until ready to transfer or error condition
 #ifndef NOTIMER
         GetSysTime(&now);
@@ -161,10 +161,16 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 #endif
    }
 
-    if (*status & ata_error) {
+    if (*status & ata_flag_error) {
 #if DEBUG >= 1
-    KPrintF("IDENTIFY Status: Error\n");
+        KPrintF("IDENTIFY Status: Error\n");
+        KPrintF("last_error: %08lx\n",&unit->last_error[0]);
 #endif
+        unit->last_error[0] = *unit->drive->error_features;
+        unit->last_error[1] = *unit->drive->lbaHigh;
+        unit->last_error[2] = *unit->drive->lbaMid;
+        unit->last_error[3] = *unit->drive->lbaLow;
+        unit->last_error[4] = *unit->drive->status_command;
 
         return false;
     }
@@ -212,7 +218,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             dev_found = true;
 #if DEBUG >= 1
             KPrintF("Something there?\n");
-            KPrintF("Unit base: %04x%04x; Drive base %04x%04x\n",unit, unit->drive);
+            KPrintF("Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
 #endif             
             break;
         }
@@ -241,12 +247,150 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->heads           = *((UWORD *)buf + ata_identify_heads);
     unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
     unit->blockSize       = *((UWORD *)buf + ata_identify_sectorsize);
+    unit->blockShift      = 0;
+
+    // It's faster to shift than divide
+    // Figure out how many shifts are needed for the equivalent divide
+    if (unit->blockSize == 0) {
+#if DEBUG >= 1
+        KPrintF("Error! blockSize is 0\n");
+#endif
+        if (buf) FreeMem(buf,512);
+        return false;
+    }
+
+    while ((unit->blockSize >> unit->blockShift) > 1) {
+        unit->blockShift++;
+    }
+
     unit->present = true;
 
     if (buf) FreeMem(buf,512);
     return true;
 }
 
+/**
+ * ata_transfer
+ * 
+ * Read/write a block from/to the unit
+ * @param buffer Source buffer
+ * @param lba LBA Address
+ * @param count Number of blocks to transfer
+ * @param actual Pointer to the io requests io_Actual 
+ * @param unit Pointer to the unit structure
+ * @param direction READ/WRITE
+*/
+BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
+#if DEBUG >= 2
+if (direction == READ) {
+    KPrintF("ata_read");
+} else {
+    KPrintF("ata_write");
+}
+#endif
+    ULONG subcount = 0;
+    ULONG offset = 0;
+    *actual = 0;
+
+    if (count == 0) return TDERR_TooFewSecs;
+
+    BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+    *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
+
+#if DEBUG >= 3
+        KPrintF("Request sector count: %ld\n",count);
+#endif
+
+    // None of this max_transfer 1FE00 nonsense!
+    while (count > 0) {
+        if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
+            subcount = MAX_TRANSFER_SECTORS;
+        } else {
+            subcount = count;                // Get any remainders
+        }
+        count -= subcount;
+
+#if DEBUG >= 3
+        KPrintF("XFER Count: %ld, Subcount: %ld\n",count,subcount);
+#endif
+
+        if (!ata_wait_not_busy(unit))
+            return HFERR_BadStatus;
+
+        *unit->drive->sectorCount    = subcount; // Count value of 0 indicates to transfer 256 sectors
+        *unit->drive->lbaLow         = (UBYTE)(lba);
+        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
+        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+        *unit->drive->error_features = 0;
+        *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+
+        for (int block = 0; block < subcount; block++) {
+            if (!ata_wait_drq(unit))
+                return HFERR_BadStatus;
+
+
+            if (direction == READ) {
+
+                //for (int i=0; i<(unit->blockSize / 2); i++) {
+                //    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                //    offset++;
+                //}
+                read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
+                offset += 512;
+
+            } else {
+                //for (int i=0; i<(unit->blockSize / 2); i++) {
+                //    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
+                //    offset++;
+                //}
+                write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
+                offset += 512;
+
+            }
+
+
+            *actual += unit->blockSize;
+        }
+
+        if (*unit->drive->error_features & ata_flag_error) {
+            unit->last_error[0] = unit->drive->error_features[0];
+            unit->last_error[1] = unit->drive->lbaHigh[0];
+            unit->last_error[2] = unit->drive->lbaMid[0];
+            unit->last_error[3] = unit->drive->lbaLow[0];
+            unit->last_error[4] = unit->drive->status_command[0];
+#if DEBUG
+            KPrintF("ATA ERROR!!!");
+            KPrintF("last_error: %08lx\n",unit->last_error);
+            KPrintF("LBA: %ld, LastLBA: %ld\n",lba,(unit->sectorsPerTrack * unit->cylinders * unit->heads));
+            #endif
+            return TDERR_NotSpecified;
+        }
+
+        lba += subcount;
+
+    }
+
+    return 0;
+}
+
+
+#pragma GCC optimize ("-fomit-frame-pointer")
+/**
+ * read_fast
+ * 
+ * Fast copy of a 512-byte sector using movem
+ * Adapted from the open source at_apollo_device by Frédéric REQUIN
+ * https://github.com/fredrequin/at_apollo_device
+ * 
+ * NOTE! source needs to be 48 bytes before the end of the data port!
+ * The 68000 does an extra memory access at the end of a movem instruction!
+ * Source: https://github.com/prb28/m68k-instructions-documentation/blob/master/instructions/movem.md
+ * 
+ * With the src of end-48 the error reg will be harmlessly read instead.
+ * 
+ * @param source Pointer to drive data port
+ * @param destination Pointer to source buffer
+*/
 void read_fast (void *source, void *destinaton) {
     asm volatile ("moveq  #48,d7\n\t"
 
@@ -298,6 +442,16 @@ void read_fast (void *source, void *destinaton) {
     );
 }
 
+/**
+ * write_fast
+ * 
+ * Fast copy of a 512-byte sector using movem
+ * Adapted from the open source at_apollo_device by Frédéric REQUIN
+ * https://github.com/fredrequin/at_apollo_device
+ * 
+ * @param source Pointer to source buffer
+ * @param destination Pointer to drive data port
+*/
 void write_fast (void *source, void *destinaton) {
     asm volatile (
     "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
@@ -338,89 +492,4 @@ void write_fast (void *source, void *destinaton) {
     );
 }
 
-/**
- * ata_transfer
- * 
- * Read/write a block from/to the unit
- * @param buffer Source buffer
- * @param lba LBA Address
- * @param count Number of blocks to transfer
- * @param actual Pointer to the io requests io_Actual 
- * @param unit Pointer to the unit structure
- * @param direction READ/WRITE
-*/
-BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
-#if DEBUG >= 2
-if (direction == READ) {
-    KPrintF("ata_read");
-} else {
-    KPrintF("ata_write");
-}
-#endif
-    ULONG subcount;
-    ULONG offset = 0;
-    *actual = 0;
-
-    if (count == 0) return TDERR_TooFewSecs;
-
-    BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
-    *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
-
-    // None of this max_transfer 1FE00 nonsense!
-    while (count > 0) {
-        if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
-            subcount = MAX_TRANSFER_SECTORS;
-        } else {
-            subcount = count;                // Get any remainders
-        }
-
-        if (!ata_wait_not_busy(unit))
-            return HFERR_BadStatus;
-
-        *unit->drive->sectorCount    = (subcount & 0xFF); // Count value of 0 indicates to transfer 256 sectors
-        *unit->drive->lbaLow         = (UBYTE)(lba);
-        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-        *unit->drive->error_features = 0;
-        *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
-
-
-        for (int block = 0; block < subcount; block++) {
-            if (!ata_wait_drq(unit))
-                return HFERR_BadStatus;
-
-            if (*unit->drive->error_features && ata_error) {
-                #if DEBUG >= 1
-                KPrintF("ATA ERROR!!!");
-                #endif
-                return TDERR_NotSpecified;
-            }
-
-            if (direction == READ) {
-
-                // for (int i=0; i<(unit->blockSize / 2); i++) {
-                //     ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
-                //     offset++;
-                // }
-                read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
-                offset += 512;
-
-            } else {
-                //for (int i=0; i<(unit->blockSize / 2); i++) {
-                //    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
-                //    offset++;
-                //}
-                write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
-                offset += 512;
-
-            }
-
-
-            *actual += unit->blockSize;
-        }
-
-        count -= subcount;
-    }
-
-    return 0;
-}
+#pragma GCC reset_options
