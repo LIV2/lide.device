@@ -18,6 +18,11 @@
 
 #define WAIT_TIMEOUT_MS 500
 
+void MyGetSysTime(struct timerequest *tr) {
+   tr->tr_node.io_Command = TR_GETSYSTIME;
+   DoIO((struct IORequest *)tr);
+}
+
 /**
  * ata_wait_not_busy
  * 
@@ -28,11 +33,13 @@
 static bool ata_wait_not_busy(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval now, then;
+    struct timeval then;
+    struct timerequest *tr = unit->TimeReq;
+
     then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
     then.tv_secs  = 0;
-    GetSysTime(&now);
-    AddTime(&then,&now);
+    MyGetSysTime(tr);
+    AddTime(&then,&tr->tr_time);
 #endif
 #if DEBUG >= 2
     KPrintF("wait_not_busy\n");
@@ -40,10 +47,9 @@ static bool ata_wait_not_busy(struct IDEUnit *unit) {
 
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
-
 #ifndef NOTIMER
-        GetSysTime(&now);
-        if (CmpTime(&then,&now) == 1) {
+        MyGetSysTime(tr);
+        if (CmpTime(&then,&tr->tr_time) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_not_busy timeout\n");
 #endif
@@ -64,11 +70,13 @@ static bool ata_wait_not_busy(struct IDEUnit *unit) {
 static bool ata_wait_ready(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval now, then;
+    struct timeval then;
+    struct timerequest *tr = unit->TimeReq;
+
     then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
     then.tv_secs  = 0;
-    GetSysTime(&now);
-    AddTime(&then,&now);
+    MyGetSysTime(tr);
+    AddTime(&then,&tr->tr_time);
 #endif
 #if DEBUG >= 2
     KPrintF("wait_ready_enter\n");
@@ -77,8 +85,8 @@ static bool ata_wait_ready(struct IDEUnit *unit) {
         if (*(volatile BYTE *)unit->drive->status_command & ata_flag_ready) return true;
 
 #ifndef NOTIMER
-        GetSysTime(&now);
-        if (CmpTime(&then,&now) == 1) {
+        MyGetSysTime(tr);
+        if (CmpTime(&then,&tr->tr_time) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_ready timeout\n");
 #endif
@@ -98,11 +106,19 @@ static bool ata_wait_ready(struct IDEUnit *unit) {
 static bool ata_wait_drq(struct IDEUnit *unit) {
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval now, then;
+    struct timeval then;
+    struct timerequest *tr;
+
+    // Performing these time functions halves throughput
+    // So only do time-out when we're not sure there's a drive there
+    if (unit->present == false) {
+        tr = unit->TimeReq;
+
     then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
     then.tv_secs  = 0;
-    GetSysTime(&now);
-    AddTime(&then,&now);
+        MyGetSysTime(tr);
+        AddTime(&then,&tr->tr_time);
+    }
 #endif
 
 #if DEBUG >= 2
@@ -110,11 +126,18 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
 #endif
 
     while (1) {
-        if (*(volatile BYTE *)unit->drive->status_command& ata_flag_drq) return true;
+        if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_drq | ata_flag_busy | ata_flag_error)) == ata_flag_drq) return true;
+#if DEBUG
+        KPrintF("*");
+#endif
+        if (unit->present == false) {
 
 #ifndef NOTIMER
-        GetSysTime(&now);
-        if (CmpTime(&then,&now) == 1) {
+#ifdef DEBUG
+            KPrintF("Time: %ld\n",tr->tr_time.tv_usec);
+#endif
+            MyGetSysTime(tr);
+            if (CmpTime(&then,&tr->tr_time) == 1) {
 #if DEBUG >= 2
             KPrintF("wait_drq timeout\n");
 #endif
@@ -122,8 +145,12 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
         }
 #endif
 
+        }
+
+
     }
 }
+
 
 /**
  * ata_identify
@@ -134,11 +161,6 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
 */
 bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
-#ifndef NOTIMER
-    struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval start, now;
-    GetSysTime(&start);
-#endif
     *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
     *unit->drive->sectorCount = 0;
     *unit->drive->lbaLow  = 0;
@@ -146,22 +168,9 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->lbaHigh = 0;
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
-    volatile UBYTE *status = unit->drive->status_command;
 
-#if DEBUG >= 2
-    KPrintF("Drive Status: %08lx %08lx\n",status, *status);
-#endif
-    if (*status == 0) return false; // No drive there?
-
-    while ((*status & (ata_flag_drq | ata_flag_error)) == 0) { 
-        // Wait until ready to transfer or error condition
-#ifndef NOTIMER
-        GetSysTime(&now);
-        if (now.tv_micro >= (start.tv_micro + (WAIT_TIMEOUT_MS*1000))) return false;
-#endif
-   }
-
-    if (*status & ata_flag_error) {
+    if (!ata_wait_drq(unit)) {
+        if (*unit->drive->status_command & ata_flag_error) {
 #if DEBUG >= 1
         KPrintF("IDENTIFY Status: Error\n");
         KPrintF("last_error: %08lx\n",&unit->last_error[0]);
@@ -171,14 +180,14 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
         unit->last_error[2] = *unit->drive->lbaMid;
         unit->last_error[3] = *unit->drive->lbaLow;
         unit->last_error[4] = *unit->drive->status_command;
-
+        }
         return false;
     }
 
     if (buffer) {
         UWORD read_data;
         for (int i=0; i<256; i++) {
-            read_data = *unit->drive->data;
+            read_data = unit->drive->data[i];
             buffer[i] = ((read_data >> 8) | (read_data << 8));
         }
     }
@@ -352,7 +361,7 @@ if (direction == READ) {
             *actual += unit->blockSize;
         }
 
-        if (*unit->drive->error_features & ata_flag_error) {
+        if (*unit->drive->status_command & ata_flag_error) {
             unit->last_error[0] = unit->drive->error_features[0];
             unit->last_error[1] = unit->drive->lbaHigh[0];
             unit->last_error[2] = unit->drive->lbaMid[0];

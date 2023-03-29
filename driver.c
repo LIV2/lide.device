@@ -107,7 +107,7 @@ static void Cleanup(struct DeviceBase *dev) {
  *
  * Scan for drives and initialize the driver if any are found
 */
-struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
+struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
 //struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
 {
     dev->SysBase = SysBase;
@@ -247,7 +247,7 @@ struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase asm(
 !!! CAUTION: This function runs in a forbidden state !!!
 This call is guaranteed to be single-threaded; only one task
 will execute your Expunge at a time. */
-static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
+static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running expunge()\n");
@@ -292,7 +292,7 @@ static BPTR __attribute__((used)) expunge(struct DeviceBase *dev asm("a6"))
 !!! CAUTION: This function runs in a forbidden state !!!
 This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
-static void __attribute__((used)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
+static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
@@ -345,7 +345,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
 !!! CAUTION: This function runs in a forbidden state !!!
 This call is guaranteed to be single-threaded; only one task
 will execute your Close at a time. */
-static BPTR __attribute__((used)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
+static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running close()\n");
@@ -388,7 +388,7 @@ static UWORD supported_commands[] =
  *
  * Handle immediate requests and send any others to ide_task
 */
-static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running begin_io()\n");
@@ -400,7 +400,9 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
-
+#if DEBUG
+    KPrintF("Command %04x%04x\n",ioreq->io_Command);
+#endif
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:
@@ -487,7 +489,7 @@ static void __attribute__((used)) begin_io(struct DeviceBase *dev asm("a6"), str
  *
  * Abort io request
 */
-static ULONG __attribute__((used)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static ULONG __attribute__((used, saveds)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
 #if DEBUG >= 2
     KPrintF((CONST_STRPTR) "running abort_io()\n");
@@ -518,7 +520,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     KPrintF("Init driver.\n");
     #endif
     SysBase = *(struct ExecBase **)4UL;
-    struct DeviceBase *mydev = (struct Device *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
+    struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                         NULL,                      // InitStruct data
                                                         (APTR)init_device,         // Init function
                                                         sizeof(struct DeviceBase), // Library data size
