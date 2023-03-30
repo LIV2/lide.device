@@ -5,15 +5,12 @@
 #include <string.h>
 
 #include "ata.h"
+#include "debug.h"
 #include "device.h"
 #include "idetask.h"
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
-
-#if DEBUG
-#include <clib/debug_protos.h>
-#endif
 
 /**
  * handle_scsi_command
@@ -34,9 +31,8 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     enum xfer_dir direction = WRITE;
 
-#if DEBUG >= 2
-    KPrintF("Command %ld\n",*scsi_command->scsi_Command);
-#endif
+    Trace("Command %ld\n",*scsi_command->scsi_Command);
+
     switch (scsi_command->scsi_Command[0]) {
         case SCSI_CMD_TEST_UNIT_READY:
             scsi_command->scsi_Actual = 0;
@@ -46,7 +42,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
         case SCSI_CMD_INQUIRY:
             ((struct SCSI_Inquiry *)data)->peripheral_type = unit->device_type;
             ((struct SCSI_Inquiry *)data)->removable_media = 0;
-            ((struct SCSI_Inquiry *)data)->version         = 0;
+            ((struct SCSI_Inquiry *)data)->version         = 2;
             ((struct SCSI_Inquiry *)data)->response_format = 2;
             ((struct SCSI_Inquiry *)data)->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
 
@@ -190,14 +186,10 @@ void __attribute__((noreturn)) ide_task () {
     enum xfer_dir direction = WRITE;
 
 
-#if DEBUG >= 1
-    KPrintF("Task: waiting for init\n");
-#endif
+    Info("Task: waiting for init\n");
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
     struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
-#if DEBUG >= 1
-    KPrintF("Task: CreatePort()\n");
-#endif
+    Trace("Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
         dev->Task = NULL; // Failed to create MP, let the device know
@@ -210,9 +202,7 @@ void __attribute__((noreturn)) ide_task () {
 
     while (1) {
         // Main loop, handle IO Requests as they comee in.
-#if DEBUG >= 2
-            KPrintF("WaitPort()\n");
-#endif
+        Trace("WaitPort()\n");
         Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
@@ -243,9 +233,7 @@ void __attribute__((noreturn)) ide_task () {
 
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
-#if DEBUG > 0
-                    KPrintF("CMD_DIE: Shutting down IDE Task\n");
-#endif
+                    Info("CMD_DIE: Shutting down IDE Task\n");
                     DeletePort(mp);
                     dev->TaskMP = NULL;
                     dev->Task = NULL;

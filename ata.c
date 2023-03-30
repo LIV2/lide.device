@@ -9,12 +9,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "debug.h"
 #include "device.h"
 #include "ata.h"
-
-#if DEBUG
-#include <clib/debug_protos.h>
-#endif
 
 #define WAIT_TIMEOUT_MS 500
 
@@ -41,18 +38,14 @@ static bool ata_wait_not_busy(struct IDEUnit *unit) {
     MyGetSysTime(tr);
     AddTime(&then,&tr->tr_time);
 #endif
-#if DEBUG >= 2
-    KPrintF("wait_not_busy\n");
-#endif
+    Trace("wait_not_busy\n");
 
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
 #ifndef NOTIMER
         MyGetSysTime(tr);
         if (CmpTime(&then,&tr->tr_time) == 1) {
-#if DEBUG >= 2
-            KPrintF("wait_not_busy timeout\n");
-#endif
+            Warn("wait_not_busy timeout\n");
             return false;
         }
 #endif
@@ -78,18 +71,14 @@ static bool ata_wait_ready(struct IDEUnit *unit) {
     MyGetSysTime(tr);
     AddTime(&then,&tr->tr_time);
 #endif
-#if DEBUG >= 2
-    KPrintF("wait_ready_enter\n");
-#endif
+    Trace("wait_ready_enter\n");
     while (1) {
         if (*(volatile BYTE *)unit->drive->status_command & ata_flag_ready) return true;
 
 #ifndef NOTIMER
         MyGetSysTime(tr);
         if (CmpTime(&then,&tr->tr_time) == 1) {
-#if DEBUG >= 2
-            KPrintF("wait_ready timeout\n");
-#endif
+            Warn("wait_ready timeout\n");
             return false;
         }
 #endif
@@ -113,41 +102,27 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
     // So only do time-out when we're not sure there's a drive there
     if (unit->present == false) {
         tr = unit->TimeReq;
-
-    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-    then.tv_secs  = 0;
+        then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
+        then.tv_secs  = 0;
         MyGetSysTime(tr);
         AddTime(&then,&tr->tr_time);
     }
 #endif
 
-#if DEBUG >= 2
-    KPrintF("wait_drq\n");
-#endif
-
+    Trace("wait_drq\n");
+    
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_drq | ata_flag_busy | ata_flag_error)) == ata_flag_drq) return true;
-#if DEBUG
-        KPrintF("*");
-#endif
         if (unit->present == false) {
-
 #ifndef NOTIMER
-#ifdef DEBUG
-            KPrintF("Time: %ld\n",tr->tr_time.tv_usec);
-#endif
             MyGetSysTime(tr);
             if (CmpTime(&then,&tr->tr_time) == 1) {
-#if DEBUG >= 2
-            KPrintF("wait_drq timeout\n");
-#endif
-            return false;
+                Warn("wait_drq timeout\n");
+                return false;
         }
 #endif
 
         }
-
-
     }
 }
 
@@ -171,10 +146,8 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 
     if (!ata_wait_drq(unit)) {
         if (*unit->drive->status_command & ata_flag_error) {
-#if DEBUG >= 1
-        KPrintF("IDENTIFY Status: Error\n");
-        KPrintF("last_error: %08lx\n",&unit->last_error[0]);
-#endif
+        Warn("IDENTIFY Status: Error\n");
+        Warn("last_error: %08lx\n",&unit->last_error[0]);
         unit->last_error[0] = *unit->drive->error_features;
         unit->last_error[1] = *unit->drive->lbaHigh;
         unit->last_error[2] = *unit->drive->lbaMid;
@@ -225,10 +198,8 @@ bool ata_init_unit(struct IDEUnit *unit) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
         if ((*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
             dev_found = true;
-#if DEBUG >= 1
-            KPrintF("Something there?\n");
-            KPrintF("Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
-#endif             
+            Trace("Something there?\n");
+            Trace("Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;
         }
     }
@@ -238,20 +209,16 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) // Allocate buffer for IDENTIFY result
         return false;
-#if DEBUG >= 1
-    KPrintF("Send IDENTIFY\n");
-#endif   
+
+    Trace("Send IDENTIFY\n");
     if (ata_identify(unit,buf) == false) {
-#if DEBUG >= 1
-    KPrintF("IDENTIFY Timeout\n");
-#endif 
+        Warn("IDENTIFY Timeout\n");
         // Command failed with a timeout or error
         FreeMem(buf,512);
         return false;
     }
-#if DEBUG >= 1
-    KPrintF("Drive found!\n");
-#endif 
+    Info("Drive found!\n");
+
     unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
     unit->heads           = *((UWORD *)buf + ata_identify_heads);
     unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
@@ -261,9 +228,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
     // It's faster to shift than divide
     // Figure out how many shifts are needed for the equivalent divide
     if (unit->blockSize == 0) {
-#if DEBUG >= 1
-        KPrintF("Error! blockSize is 0\n");
-#endif
+        Warn("Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
         return false;
     }
@@ -290,13 +255,11 @@ bool ata_init_unit(struct IDEUnit *unit) {
  * @param direction READ/WRITE
 */
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
-#if DEBUG >= 2
 if (direction == READ) {
-    KPrintF("ata_read");
+    Trace("ata_read");
 } else {
-    KPrintF("ata_write");
+    Trace("ata_write");
 }
-#endif
     ULONG subcount = 0;
     ULONG offset = 0;
     *actual = 0;
@@ -306,9 +269,10 @@ if (direction == READ) {
     BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
     *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
 
-#if DEBUG >= 3
-        KPrintF("Request sector count: %ld\n",count);
-#endif
+    Trace("Request sector count: %ld\n",count);
+
+    if (!ata_wait_not_busy(unit))
+        return HFERR_BadStatus;
 
     // None of this max_transfer 1FE00 nonsense!
     while (count > 0) {
@@ -319,12 +283,7 @@ if (direction == READ) {
         }
         count -= subcount;
 
-#if DEBUG >= 3
-        KPrintF("XFER Count: %ld, Subcount: %ld\n",count,subcount);
-#endif
-
-        if (!ata_wait_not_busy(unit))
-            return HFERR_BadStatus;
+        Trace("XFER Count: %ld, Subcount: %ld\n",count,subcount);
 
         *unit->drive->sectorCount    = subcount; // Count value of 0 indicates to transfer 256 sectors
         *unit->drive->lbaLow         = (UBYTE)(lba);
@@ -367,11 +326,10 @@ if (direction == READ) {
             unit->last_error[2] = unit->drive->lbaMid[0];
             unit->last_error[3] = unit->drive->lbaLow[0];
             unit->last_error[4] = unit->drive->status_command[0];
-#if DEBUG
-            KPrintF("ATA ERROR!!!");
-            KPrintF("last_error: %08lx\n",unit->last_error);
-            KPrintF("LBA: %ld, LastLBA: %ld\n",lba,(unit->sectorsPerTrack * unit->cylinders * unit->heads));
-            #endif
+
+            Info("ATA ERROR!!!");
+            Info("last_error: %08lx\n",unit->last_error);
+            Info("LBA: %ld, LastLBA: %ld\n",lba,(unit->sectorsPerTrack * unit->cylinders * unit->heads));
             return TDERR_NotSpecified;
         }
 

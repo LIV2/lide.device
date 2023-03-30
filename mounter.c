@@ -1033,7 +1033,7 @@ int mount_drives(struct ConfigDev *cd, char *devName)
 
 	dbg("Mounter:\n");
 	ms.deviceName = devName;
-	ULONG units[] = {1,0};
+	ULONG units[] = {2,0,1};
 	ms.unitNum = &units;
 	ms.creatorName = NULL;
 	ms.configDev = cd;

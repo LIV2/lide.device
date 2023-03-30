@@ -17,10 +17,7 @@
 #include "newstyle.h"
 #include "td64.h"
 #include "mounter.h"
-
-#if DEBUG
-#include <clib/debug_protos.h>
-#endif
+#include "debug.h"
 
 struct ExecBase *SysBase;
 
@@ -67,15 +64,11 @@ char * set_dev_name(struct DeviceBase *dev) {
             if (i==0) devName = device_name;
             *(ULONG *)devName = device_prefix[i]; // Add prefix to start of device name string in a hacky way
         } else {
-#if DEBUG > 0
-            KPrintF("Device name: %s\n",devName);
-#endif
+            Info("Device name: %s\n",devName);
             return devName;
         }
     }
-#if DEBUG > 0
-    KPrintF("Couldn't set device name.\n");
-#endif
+    Info("Couldn't set device name.\n");
     return NULL;
 }
 
@@ -85,9 +78,7 @@ char * set_dev_name(struct DeviceBase *dev) {
  * Free used resources back to the system
 */
 static void Cleanup(struct DeviceBase *dev) {
-#if DEBUG > 0
-    KPrintF("Cleaning up...\n");
-#endif
+    Info("Cleaning up...\n");
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     for (int i=0; i < MAX_UNITS; i++) {
         // Un-claim the boards
@@ -111,9 +102,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 //struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
 {
     dev->SysBase = SysBase;
-#if DEBUG >= 1
-    KPrintF("Init dev, base: %08lx\n",dev);
-#endif
+    Trace("Init dev, base: %08lx\n",dev);
     struct Library *ExpansionBase = NULL;
 
     char *devName;
@@ -138,9 +127,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
         return NULL;
-#if DEBUG >=2
-    KPrintF("Dev->Units: %08lx\n",(ULONG)dev->units);
-#endif
+
+    Trace("Dev->Units: %08lx\n",(ULONG)dev->units);
+
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
         return NULL;
@@ -151,16 +140,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 #ifndef NOTIMER
     if ((dev->TimerMP = CreatePort(NULL,0)) != NULL && (dev->TimeReq = (struct timerequest *)CreateExtIO(dev->TimerMP, sizeof(struct timerequest))) != NULL) {
         if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)dev->TimeReq,0)) {
-#if DEBUG >= 1
-    KPrintF("Failed to open timer.device\n");
-#endif
+            Info("Failed to open timer.device\n");
             Cleanup(dev);
             return NULL;
         }
     } else {
-#if DEBUG >= 1
-    KPrintF("Failed to create Timer MP or Request.\n");
-#endif
+        Info("Failed to create Timer MP or Request.\n");
         Cleanup(dev);
         return NULL;
     }
@@ -177,9 +162,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         if (cd->cd_Flags & CDF_CONFIGME) {
             cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
-#if DEBUG >= 2
-    KPrintF("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-#endif
+            Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+
             for (BYTE i=0; i<2; i++) {
                 dev->units[i].SysBase      = SysBase;
                 dev->units[i].TimeReq      = dev->TimeReq;
@@ -189,9 +173,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 dev->units[i].change_count = 1;
                 dev->units[i].device_type  = DG_DIRECT_ACCESS;
                 dev->units[i].present      = false;
-#if DEBUG >= 2
-    KPrintF("testing unit %08lx\n",i);
-#endif
+
+                Warn("testing unit %08lx\n",i);
+
                 if (ata_init_unit(&dev->units[i])) {
                     dev->num_units++;
                 }
@@ -200,25 +184,17 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         }
     }
 
-#if DEBUG >= 1
-    KPrintF("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
-#endif
+    Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
     if (dev->num_units > 0) {
-#if DEBUG >= 1
-        KPrintF("Start the Task\n");
-#endif
+        Trace("Start the Task\n");
         // Start the IDE Task
         dev->Task = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
         if (!dev->Task) {
-#if DEBUG >= 1
-            KPrintF("IDE Task failed\n");
-#endif
+            Info("IDE Task failed\n");
             Cleanup(dev);
             return NULL;
         } else {
-#if DEBUG >= 1
-            KPrintF("Task created!, waiting for init\n");
-#endif
+            Trace("Task created!, waiting for init\n");
         }
         dev->Task->tc_UserData = dev;
 
@@ -226,16 +202,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         while (dev->TaskActive == false) {
             // If dev->task has been set to NULL it means the task failed to start
              if (dev->Task == NULL) {
-#if DEBUG >= 1
-    KPrintF("IDE Task failed.\n");
-#endif
+                Info("IDE Task failed.\n");
                 Cleanup(dev);
                 return NULL;
             }
         }
-#if DEBUG >= 1
-    KPrintF("Startup finished.\n");
-#endif
+        Info("Startup finished.\n");
         return (struct Library *)dev;
     } else {
         Cleanup(dev);
@@ -249,9 +221,7 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Expunge at a time. */
 static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
 {
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "running expunge()\n");
-#endif
+    Trace((CONST_STRPTR) "running expunge()\n");
 
     if (dev->lib.lib_OpenCnt != 0)
     {
@@ -294,9 +264,7 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
-#endif
+    Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
     ioreq->io_Error = IOERR_OPENFAIL;
 
     if (dev->Task == NULL || dev->TaskActive == false) {
@@ -347,9 +315,7 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Close at a time. */
 static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "running close()\n");
-#endif
+    Trace((CONST_STRPTR) "running close()\n");
     dev->lib.lib_OpenCnt--;
 
     if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
@@ -390,9 +356,7 @@ static UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "running begin_io()\n");
-#endif
+    Trace((CONST_STRPTR) "running begin_io()\n");
     ioreq->io_Error = TDERR_NotSpecified;
 
     if (dev->Task == NULL || dev->TaskActive == false) {
@@ -400,9 +364,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
-#if DEBUG
-    KPrintF("Command %04x%04x\n",ioreq->io_Command);
-#endif
+    Trace("Command %04x%04x\n",ioreq->io_Command);
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:
@@ -449,9 +411,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             // Send all of these to ide_task
             ioreq->io_Flags &= ~IOF_QUICK;
             PutMsg(dev->TaskMP,&ioreq->io_Message);
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "IO queued\n");
-#endif
+            Trace((CONST_STRPTR) "IO queued\n");
             return;
 
         case NSCMD_DEVICEQUERY:
@@ -474,9 +434,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             break;
 
         default:
-#if DEBUG >= 2
-            KPrintF("Unknown command %d\n", ioreq->io_Command);
-#endif
+            Warn("Unknown command %d\n", ioreq->io_Command);
             ioreq->io_Error = IOERR_NOCMD;
     }
     if (ioreq && !(ioreq->io_Flags & IOF_QUICK)) {
@@ -491,9 +449,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 */
 static ULONG __attribute__((used, saveds)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
-#if DEBUG >= 2
-    KPrintF((CONST_STRPTR) "running abort_io()\n");
-#endif
+    Trace((CONST_STRPTR) "running abort_io()\n");
     return IOERR_NOCMD;
 }
 
@@ -516,9 +472,7 @@ static const ULONG device_vectors[] =
 */
 static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
-    #if DEBUG >= 1
-    KPrintF("Init driver.\n");
-    #endif
+    Info("Init driver.\n");
     SysBase = *(struct ExecBase **)4UL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                         NULL,                      // InitStruct data
@@ -527,9 +481,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                                                         seg_list);                 // Segment list
 
     if (mydev != NULL) {
-    #if DEBUG >= 1
-    KPrintF("Add Device.\n");
-    #endif
+    Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
     }
     mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
