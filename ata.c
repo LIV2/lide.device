@@ -5,6 +5,7 @@
 #include <proto/exec.h>
 #include <proto/alib.h>
 #include <proto/expansion.h>
+#include <exec/errors.h>
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -198,7 +199,6 @@ bool ata_init_unit(struct IDEUnit *unit) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
         if ((*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
             dev_found = true;
-            Trace("Something there?\n");
             Trace("Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;
         }
@@ -276,17 +276,8 @@ if (direction == READ) {
 
     if (count == 0) return TDERR_TooFewSecs;
 
-    BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
-
-    // THIS IS A PROBLEM! TRANSFERS NEAR THE BOUNDARY WILL BLOW UP!
-    *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
-
     Trace("Request sector count: %ld\n",count);
 
-    if (!ata_wait_not_busy(unit))
-        return HFERR_BadStatus;
-
-    // None of this max_transfer 1FE00 nonsense!
     while (count > 0) {
         if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
             subcount = MAX_TRANSFER_SECTORS;
@@ -294,6 +285,14 @@ if (direction == READ) {
             subcount = count;                // Get any remainders
         }
         count -= subcount;
+
+        BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+
+        if (*unit->drive->devHead != drvSelHead) {
+            *unit->drive->devHead = drvSelHead;
+            if (!ata_wait_not_busy(unit))
+                return HFERR_SelTimeout;
+        }
 
         Trace("XFER Count: %ld, Subcount: %ld\n",count,subcount);
 
@@ -306,26 +305,30 @@ if (direction == READ) {
 
         for (int block = 0; block < subcount; block++) {
             if (!ata_wait_drq(unit))
-                return HFERR_BadStatus;
+                return IOERR_UNITBUSY;
 
 
             if (direction == READ) {
-
-                //for (int i=0; i<(unit->blockSize / 2); i++) {
-                //    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
-                //    offset++;
-                //}
+#if SLOWXFER
+                for (int i=0; i<(unit->blockSize / 2); i++) {
+                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                    offset++;
+                }
+#else
                 read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
                 offset += 512;
+#endif
 
             } else {
-                //for (int i=0; i<(unit->blockSize / 2); i++) {
-                //    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
-                //    offset++;
-                //}
+#if SLOWXFER
+                for (int i=0; i<(unit->blockSize / 2); i++) {
+                    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
+                    offset++;
+                }
+#else
                 write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
                 offset += 512;
-
+#endif
             }
 
 

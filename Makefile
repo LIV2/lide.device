@@ -10,6 +10,16 @@ LDFLAGS+= -ldebug
 .PHONY: $(PROJECT)
 endif
 
+ifdef NOTIMER
+CFLAGS+= -DNOTIMER=1
+.PHONY: $(PROJECT)
+endif
+
+ifdef SLOWXFER
+CFLAGS+= -DSLOWXFER=1
+.PHONY: $(PROJECT)
+endif
+
 LDFLAGS+= -lnix13
 
 .PHONY:	clean all
@@ -17,6 +27,7 @@ all:	$(PROJECT)
 
 OBJ = driver.o \
       ata.o \
+	  scsi.o \
 	  idetask.o \
 	  mounter.o
 

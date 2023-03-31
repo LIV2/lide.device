@@ -1,4 +1,5 @@
 #include <devices/scsidisk.h>
+#include <devices/trackdisk.h>
 #include <exec/errors.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
@@ -28,6 +29,8 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     ULONG lba;
     ULONG count;
     UBYTE error = 0;
+    scsi_command->scsi_SenseActual = 0;
+
 
     enum xfer_dir direction = WRITE;
 
@@ -48,11 +51,13 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
             UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
             if (!identity) {
-                error = HFERR_BadStatus;
+                error = TDERR_NoMem;
+                scsi_sense(scsi_command,0,0,error);
                 break;
             }
             if (!(ata_identify(unit,identity))) {
-                error = HFERR_BadStatus;
+                error = HFERR_SelTimeout;
+                scsi_sense(scsi_command,0,0,error);
                 break;
             }
             CopyMem(&identity[ata_identify_model],&((struct SCSI_Inquiry *)data)->vendor,24);
@@ -70,11 +75,11 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             }
 
             UBYTE page    = command[2] & 0x3F;
-
             UBYTE subpage = command[3];
 
             if (subpage != 0) {
                 error = HFERR_BadStatus;
+                scsi_sense(scsi_command,0,0,error);
                 break;
             }
 
@@ -116,12 +121,13 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             *data_length += (idx + 1);
             error = 0;
 
-            scsi_command->scsi_Actual = *data_length + 1;
+            scsi_command->scsi_Actual = *data_length;
             break;
 
         case SCSI_CMD_READ_CAPACITY_10:
             if (data == NULL) {
                 error = IOERR_BADADDRESS;
+                scsi_sense(scsi_command,0,0,error);
                 break;
             }
 
@@ -151,15 +157,24 @@ do_scsi_transfer:
             Info("LBA: %ld\n",lba);
             if (data == NULL || (lba + count) > (unit->logicalSectors - 1)) {
                 error = IOERR_BADADDRESS;
+                scsi_sense(scsi_command,lba,count,error);
                 break;
             }
 
-            error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction);
-            Info("Returns: %ld\n",error);
+            if ((error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction)) != 0 ) {
+                if (error == TDERR_NotSpecified) {
+                    scsi_sense(scsi_command,lba,
+                    (unit->last_error[0] << 8 | unit->last_error[4])
+                    ,error);
+                } else {
+                    scsi_sense(scsi_command,lba,count,error);
+                }
+            }
             break;
 
         default:
-            error = HFERR_BadStatus;
+            error = IOERR_NOCMD;
+            scsi_sense(scsi_command,0,0,error);
             break;
     }
 
@@ -167,11 +182,12 @@ do_scsi_transfer:
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
     if (error != 0) {
+        Warn("SCSI Error: %ld\n",error);
+        Warn("SCSI Command: %ld\n",scsi_command->scsi_Command);
         scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
     } else {
         scsi_command->scsi_Status = 0;
     }
-    scsi_command->scsi_SenseActual = 0; // TODO: Add Sense data
 }
 
 /**

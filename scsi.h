@@ -44,3 +44,18 @@ struct __attribute__((packed)) SCSI_CAPACITY_10 {
     ULONG lba;
     ULONG block_size;
 };
+
+struct __attribute__((packed)) SCSI_FIXED_SENSE {
+    UBYTE response;
+    UBYTE pad;
+    UBYTE senseKey;
+    ULONG info;
+    UBYTE additional;
+    ULONG specific;
+    UBYTE asc;
+    UBYTE asq;
+    UBYTE fru;
+    UBYTE sks[3];
+};
+
+void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
