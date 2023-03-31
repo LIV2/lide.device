@@ -29,6 +29,7 @@
 
 #define ata_flag_busy  (1<<7)
 #define ata_flag_ready (1<<6)
+#define ata_flag_df    (1<<5)
 #define ata_flag_drq   (1<<3)
 #define ata_flag_error (1<<0)
 

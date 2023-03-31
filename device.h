@@ -31,7 +31,7 @@ struct IDEUnit {
     UBYTE unitNum;
     UBYTE channel;
     UBYTE device_type;
-    UBYTE last_error[5];
+    UBYTE last_error[6];
     BOOL  primary;
     BOOL  present;
     UWORD change_count;

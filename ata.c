@@ -146,7 +146,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
     if (!ata_wait_drq(unit)) {
-        if (*unit->drive->status_command & ata_flag_error) {
+        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
         Warn("IDENTIFY Status: Error\n");
         Warn("last_error: %08lx\n",&unit->last_error[0]);
         unit->last_error[0] = *unit->drive->error_features;
@@ -335,12 +335,13 @@ if (direction == READ) {
             *actual += unit->blockSize;
         }
 
-        if (*unit->drive->status_command & ata_flag_error) {
+        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             unit->last_error[0] = unit->drive->error_features[0];
             unit->last_error[1] = unit->drive->lbaHigh[0];
             unit->last_error[2] = unit->drive->lbaMid[0];
             unit->last_error[3] = unit->drive->lbaLow[0];
             unit->last_error[4] = unit->drive->status_command[0];
+            unit->last_error[5] = unit->drive->devHead[0];
 
             Info("ATA ERROR!!!");
             Info("last_error: %08lx\n",unit->last_error);
