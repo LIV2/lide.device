@@ -55,14 +55,25 @@ char const device_id_string[] = DEVICE_ID_STRING;
 char * set_dev_name(struct DeviceBase *dev) {
     struct ExecBase *SysBase = dev->SysBase;
 
-    ULONG device_prefix[] = {'2nd.', '3rd.', '4th.', '5th.'};
+    ULONG device_prefix[] = {' nd.', ' rd.', ' th.'};
     char * devName = (device_name + 4); // Start with just the base device name, no prefix
 
     /* Prefix the device name if a device with the same name already exists */
-    for (int i=0; i<4; i++) {
+    for (int i=0; i<8; i++) {
         if (FindName(&SysBase->DeviceList,devName)) {
             if (i==0) devName = device_name;
-            *(ULONG *)devName = device_prefix[i]; // Add prefix to start of device name string in a hacky way
+            switch (i) {
+                case 0:
+                    *(ULONG *)devName = device_prefix[0];
+                    break;
+                case 1:
+                    *(ULONG *)devName = device_prefix[1];
+                    break;
+                default:
+                    *(ULONG *)devName = device_prefix[2];
+                    break;
+            }
+            *(char *)devName = '2' + i;
         } else {
             Info("Device name: %s\n",devName);
             return devName;
@@ -150,16 +161,15 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 #endif
-    struct ConfigDev *cd, *next;
+    struct ConfigDev *cd = NULL;
     // Claim our boards until MAX_UNITS is hit
-    for (cd = NULL; (next = FindConfigDev(cd,MANUF_ID,DEV_ID)) != NULL; cd = next)
+
+    cd = FindConfigDev(NULL,MANUF_ID,DEV_ID);
+    while (cd != NULL)
     {
-        if ((cd = FindConfigDev(NULL,MANUF_ID,DEV_ID)) == NULL) {
-            Cleanup(dev);
-            return NULL;
-        }
 
         if (cd->cd_Flags & CDF_CONFIGME) {
+            Info("Checking boards.. %08lx\n",cd->cd_BoardAddr);
             cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
@@ -180,8 +190,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                     dev->num_units++;
                 }
             }
-            if (dev->num_units == MAX_UNITS) break;
+            break;
         }
+        cd = FindConfigDev(cd,MANUF_ID,DEV_ID);
     }
 
     Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
@@ -295,7 +306,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
     geometry->dg_SectorSize   = unit->blockSize;
-    geometry->dg_TotalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
+    geometry->dg_TotalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack) - 1;
     geometry->dg_Cylinders    = unit->cylinders;
     geometry->dg_CylSectors   = (unit->sectorsPerTrack * unit->heads);
     geometry->dg_Heads        = unit->heads;
@@ -364,7 +375,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
-    Trace("Command %04x%04x\n",ioreq->io_Command);
+    Info("Command %ld\n",ioreq->io_Command);
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:

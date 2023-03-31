@@ -109,7 +109,7 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
     }
 #endif
 
-    Trace("wait_drq\n");
+    //Trace("wait_drq\n");
     
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_drq | ata_flag_busy | ata_flag_error)) == ata_flag_drq) return true;
@@ -223,7 +223,17 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->heads           = *((UWORD *)buf + ata_identify_heads);
     unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
     unit->blockSize       = *((UWORD *)buf + ata_identify_sectorsize);
+    unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
     unit->blockShift      = 0;
+    Info("Logical sectors: %ld\n",unit->logicalSectors);
+    if (unit->logicalSectors >= 16514064) {
+        // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
+        // In this case generate a new Cylinders value
+        unit->heads = 16;
+        unit->sectorsPerTrack = 255;
+        unit->cylinders = (unit->logicalSectors / (16*255));
+        Info("Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
+    }
 
     // It's faster to shift than divide
     // Figure out how many shifts are needed for the equivalent divide
@@ -267,6 +277,8 @@ if (direction == READ) {
     if (count == 0) return TDERR_TooFewSecs;
 
     BYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+
+    // THIS IS A PROBLEM! TRANSFERS NEAR THE BOUNDARY WILL BLOW UP!
     *unit->drive->devHead        = (UBYTE)(drvSel | ((lba >> 24) & 0x0F));
 
     Trace("Request sector count: %ld\n",count);
@@ -329,7 +341,7 @@ if (direction == READ) {
 
             Info("ATA ERROR!!!");
             Info("last_error: %08lx\n",unit->last_error);
-            Info("LBA: %ld, LastLBA: %ld\n",lba,(unit->sectorsPerTrack * unit->cylinders * unit->heads));
+            Info("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
             return TDERR_NotSpecified;
         }
 

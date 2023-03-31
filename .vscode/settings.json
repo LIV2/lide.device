@@ -15,7 +15,9 @@
         "resident.h": "c",
         "alib.h": "c",
         "timer.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "idetask.h": "c",
+        "td64.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

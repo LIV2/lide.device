@@ -22,8 +22,8 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
-    UBYTE  *data    = (APTR)scsi_command->scsi_Data;
-    UBYTE  *command = (APTR)scsi_command->scsi_Command;
+    UBYTE *data    = (APTR)scsi_command->scsi_Data;
+    UBYTE *command = (APTR)scsi_command->scsi_Command;
 
     ULONG lba;
     ULONG count;
@@ -125,7 +125,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
             }
 
-            ((struct SCSI_CAPACITY_10 *)data)->lba = ((unit->sectorsPerTrack * unit->cylinders * unit->heads) - 1);
+            ((struct SCSI_CAPACITY_10 *)data)->lba = (unit->logicalSectors) - 1;
             ((struct SCSI_CAPACITY_10 *)data)->block_size = unit->blockSize;
             scsi_command->scsi_Actual = 8;
             error = 0;
@@ -148,12 +148,14 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
             count  = ((struct SCSI_CDB_10 *)command)->length;
 
 do_scsi_transfer:
-           if (data == NULL) {
+            Info("LBA: %ld\n",lba);
+            if (data == NULL || (lba + count) > (unit->logicalSectors - 1)) {
                 error = IOERR_BADADDRESS;
                 break;
             }
 
-            error  = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction);
+            error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction);
+            Info("Returns: %ld\n",error);
             break;
 
         default:
@@ -164,7 +166,11 @@ do_scsi_transfer:
     ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
-    if (error != 0) scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
+    if (error != 0) {
+        scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
+    } else {
+        scsi_command->scsi_Status = 0;
+    }
     scsi_command->scsi_SenseActual = 0; // TODO: Add Sense data
 }
 
@@ -223,6 +229,12 @@ void __attribute__((noreturn)) ide_task () {
                     blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
                     count = (ioreq->io_Length >> blockShift);
+
+                    if ((lba + count) > (unit->logicalSectors - 1)) {
+                        ioreq->io_Error = IOERR_BADADDRESS;
+                        break;
+                    }
+
                     ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     break;
 

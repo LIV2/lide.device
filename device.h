@@ -29,17 +29,18 @@ struct IDEUnit {
     struct timerequest *TimeReq;
     volatile struct Drive *drive;
     UBYTE unitNum;
-    BOOL  primary;
-    BOOL  present;
     UBYTE channel;
     UBYTE device_type;
-    ULONG change_count;
+    UBYTE last_error[5];
+    BOOL  primary;
+    BOOL  present;
+    UWORD change_count;
     UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
     UWORD blockSize;
     UWORD blockShift;
-    UBYTE last_error[5];
+    ULONG logicalSectors;
 };
 
 struct DeviceBase {

@@ -1,6 +1,6 @@
-#define DBG_INFO  0
-#define DBG_WARN  1
-#define DBG_TRACE 2
+#define DBG_INFO  1
+#define DBG_WARN  2
+#define DBG_TRACE 3
 
 #if DEBUG
 #include <clib/debug_protos.h>
