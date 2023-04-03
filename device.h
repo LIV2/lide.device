@@ -34,6 +34,8 @@ struct IDEUnit {
     UBYTE last_error[6];
     BOOL  primary;
     BOOL  present;
+    BOOL  atapi;
+    UWORD atapi_byteCount;
     UWORD change_count;
     UWORD cylinders;
     UWORD heads;

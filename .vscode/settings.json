@@ -17,7 +17,8 @@
         "timer.h": "c",
         "stdbool.h": "c",
         "idetask.h": "c",
-        "td64.h": "c"
+        "td64.h": "c",
+        "string.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

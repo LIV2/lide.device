@@ -183,6 +183,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 dev->units[i].change_count = 1;
                 dev->units[i].device_type  = DG_DIRECT_ACCESS;
                 dev->units[i].present      = false;
+                dev->units[i].atapi        = false;
 
                 Warn("testing unit %08lx\n",i);
 
@@ -306,14 +307,14 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
     geometry->dg_SectorSize   = unit->blockSize;
-    geometry->dg_TotalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack) - 1;
+    geometry->dg_TotalSectors = unit->logicalSectors;
     geometry->dg_Cylinders    = unit->cylinders;
     geometry->dg_CylSectors   = (unit->sectorsPerTrack * unit->heads);
     geometry->dg_Heads        = unit->heads;
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
     geometry->dg_DeviceType   = unit->device_type;
-    geometry->dg_Flags        = 0;
+    geometry->dg_Flags        = (unit->device_type == DG_CDROM) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Error = 0;
     ioreq->io_Actual = sizeof(struct DriveGeometry);
@@ -400,7 +401,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             break;
 
         case TD_PROTSTATUS:
-            ioreq->io_Actual = 0; // Not protected
+            ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->atapi) ? 1 : 0 ; // Not protected
             ioreq->io_Error  = 0;
             break;
 
@@ -495,6 +496,6 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
     }
-    mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
+    //mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
     return (struct Library *)mydev;
 }

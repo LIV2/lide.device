@@ -13,12 +13,43 @@
 #include "debug.h"
 #include "device.h"
 #include "ata.h"
+#include "scsi.h"
+#include <string.h>
 
 #define WAIT_TIMEOUT_MS 500
 
 void MyGetSysTime(struct timerequest *tr) {
    tr->tr_node.io_Command = TR_GETSYSTIME;
    DoIO((struct IORequest *)tr);
+}
+
+BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction)
+{
+    struct SCSI_CDB_10 cdb;
+    struct SCSICmd atapi_cmd;
+
+    if (count == 0) {
+        return IOERR_BADLENGTH;
+    }
+
+    BYTE ret = 0;
+    atapi_cmd.scsi_Command = (UBYTE *)&cdb;
+    atapi_cmd.scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+    atapi_cmd.scsi_CmdActual = 0;
+    atapi_cmd.scsi_Flags = (direction == READ) ? SCSIF_READ : SCSIF_WRITE;
+    atapi_cmd.scsi_Data = io_Data;
+    atapi_cmd.scsi_Length = count * unit->blockSize;
+
+    cdb.operation = (direction == READ) ? SCSI_CMD_READ_10 : SCSI_CMD_WRITE_10;
+    cdb.control = 0;
+    cdb.flags   = 0;
+    cdb.group   = 0;
+    cdb.lba     = lba;
+    cdb.length  = (UWORD)count;
+
+    ret = atapi_packet(&atapi_cmd,unit);
+    *io_Actual = atapi_cmd.scsi_Actual;
+    return ret;
 }
 
 /**
@@ -110,10 +141,16 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
     }
 #endif
 
-    //Trace("wait_drq\n");
+    Trace("wait_drq\n");
     
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_drq | ata_flag_busy | ata_flag_error)) == ata_flag_drq) return true;
+        if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_error) != 0) {
+            Info("ATAPI Error: %02lx\n",(*(volatile BYTE *)unit->drive->status_command));
+            Info("ATAPI Error reg: %02lx\n",(*(volatile BYTE *)unit->drive->error_features));
+            Info("ATAPI Interrupt reg: %02lx\n",(*(volatile BYTE *)unit->drive->sectorCount));
+            return false;
+        }
         if (unit->present == false) {
 #ifndef NOTIMER
             MyGetSysTime(tr);
@@ -169,6 +206,40 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     return true;
 }
 
+
+bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
+    *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    *unit->drive->sectorCount = 0;
+    *unit->drive->lbaLow  = 0;
+    *unit->drive->lbaMid  = 0;
+    *unit->drive->lbaHigh = 0;
+    *unit->drive->error_features = 0;
+    *unit->drive->status_command = ATAPI_CMD_IDENTIFY;
+
+    if (!ata_wait_drq(unit)) {
+        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+        Warn("IDENTIFY Status: Error\n");
+        Warn("last_error: %08lx\n",&unit->last_error[0]);
+        unit->last_error[0] = *unit->drive->error_features;
+        unit->last_error[1] = *unit->drive->lbaHigh;
+        unit->last_error[2] = *unit->drive->lbaMid;
+        unit->last_error[3] = *unit->drive->lbaLow;
+        unit->last_error[4] = *unit->drive->status_command;
+        }
+        return false;
+    }
+
+    if (buffer) {
+        UWORD read_data;
+        for (int i=0; i<256; i++) {
+            read_data = unit->drive->data[i];
+            buffer[i] = ((read_data >> 8) | (read_data << 8));
+        }
+    }
+
+    return true;
+}
+
 /**
  * ata_init_unit
  * 
@@ -177,8 +248,6 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  * returns false on error
 */
 bool ata_init_unit(struct IDEUnit *unit) {
-    struct ExecBase *SysBase = unit->SysBase;
-
     unit->cylinders       = 0;
     unit->heads           = 0;
     unit->sectorsPerTrack = 0;
@@ -187,7 +256,6 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     ULONG offset;
     UWORD *buf;
-
     bool dev_found = false;
 
     offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
@@ -210,29 +278,72 @@ bool ata_init_unit(struct IDEUnit *unit) {
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) // Allocate buffer for IDENTIFY result
         return false;
 
-    Trace("Send IDENTIFY\n");
-    if (ata_identify(unit,buf) == false) {
-        Warn("IDENTIFY Timeout\n");
+    Trace("IDENTIFY\n");
+    if (ata_identify(unit,buf) == true) {
+        Info("ATA Drive found!\n");
+
+        unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
+        unit->heads           = *((UWORD *)buf + ata_identify_heads);
+        unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
+        unit->blockSize       = *((UWORD *)buf + ata_identify_sectorsize);
+        unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
+        unit->blockShift      = 0;
+        Info("Logical sectors: %ld\n",unit->logicalSectors);
+        if (unit->logicalSectors >= 16514064) {
+            // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
+            // In this case generate a new Cylinders value
+            unit->heads = 16;
+            unit->sectorsPerTrack = 255;
+            unit->cylinders = (unit->logicalSectors / (16*255));
+            Info("Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
+        }
+    } else if (atapi_identify(unit,buf) == true) {
+        struct SCSICmd scsi_cmd;
+        struct SCSI_CDB_10 cdb;
+
+        if ((buf[0] & 0xC000) != 0x8000) {
+            Info("Not an ATAPI device.\n");
+            FreeMem(buf,512);
+            return false;
+        }
+
+        Info("ATAPI Drive found!\n");
+
+        unit->device_type     = (buf[0] >> 8) & 0x1F;
+        unit->atapi_byteCount = (buf[126]);
+
+        memset(&cdb,0,sizeof(struct SCSI_CDB_10));
+        cdb.operation = SCSI_CMD_READ_CAPACITY_10;
+
+        memset(&scsi_cmd,0,sizeof(struct SCSICmd));
+        scsi_cmd.scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+        scsi_cmd.scsi_CmdActual = 0;
+        scsi_cmd.scsi_Command   = (UBYTE *)&cdb;
+        scsi_cmd.scsi_Flags     = SCSIF_READ;
+        scsi_cmd.scsi_Data      = buf;
+        scsi_cmd.scsi_Length    = 8;
+        scsi_cmd.scsi_SenseData = NULL;
+
+        if ((atapi_packet(&scsi_cmd,unit) != 0)) {
+            Info("Atapi packet command failed!\n");
+            FreeMem(buf,512);
+            return false;
+        }
+
+        unit->cylinders       = 0;
+        unit->heads           = 0;
+        unit->sectorsPerTrack = 0;
+        unit->logicalSectors  = (*(ULONG *)buf) + 1;
+        unit->blockSize       = *((ULONG *)buf + 1);
+        unit->atapi           = true;
+
+        Info("LBAs %ld Blocksize: %ld\n",unit->logicalSectors,*((ULONG *)buf + 1));
+
+    } else {
+        Warn("IDENTIFY failed\n");
         // Command failed with a timeout or error
         FreeMem(buf,512);
         return false;
-    }
-    Info("Drive found!\n");
-
-    unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
-    unit->heads           = *((UWORD *)buf + ata_identify_heads);
-    unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
-    unit->blockSize       = *((UWORD *)buf + ata_identify_sectorsize);
-    unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
-    unit->blockShift      = 0;
-    Info("Logical sectors: %ld\n",unit->logicalSectors);
-    if (unit->logicalSectors >= 16514064) {
-        // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
-        // In this case generate a new Cylinders value
-        unit->heads = 16;
-        unit->sectorsPerTrack = 255;
-        unit->cylinders = (unit->logicalSectors / (16*255));
-        Info("Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
     }
 
     // It's faster to shift than divide
@@ -246,11 +357,79 @@ bool ata_init_unit(struct IDEUnit *unit) {
     while ((unit->blockSize >> unit->blockShift) > 1) {
         unit->blockShift++;
     }
-
+    Info("Blockshift: %ld",unit->blockShift);
     unit->present = true;
 
     if (buf) FreeMem(buf,512);
     return true;
+}
+
+BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    Trace("atapi_packet\n");
+    ULONG byte_count;
+    UWORD data;
+    ULONG count;
+
+    if (cmd->scsi_CmdLength > 12) return HFERR_BadStatus;
+    BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
+
+    if (*unit->drive->devHead != drvSelHead) {
+        *unit->drive->devHead = drvSelHead;
+        if (!ata_wait_not_busy(unit))
+            return HFERR_SelTimeout;
+    }
+
+    *unit->drive->sectorCount    = 0;
+    *unit->drive->lbaLow         = 0;
+    *unit->drive->lbaMid         = cmd->scsi_Length;
+    *unit->drive->lbaHigh        = cmd->scsi_Length >> 8;
+    *unit->drive->error_features = 0;
+    *unit->drive->status_command = ATAPI_CMD_PACKET;
+
+    if (!ata_wait_drq(unit))
+        return IOERR_UNITBUSY;
+
+    for (int i=0; i < (cmd->scsi_CmdLength/2); i++)
+    {
+        data = *((UWORD *)cmd->scsi_Command + i);
+        *unit->drive->data = data;
+        Info("CMD Word: %ld\n",data);
+    }
+    if (cmd->scsi_CmdLength < 12)
+    {
+        for (int i = cmd->scsi_CmdLength; i < 12; i+=2) {
+            *unit->drive->data = 0x00;
+        }
+    }
+    cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+
+    byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
+
+    count = cmd->scsi_Length;
+
+    while ((*unit->drive->sectorCount & 1) == 1) {
+        Info("*");
+    }
+
+    Info("Do XFER count %ld len %ld\n",count,cmd->scsi_Length);
+    while (count > 0) {
+        for (int i=0; i < cmd->scsi_Length / 2; i++) {
+            if ((i % byte_count) == 0) {
+                if (!ata_wait_drq(unit))
+                    return IOERR_UNITBUSY;
+            }
+            if (cmd->scsi_Flags & SCSIF_READ) {
+                *(cmd->scsi_Data + i) = *unit->drive->data;
+                Trace("%04lx\n",cmd->scsi_Data[i]);
+            } else {
+                *unit->drive->data = cmd->scsi_Data[i];
+            }
+            cmd->scsi_Actual +=2;
+            count -= 2;
+        }
+    }
+
+    return 0;
 }
 
 /**
@@ -266,9 +445,9 @@ bool ata_init_unit(struct IDEUnit *unit) {
 */
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
 if (direction == READ) {
-    Trace("ata_read");
+    Trace("ata_read\n");
 } else {
-    Trace("ata_write");
+    Trace("ata_write\n");
 }
     ULONG subcount = 0;
     ULONG offset = 0;

@@ -27,7 +27,7 @@
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
 {
     struct SCSI_FIXED_SENSE *sense = (struct SCSI_FIXED_SENSE *)command->scsi_SenseData;
-    if (error == 0 || sense == NULL || (command->scsi_SenseLength < sizeof(struct SCSI_FIXED_SENSE)))
+    if (!(command->scsi_Flags & SCSIF_AUTOSENSE) || error == 0 || sense == NULL || (command->scsi_SenseLength < sizeof(struct SCSI_FIXED_SENSE)))
     {
         command->scsi_SenseActual = 0;
         return;

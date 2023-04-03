@@ -33,9 +33,16 @@
 #define ata_flag_drq   (1<<3)
 #define ata_flag_error (1<<0)
 
-#define ATA_CMD_IDENTIFY 0xEC
-#define ATA_CMD_READ     0x20
-#define ATA_CMD_WRITE    0x30
+
+#define atapi_flag_cd (1<<0)
+#define atapi_flag_io (1<<1)
+
+
+#define ATA_CMD_IDENTIFY   0xEC
+#define ATA_CMD_READ       0x20
+#define ATA_CMD_WRITE      0x30
+#define ATAPI_CMD_PACKET   0xA0
+#define ATAPI_CMD_IDENTIFY 0xA1
 
 // Identify data word offsets
 #define ata_identify_cylinders       1
@@ -64,6 +71,7 @@ BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct ID
 void read_fast (void *, void *);
 void write_fast (void *, void *);
 
-
+BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
+BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
 
 #endif

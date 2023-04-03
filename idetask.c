@@ -36,148 +36,172 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     Trace("Command %ld\n",*scsi_command->scsi_Command);
 
-    switch (scsi_command->scsi_Command[0]) {
-        case SCSI_CMD_TEST_UNIT_READY:
-            scsi_command->scsi_Actual = 0;
-            error = 0;
-            break;
-
-        case SCSI_CMD_INQUIRY:
-            ((struct SCSI_Inquiry *)data)->peripheral_type = unit->device_type;
-            ((struct SCSI_Inquiry *)data)->removable_media = 0;
-            ((struct SCSI_Inquiry *)data)->version         = 2;
-            ((struct SCSI_Inquiry *)data)->response_format = 2;
-            ((struct SCSI_Inquiry *)data)->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
-
-            UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
-            if (!identity) {
-                error = TDERR_NoMem;
-                scsi_sense(scsi_command,0,0,error);
+    if (unit->atapi == false)
+    {
+        switch (scsi_command->scsi_Command[0]) {
+            case SCSI_CMD_TEST_UNIT_READY:
+                scsi_command->scsi_Actual = 0;
+                error = 0;
                 break;
-            }
-            if (!(ata_identify(unit,identity))) {
-                error = HFERR_SelTimeout;
-                scsi_sense(scsi_command,0,0,error);
-                break;
-            }
-            CopyMem(&identity[ata_identify_model],&((struct SCSI_Inquiry *)data)->vendor,24);
-            CopyMem(&identity[ata_identify_fw_rev],&((struct SCSI_Inquiry *)data)->revision,4);
-            CopyMem(&identity[ata_identify_serial],&((struct SCSI_Inquiry *)data)->serial,8);
-            FreeMem(identity,512);
-            scsi_command->scsi_Actual = scsi_command->scsi_Length;
-            error = 0;
-            break;
 
-        case SCSI_CMD_MODE_SENSE_6:
-            if (data == NULL) {
-                error = IOERR_BADADDRESS;
-                break;
-            }
+            case SCSI_CMD_INQUIRY:
+                ((struct SCSI_Inquiry *)data)->peripheral_type = unit->device_type;
+                ((struct SCSI_Inquiry *)data)->removable_media = 0;
+                ((struct SCSI_Inquiry *)data)->version         = 2;
+                ((struct SCSI_Inquiry *)data)->response_format = 2;
+                ((struct SCSI_Inquiry *)data)->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
 
-            UBYTE page    = command[2] & 0x3F;
-            UBYTE subpage = command[3];
-
-            if (subpage != 0) {
-                error = HFERR_BadStatus;
-                scsi_sense(scsi_command,0,0,error);
-                break;
-            }
-
-            UBYTE *data_length = data;   // Mode data length
-            data[1] = unit->device_type; // Mode parameter: Media type
-            data[2] = 0;                 // DPOFUA
-            data[3] = 0;                 // Block descriptor length
-            
-            *data_length = 3;
-
-            UBYTE idx = 4;
-            if (page == 0x3F || page == 0x03) {
-                data[idx++] = 0x03; // Page Code: Format Parameters
-                data[idx++] = 0x16; // Page length
-                for (int i=0; i <8; i++) {
-                    data[idx++] = 0;
+                UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
+                if (!identity) {
+                    error = TDERR_NoMem;
+                    scsi_sense(scsi_command,0,0,error);
+                    break;
                 }
-                data[idx++] = (unit->sectorsPerTrack >> 8);
-                data[idx++] = unit->sectorsPerTrack;
-                data[idx++] = (unit->blockSize >> 8);
-                data[idx++] = unit->blockSize;
-                for (int i=0; i<12; i++) {
-                    data[idx++] = 0;
+                if (!(ata_identify(unit,identity))) {
+                    error = HFERR_SelTimeout;
+                    scsi_sense(scsi_command,0,0,error);
+                    break;
                 }
-            }
+                CopyMem(&identity[ata_identify_model],&((struct SCSI_Inquiry *)data)->vendor,24);
+                CopyMem(&identity[ata_identify_fw_rev],&((struct SCSI_Inquiry *)data)->revision,4);
+                CopyMem(&identity[ata_identify_serial],&((struct SCSI_Inquiry *)data)->serial,8);
+                FreeMem(identity,512);
+                scsi_command->scsi_Actual = scsi_command->scsi_Length;
+                error = 0;
+                break;
 
-            if (page == 0x3F || page == 0x04) {
-                data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
-                data[idx++] = 0x16; // Page length
-                data[idx++] = 0;
-                data[idx++] = (unit->cylinders >> 8);
-                data[idx++] = unit->cylinders;
-                data[idx++] = unit->heads;
-                for (int i=0; i<19; i++) {
-                    data[idx++] = 0;
+            case SCSI_CMD_MODE_SENSE_6:
+                if (data == NULL) {
+                    error = IOERR_BADADDRESS;
+                    break;
                 }
-            }
 
-            *data_length += (idx + 1);
-            error = 0;
+                UBYTE page    = command[2] & 0x3F;
+                UBYTE subpage = command[3];
 
-            scsi_command->scsi_Actual = *data_length;
-            break;
+                if (subpage != 0) {
+                    error = HFERR_BadStatus;
+                    scsi_sense(scsi_command,0,0,error);
+                    break;
+                }
 
-        case SCSI_CMD_READ_CAPACITY_10:
-            if (data == NULL) {
-                error = IOERR_BADADDRESS;
-                scsi_sense(scsi_command,0,0,error);
+                UBYTE *data_length = data;   // Mode data length
+                data[1] = unit->device_type; // Mode parameter: Media type
+                data[2] = 0;                 // DPOFUA
+                data[3] = 0;                 // Block descriptor length
+                
+                *data_length = 3;
+
+                UBYTE idx = 4;
+                if (page == 0x3F || page == 0x03) {
+                    data[idx++] = 0x03; // Page Code: Format Parameters
+                    data[idx++] = 0x16; // Page length
+                    for (int i=0; i <8; i++) {
+                        data[idx++] = 0;
+                    }
+                    data[idx++] = (unit->sectorsPerTrack >> 8);
+                    data[idx++] = unit->sectorsPerTrack;
+                    data[idx++] = (unit->blockSize >> 8);
+                    data[idx++] = unit->blockSize;
+                    for (int i=0; i<12; i++) {
+                        data[idx++] = 0;
+                    }
+                }
+
+                if (page == 0x3F || page == 0x04) {
+                    data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
+                    data[idx++] = 0x16; // Page length
+                    data[idx++] = 0;
+                    data[idx++] = (unit->cylinders >> 8);
+                    data[idx++] = unit->cylinders;
+                    data[idx++] = unit->heads;
+                    for (int i=0; i<19; i++) {
+                        data[idx++] = 0;
+                    }
+                }
+
+                *data_length += (idx + 1);
+                error = 0;
+
+                scsi_command->scsi_Actual = *data_length;
                 break;
-            }
 
-            ((struct SCSI_CAPACITY_10 *)data)->lba = (unit->logicalSectors) - 1;
-            ((struct SCSI_CAPACITY_10 *)data)->block_size = unit->blockSize;
-            scsi_command->scsi_Actual = 8;
-            error = 0;
-            break;
+            case SCSI_CMD_READ_CAPACITY_10:
+                if (data == NULL) {
+                    error = IOERR_BADADDRESS;
+                    scsi_sense(scsi_command,0,0,error);
+                    break;
+                }
 
-        case SCSI_CMD_READ_6:
-            direction = READ;
-        case SCSI_CMD_WRITE_6:
-            lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
-                       ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
-                       ((struct SCSI_CDB_6 *)command)->lba_low);
-
-            count = ((struct SCSI_CDB_6 *)command)->length;
-            goto do_scsi_transfer;
-
-        case SCSI_CMD_READ_10:
-            direction = READ;
-        case SCSI_CMD_WRITE_10:
-            lba    = ((struct SCSI_CDB_10 *)command)->lba;
-            count  = ((struct SCSI_CDB_10 *)command)->length;
-
-do_scsi_transfer:
-            Info("LBA: %ld\n",lba);
-            if (data == NULL || (lba + count) > (unit->logicalSectors - 1)) {
-                error = IOERR_BADADDRESS;
-                scsi_sense(scsi_command,lba,count,error);
+                ((struct SCSI_CAPACITY_10 *)data)->lba = (unit->logicalSectors) - 1;
+                ((struct SCSI_CAPACITY_10 *)data)->block_size = unit->blockSize;
+                scsi_command->scsi_Actual = 8;
+                error = 0;
                 break;
-            }
 
-            if ((error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction)) != 0 ) {
-                if (error == TDERR_NotSpecified) {
-                    scsi_sense(scsi_command,lba,
-                    (unit->last_error[0] << 8 | unit->last_error[4])
-                    ,error);
-                } else {
+            case SCSI_CMD_READ_6:
+                direction = READ;
+            case SCSI_CMD_WRITE_6:
+                lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
+                        ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
+                        ((struct SCSI_CDB_6 *)command)->lba_low);
+
+                count = ((struct SCSI_CDB_6 *)command)->length;
+                goto do_scsi_transfer;
+
+            case SCSI_CMD_READ_10:
+                direction = READ;
+            case SCSI_CMD_WRITE_10:
+                lba    = ((struct SCSI_CDB_10 *)command)->lba;
+                count  = ((struct SCSI_CDB_10 *)command)->length;
+
+    do_scsi_transfer:
+                Info("LBA: %ld\n",lba);
+                if (data == NULL || (lba + count) > (unit->logicalSectors - 1)) {
+                    error = IOERR_BADADDRESS;
                     scsi_sense(scsi_command,lba,count,error);
+                    break;
                 }
-            }
-            break;
 
-        default:
-            error = IOERR_NOCMD;
-            scsi_sense(scsi_command,0,0,error);
-            break;
+                if ((error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction)) != 0 ) {
+                    if (error == TDERR_NotSpecified) {
+                        scsi_sense(scsi_command,lba,
+                        (unit->last_error[0] << 8 | unit->last_error[4])
+                        ,error);
+                    } else {
+                        scsi_sense(scsi_command,lba,count,error);
+                    }
+                }
+                break;
+
+            default:
+                error = IOERR_NOCMD;
+                scsi_sense(scsi_command,0,0,error);
+                break;
+        }
+    } else {
+        if (scsi_command->scsi_Command[0] == 0x1a) {
+            struct SCSI_CDB_10 *newcdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR);
+            struct SCSI_CDB_6  *oldcdb = (struct SCSI_CDB_6  *)scsi_command->scsi_Command;
+            newcdb->operation = 0x5A;
+            newcdb->flags     = oldcdb->lba_high;
+            newcdb->lba       = oldcdb->lba_mid << 24 | oldcdb->lba_low << 16;
+            newcdb->group = 0;
+            newcdb->length = oldcdb->length;
+            scsi_command->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+            scsi_command->scsi_Command   = newcdb; 
+            error = atapi_packet(scsi_command,unit);
+
+            scsi_command->scsi_Command = oldcdb;
+            scsi_command->scsi_CmdLength = sizeof(struct SCSI_CDB_6);
+            FreeMem(newcdb,sizeof(struct SCSI_CDB_10));
+        } else {
+            error = atapi_packet(scsi_command,unit);
+        }
+        if (error) scsi_command->scsi_Status = 2;
     }
 
+    Info("Scsi return: %02lx",error);
     ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
@@ -206,7 +230,6 @@ void __attribute__((noreturn)) ide_task () {
     ULONG lba;
     ULONG count;
     enum xfer_dir direction = WRITE;
-
 
     Info("Task: waiting for init\n");
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
@@ -246,12 +269,16 @@ void __attribute__((noreturn)) ide_task () {
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
                     count = (ioreq->io_Length >> blockShift);
 
-                    if ((lba + count) > (unit->logicalSectors - 1)) {
+                    if ((lba + count) > (unit->logicalSectors)) {
                         ioreq->io_Error = IOERR_BADADDRESS;
                         break;
                     }
 
-                    ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                    if (unit->atapi == true) {
+                        ioreq->io_Error = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                    } else {
+                        ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                    }
                     break;
 
                 /* SCSI Direct */
