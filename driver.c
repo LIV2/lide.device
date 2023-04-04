@@ -276,6 +276,26 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
+    UBYTE lun = unitnum / 10;
+    unitnum = (unitnum % 10);
+
+    if (lun != 0) {
+        // No LUNs for IDE drives
+        ioreq->io_Error = TDERR_BadUnitNum;
+        return;
+    }
+
+    if (unitnum >= MAX_UNITS) {
+        ioreq->io_Error = IOERR_OPENFAIL;
+        return;
+    }
+    
+    if (dev->units[unitnum].present == false) {
+        ioreq->io_Error = TDERR_BadUnitNum;
+        return;
+    }
+    
+
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
     ioreq->io_Error = IOERR_OPENFAIL;
 
@@ -284,11 +304,6 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         return;
     }
 
-
-    if (unitnum >= MAX_UNITS || dev->units[unitnum].present == false) {
-        ioreq->io_Error = TDERR_BadUnitNum;
-        return;
-    }
 
     ioreq->io_Unit = (struct Unit *)&dev->units[unitnum];
 
@@ -496,6 +511,6 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
     }
-    //mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
+    mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
     return (struct Library *)mydev;
 }

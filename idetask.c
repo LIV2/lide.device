@@ -34,10 +34,12 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     enum xfer_dir direction = WRITE;
 
-    Trace("Command %ld\n",*scsi_command->scsi_Command);
+    Trace("SCSI: Command %ld\n",*scsi_command->scsi_Command);
 
     if (unit->atapi == false)
     {
+        // Non-ATAPI drives - Translate SCSI CMD to ATA
+
         switch (scsi_command->scsi_Command[0]) {
             case SCSI_CMD_TEST_UNIT_READY:
                 scsi_command->scsi_Actual = 0;
@@ -140,7 +142,6 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_READ_6:
-                direction = READ;
             case SCSI_CMD_WRITE_6:
                 lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
                         ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
@@ -150,18 +151,18 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 goto do_scsi_transfer;
 
             case SCSI_CMD_READ_10:
-                direction = READ;
             case SCSI_CMD_WRITE_10:
                 lba    = ((struct SCSI_CDB_10 *)command)->lba;
                 count  = ((struct SCSI_CDB_10 *)command)->length;
 
     do_scsi_transfer:
-                Info("LBA: %ld\n",lba);
-                if (data == NULL || (lba + count) > (unit->logicalSectors - 1)) {
+                if (data == NULL || (lba + count) >= unit->logicalSectors) {
                     error = IOERR_BADADDRESS;
                     scsi_sense(scsi_command,lba,count,error);
                     break;
                 }
+
+                direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
 
                 if ((error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction)) != 0 ) {
                     if (error == TDERR_NotSpecified) {
@@ -180,34 +181,44 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
         }
     } else {
-        if (scsi_command->scsi_Command[0] == 0x1a) {
-            struct SCSI_CDB_10 *newcdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR);
-            struct SCSI_CDB_6  *oldcdb = (struct SCSI_CDB_6  *)scsi_command->scsi_Command;
-            newcdb->operation = 0x5A;
-            newcdb->flags     = oldcdb->lba_high;
-            newcdb->lba       = oldcdb->lba_mid << 24 | oldcdb->lba_low << 16;
-            newcdb->group = 0;
-            newcdb->length = oldcdb->length;
-            scsi_command->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
-            scsi_command->scsi_Command   = newcdb; 
+        // SCSI command handling for ATAPI Drives
+
+        if (scsi_command->scsi_Command[0] == SCSI_CMD_MODE_SENSE_6) { // Translate Mode Sense (6) to Mode Sense (10)
+            UBYTE newcdb[10];
+            UBYTE *oldcdb = scsi_command->scsi_Command;
+            UWORD oldCmdLength = scsi_command->scsi_CmdLength;
+
+            memset(&newcdb,0,10);
+            newcdb[0] = 0x5A;
+            //newcdb[1] = oldcdb[1];
+            newcdb[2] = oldcdb[2];
+            //newcdb[3] = oldcdb[3];
+            newcdb[8] = oldcdb[4];
+            //newcdb[9] = oldcdb[5];
+
+            scsi_command->scsi_CmdLength = 10;
+            scsi_command->scsi_Command   = (UBYTE *)&newcdb; 
             error = atapi_packet(scsi_command,unit);
 
             scsi_command->scsi_Command = oldcdb;
-            scsi_command->scsi_CmdLength = sizeof(struct SCSI_CDB_6);
-            FreeMem(newcdb,sizeof(struct SCSI_CDB_10));
+            scsi_command->scsi_CmdLength = oldCmdLength;
+
         } else {
             error = atapi_packet(scsi_command,unit);
         }
         if (error) scsi_command->scsi_Status = 2;
     }
 
-    Info("Scsi return: %02lx",error);
+    // SCSI Command complete, handle any errors
+
+    Trace("SCSI: return: %02lx",error);
+    
     ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
     if (error != 0) {
-        Warn("SCSI Error: %ld\n",error);
-        Warn("SCSI Command: %ld\n",scsi_command->scsi_Command);
+        Warn("SCSI: Error: %ld\n",error);
+        Warn("SCSI: Command: %ld\n",scsi_command->scsi_Command);
         scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
     } else {
         scsi_command->scsi_Status = 0;
@@ -247,7 +258,7 @@ void __attribute__((noreturn)) ide_task () {
 
     while (1) {
         // Main loop, handle IO Requests as they comee in.
-        Trace("WaitPort()\n");
+        Trace("Task: WaitPort()\n");
         Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
@@ -288,7 +299,7 @@ void __attribute__((noreturn)) ide_task () {
 
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
-                    Info("CMD_DIE: Shutting down IDE Task\n");
+                    Info("Task: CMD_DIE: Shutting down IDE Task\n");
                     DeletePort(mp);
                     dev->TaskMP = NULL;
                     dev->Task = NULL;

@@ -37,6 +37,10 @@
 #define atapi_flag_cd (1<<0)
 #define atapi_flag_io (1<<1)
 
+#define atapi_err_abort (1<<2)
+#define atapi_err_eom   (1<<1)
+#define atapi_err_len   (1<<0)
+
 
 #define ATA_CMD_IDENTIFY   0xEC
 #define ATA_CMD_READ       0x20
@@ -67,11 +71,11 @@ enum xfer_dir {
 
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
-BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir);
-void read_fast (void *, void *);
-void write_fast (void *, void *);
+BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);
+void ata_read_fast (void *, void *);
+void ata_write_fast (void *, void *);
 
-BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
+bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
-
+BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
 #endif
