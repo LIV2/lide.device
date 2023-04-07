@@ -173,18 +173,19 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-
+            
             for (BYTE i=0; i<2; i++) {
-                dev->units[i].SysBase      = SysBase;
-                dev->units[i].TimeReq      = dev->TimeReq;
-                dev->units[i].cd           = cd;
-                dev->units[i].primary      = ((i%2) == 1) ? false : true;
-                dev->units[i].channel      = ((i%4) < 2) ? 0 : 1;
-                dev->units[i].change_count = 1;
-                dev->units[i].device_type  = DG_DIRECT_ACCESS;
-                dev->units[i].present      = false;
-                dev->units[i].atapi        = false;
-
+                dev->units[i].SysBase        = SysBase;
+                dev->units[i].TimeReq        = dev->TimeReq;
+                dev->units[i].cd             = cd;
+                dev->units[i].primary        = ((i%2) == 1) ? false : true;
+                dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
+                dev->units[i].change_count   = 1;
+                dev->units[i].device_type    = DG_DIRECT_ACCESS;
+                dev->units[i].present        = false;
+                dev->units[i].atapi          = false;
+                dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i/2];
+                *dev->units[i].shadowDevHead = 0;
                 Warn("testing unit %08lx\n",i);
 
                 if (ata_init_unit(&dev->units[i])) {

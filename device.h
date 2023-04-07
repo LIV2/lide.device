@@ -43,6 +43,7 @@ struct IDEUnit {
     UWORD blockSize;
     UWORD blockShift;
     ULONG logicalSectors;
+    UBYTE *shadowDevHead;
 };
 
 struct DeviceBase {
@@ -60,6 +61,7 @@ struct DeviceBase {
     UBYTE    num_boards;
     UBYTE    num_units;
     struct   IDEUnit *units;
+    UBYTE    shadowDevHeads[MAX_UNITS/2];
 };
 
 
