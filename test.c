@@ -30,6 +30,20 @@ int main() {
     struct IDEUnit u;
 
     struct ConfigDev *cd = NULL;
+    struct MsgPort *TimerMP = NULL;
+    struct timerequest *TimeReq = NULL;
+
+    #ifndef NOTIMER
+        if ((TimerMP = CreatePort(NULL,0)) != NULL && (TimeReq = (struct timerequest *)CreateExtIO(TimerMP, sizeof(struct timerequest))) != NULL) {
+            if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)TimeReq,0)) {
+                Info("Failed to open timer.device\n");
+                return NULL;
+            }
+        } else {
+            Info("Failed to create Timer MP or Request.\n");
+            return NULL;
+        }
+    #endif
     // Claim our boards until MAX_UNITS is hit
     cd = FindConfigDev(NULL,MANUF_ID,DEV_ID);
     u.cd = cd;
@@ -37,11 +51,12 @@ int main() {
     u.TimeReq = NULL;
     u.primary = true;
     u.channel = 0;
-    u.change_count =1;
+    u.change_count = 1;
     u.device_type = 5;
-    u.present = true;
+    u.present = false;
     u.atapi = true;
     u.shadowDevHead = &shadowDevHead;
+    u.TimeReq = TimeReq;
 
     UWORD *buf;
     UWORD *buf2;

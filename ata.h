@@ -78,4 +78,6 @@ void ata_write_fast (void *, void *);
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
+UBYTE atapi_test_unit_ready(struct IDEUnit *unit);
+UBYTE atapi_request_sense(struct IDEUnit *unit);
 #endif

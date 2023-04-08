@@ -174,7 +174,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
             
-            for (BYTE i=0; i<2; i++) {
+            for (BYTE i=0; i<1; i++) {
                 dev->units[i].SysBase        = SysBase;
                 dev->units[i].TimeReq        = dev->TimeReq;
                 dev->units[i].cd             = cd;
@@ -412,7 +412,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             break;
 
         case TD_CHANGESTATE:
-            ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->present) ? 0 : 1;
+            ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
             ioreq->io_Error  = 0;
             break;
 

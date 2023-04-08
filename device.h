@@ -35,7 +35,7 @@ struct IDEUnit {
     BOOL  primary;
     BOOL  present;
     BOOL  atapi;
-    UWORD atapi_byteCount;
+    BOOL  mediumPresent;
     UWORD change_count;
     UWORD cylinders;
     UWORD heads;

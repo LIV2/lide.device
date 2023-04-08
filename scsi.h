@@ -1,4 +1,5 @@
 #define SCSI_CMD_TEST_UNIT_READY  0x00
+#define SCSI_CMD_REQUEST_SENSE    0x03
 #define SCSI_CMD_READ_6           0x08
 #define SCSI_CMD_WRITE_6          0x0A
 #define SCSI_CMD_INQUIRY          0x12

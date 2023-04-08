@@ -14,7 +14,8 @@
 #include "scsi.h"
 #include "string.h"
 
-#define WAIT_TIMEOUT_MS 500
+#define WAIT_TIMEOUT_MS 0
+#define WAIT_TIMEOUT_S  5
 #define ATAPI_POLL_TRIES 100
 
 void MyGetSysTime(struct timerequest *tr) {
@@ -42,7 +43,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit) {
     struct timerequest *tr = unit->TimeReq;
 
     then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-    then.tv_secs  = 0;
+    then.tv_secs  = WAIT_TIMEOUT_S;
     MyGetSysTime(tr);
     AddTime(&then,&tr->tr_time);
 #endif
@@ -50,6 +51,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit) {
 
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
+        wait(1000);
 #ifndef NOTIMER
         MyGetSysTime(tr);
         if (CmpTime(&then,&tr->tr_time) == 1) {
@@ -75,14 +77,14 @@ static bool ata_wait_ready(struct IDEUnit *unit) {
     struct timerequest *tr = unit->TimeReq;
 
     then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-    then.tv_secs  = 0;
+    then.tv_secs  = WAIT_TIMEOUT_S;
     MyGetSysTime(tr);
     AddTime(&then,&tr->tr_time);
 #endif
     Trace("wait_ready_enter\n");
     while (1) {
         if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
-
+        wait(1000);
 #ifndef NOTIMER
         MyGetSysTime(tr);
         if (CmpTime(&then,&tr->tr_time) == 1) {
@@ -101,18 +103,18 @@ static bool ata_wait_ready(struct IDEUnit *unit) {
  * @return false on timeout
 */
 static bool ata_wait_drq(struct IDEUnit *unit) {
+    int tries = ATAPI_POLL_TRIES;
 #ifndef NOTIMER
     struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
     struct timeval then;
     struct timerequest *tr;
-    int tries = ATAPI_POLL_TRIES;
 
     // Performing these time functions halves throughput
     // So only do time-out when we're not sure there's a drive there until I figure out a proper fix...
     if (unit->present == false) {
         tr = unit->TimeReq;
         then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-        then.tv_secs  = 0;
+        then.tv_secs  = WAIT_TIMEOUT_S;
         MyGetSysTime(tr);
         AddTime(&then,&tr->tr_time);
     }
@@ -130,10 +132,9 @@ static bool ata_wait_drq(struct IDEUnit *unit) {
                 return false;
         }
 #endif
-
+        wait(1000);
         } else if (unit->atapi == true) {
             if (tries > 0) {
-                wait(100);
                 tries--;
             } else {
                 return false;
@@ -205,6 +206,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->sectorsPerTrack = 0;
     unit->blockSize       = 0;
     unit->present         = false;
+    unit->mediumPresent   = false;
 
     ULONG offset;
     UWORD *buf;
@@ -237,9 +239,11 @@ bool ata_init_unit(struct IDEUnit *unit) {
         unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
         unit->heads           = *((UWORD *)buf + ata_identify_heads);
         unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
-        unit->blockSize       = *((UWORD *)buf + ata_identify_sectorsize);
+        unit->blockSize       = 512;//*((UWORD *)buf + ata_identify_sectorsize);
         unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
         unit->blockShift      = 0;
+        unit->mediumPresent   = true;
+
         Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
         if (unit->logicalSectors >= 16514064) {
             // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
@@ -262,7 +266,12 @@ bool ata_init_unit(struct IDEUnit *unit) {
         Info("INIT: ATAPI Drive found!\n");
 
         unit->device_type     = (buf[0] >> 8) & 0x1F;
-        unit->atapi_byteCount = (buf[126]);
+        unit->blockSize       = 2048;
+        atapi_test_unit_ready(unit);
+        if ((atapi_test_unit_ready(unit)) != 0) {
+            Trace("ATAPI: Identify - TUR failed");
+            goto skip_capacity;
+        };
 
         memset(&cdb,0,sizeof(struct SCSI_CDB_10));
         cdb.operation = SCSI_CMD_READ_CAPACITY_10;
@@ -276,19 +285,18 @@ bool ata_init_unit(struct IDEUnit *unit) {
         scsi_cmd.scsi_Length    = 8;
         scsi_cmd.scsi_SenseData = NULL;
 
-        if ((atapi_packet(&scsi_cmd,unit) != 0)) {
-            Info("INIT: Atapi packet command failed!\n");
-            FreeMem(buf,512);
-            return false;
-        }
-
         unit->cylinders       = 0;
         unit->heads           = 0;
         unit->sectorsPerTrack = 0;
-        unit->logicalSectors  = (*(ULONG *)buf) + 1;
-        unit->blockSize       = *((ULONG *)buf + 1);
+        unit->logicalSectors  = 0;
         unit->blockShift      = 0;
         unit->atapi           = true;
+
+        if ((atapi_packet(&scsi_cmd,unit) == 0)) {
+            unit->logicalSectors  = (*(ULONG *)buf) + 1;
+        }
+
+skip_capacity:
 
         Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
 
@@ -716,6 +724,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         Info("Sense Key: %02lx\n",senseKey);
         Info("Error: %02lx\n",*status);
         Info("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
+        cmd->scsi_Status = 2;
         if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL) {
             cmd->scsi_SenseData[0] = senseKey;
             cmd->scsi_SenseActual = 1;
@@ -726,6 +735,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
     
     ULONG index = 0;
+
+    if (cmd->scsi_Length == 0) goto xferdone;
 
     while (1) {
         ata_wait_not_busy(unit);
@@ -765,6 +776,7 @@ xferdone:
         Warn("Sense Key: %02lx\n",senseKey);
         Warn("Error: %02lx\n",*status);
         Warn("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
+        cmd->scsi_Status = 2;
         if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL) {
             // TODO: get extended sense data from drive
             cmd->scsi_SenseData[0] = senseKey;
@@ -777,4 +789,93 @@ xferdone:
     }
     Trace("exit atapi_packet\n");
     return 0;
+}
+
+UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
+    struct SCSI_CDB_10 *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+    UBYTE senseKey = 0;
+    UBYTE ret;
+
+    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: TUR AllocMem failed.\n");
+        return TDERR_NoMem;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: TUR AllocMem failed.\n");
+        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        return TDERR_NoMem;
+    }
+
+    cdb->operation        = SCSI_CMD_TEST_UNIT_READY;
+    cmd->scsi_Command     = (UBYTE *)cdb;
+    cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_Length      = 0;
+    cmd->scsi_Data        = NULL;
+    cmd->scsi_SenseData   = &senseKey;
+    cmd->scsi_SenseLength = 1;
+    cmd->scsi_Flags       = SCSIF_AUTOSENSE | SCSIF_READ;
+
+    ret = atapi_packet(cmd,unit);
+
+    Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
+    if (cmd->scsi_Status == 0 && unit->mediumPresent != true) {
+        unit->mediumPresent = true;
+        unit->change_count++;
+    } else if (cmd->scsi_Status == 2) {
+        ret = 0;
+        if ((senseKey == 2) & (unit->mediumPresent == true)) {
+            Trace("ATAPI: marking media as absent");
+            unit->mediumPresent = false;
+            unit->change_count++;
+        } else if ((senseKey == 6) & (unit->mediumPresent = false)) {
+            Trace("ATAPI: marking media as present");
+            unit->mediumPresent = true;
+            unit->change_count++;
+        }
+    }
+
+    if (senseKey == 6) {
+        atapi_request_sense(unit);
+    }
+    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+
+    return ret;
+}
+
+
+UBYTE atapi_request_sense(struct IDEUnit *unit) {
+    struct SCSI_CDB_10 *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+    UBYTE senseKey = 0;
+    UBYTE ret;
+
+    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: RS AllocMem failed.\n");
+        return TDERR_NoMem;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: RS AllocMem failed.\n");
+        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        return TDERR_NoMem;
+    }
+
+    cdb->operation        = SCSI_CMD_REQUEST_SENSE;
+    cmd->scsi_Command     = (UBYTE *)cdb;
+    cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_Length      = 0;
+    cmd->scsi_Data        = NULL;
+    cmd->scsi_SenseData   = &senseKey;
+    cmd->scsi_SenseLength = 1;
+    cmd->scsi_Flags       = SCSIF_AUTOSENSE | SCSIF_READ;
+
+    ret = atapi_packet(cmd,unit);
+    Trace("ATAPI RS: Status %lx",ret);
+    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+
+    return ret;
 }

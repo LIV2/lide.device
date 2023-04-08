@@ -211,7 +211,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     // SCSI Command complete, handle any errors
 
-    Trace("SCSI: return: %02lx",error);
+    Trace("SCSI: return: %02lx\n",error);
     
     ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
