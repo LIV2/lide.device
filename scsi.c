@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* This file is part of liv2ride.device
+ * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
+ */
 #include <devices/scsidisk.h>
 #include <devices/trackdisk.h>
 #include <exec/errors.h>

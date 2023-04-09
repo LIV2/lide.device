@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* This file is part of liv2ride.device
+ * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
+ */
 #define SCSI_CMD_TEST_UNIT_READY  0x00
 #define SCSI_CMD_REQUEST_SENSE    0x03
 #define SCSI_CMD_READ_6           0x08

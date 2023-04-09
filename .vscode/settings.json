@@ -18,7 +18,8 @@
         "stdbool.h": "c",
         "idetask.h": "c",
         "td64.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "scsidisk.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

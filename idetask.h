@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* This file is part of liv2ride.device
+ * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
+ */
 #define TASK_NAME "idetask"
 #define TASK_PRIORITY 0
 #define TASK_STACK_SIZE 65535
