@@ -27,6 +27,7 @@ all:	$(PROJECT)
 
 OBJ = driver.o \
       ata.o \
+	  atapi.o \
 	  scsi.o \
 	  idetask.o \
 	  mounter.o

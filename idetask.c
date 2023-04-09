@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ata.h"
+#include "atapi.h"
 #include "debug.h"
 #include "device.h"
 #include "idetask.h"
@@ -47,10 +48,10 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_INQUIRY:
-                ((struct SCSI_Inquiry *)data)->peripheral_type = unit->device_type;
-                ((struct SCSI_Inquiry *)data)->removable_media = 0;
-                ((struct SCSI_Inquiry *)data)->version         = 2;
-                ((struct SCSI_Inquiry *)data)->response_format = 2;
+                ((struct SCSI_Inquiry *)data)->peripheral_type   = unit->device_type;
+                ((struct SCSI_Inquiry *)data)->removable_media   = 0;
+                ((struct SCSI_Inquiry *)data)->version           = 2;
+                ((struct SCSI_Inquiry *)data)->response_format   = 2;
                 ((struct SCSI_Inquiry *)data)->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
 
                 UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
@@ -182,31 +183,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
         }
     } else {
         // SCSI command handling for ATAPI Drives
-
-        if (scsi_command->scsi_Command[0] == SCSI_CMD_MODE_SENSE_6) { // Translate Mode Sense (6) to Mode Sense (10)
-            UBYTE newcdb[10];
-            UBYTE *oldcdb = scsi_command->scsi_Command;
-            UWORD oldCmdLength = scsi_command->scsi_CmdLength;
-
-            memset(&newcdb,0,10);
-            newcdb[0] = 0x5A;
-            //newcdb[1] = oldcdb[1];
-            newcdb[2] = oldcdb[2];
-            //newcdb[3] = oldcdb[3];
-            newcdb[8] = oldcdb[4];
-            //newcdb[9] = oldcdb[5];
-
-            scsi_command->scsi_CmdLength = 10;
-            scsi_command->scsi_Command   = (UBYTE *)&newcdb; 
-            error = atapi_packet(scsi_command,unit);
-
-            scsi_command->scsi_Command = oldcdb;
-            scsi_command->scsi_CmdLength = oldCmdLength;
-
-        } else {
-            error = atapi_packet(scsi_command,unit);
-        }
-        if (error) scsi_command->scsi_Status = 2;
+        error = atapi_packet(scsi_command,unit);
     }
 
     // SCSI Command complete, handle any errors
@@ -257,7 +234,7 @@ void __attribute__((noreturn)) ide_task () {
     dev->TaskActive = true;
 
     while (1) {
-        // Main loop, handle IO Requests as they comee in.
+        // Main loop, handle IO Requests as they come in.
         Trace("Task: WaitPort()\n");
         Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
 
@@ -270,7 +247,8 @@ void __attribute__((noreturn)) ide_task () {
                 case TD_CHANGESTATE:
                     ioreq->io_Error  = 0;
                     if (unit->atapi) {
-                        if ((ioreq->io_Error = atapi_test_unit_ready(unit) == 0)) {
+                        if ((ioreq->io_Error = atapi_test_unit_ready(unit) == TDERR_DiskChanged)) {
+                            // If the drive returned a unit attention status, we need to test again
                             ioreq->io_Error = atapi_test_unit_ready(unit);
                         }
                     }

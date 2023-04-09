@@ -12,6 +12,7 @@
 #include <stdio.h>
 
 #include "ata.h"
+#include "atapi.h"
 #include "device.h"
 #include "idetask.h"
 #include "newstyle.h"
@@ -162,8 +163,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     }
 #endif
     struct ConfigDev *cd = NULL;
-    // Claim our boards until MAX_UNITS is hit
-
     cd = FindConfigDev(NULL,MANUF_ID,DEV_ID);
     while (cd != NULL)
     {
@@ -174,7 +173,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
             
-            for (BYTE i=0; i<1; i++) {
+            for (BYTE i=0; i<2; i++) {
                 dev->units[i].SysBase        = SysBase;
                 dev->units[i].TimeReq        = dev->TimeReq;
                 dev->units[i].cd             = cd;
@@ -198,6 +197,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     }
 
     Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
+
     if (dev->num_units > 0) {
         Trace("Start the Task\n");
         // Start the IDE Task
