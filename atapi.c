@@ -418,7 +418,7 @@ UBYTE atapi_get_capacity(struct IDEUnit *unit) {
     unit->blockShift      = 0;
 
     if ((ret = atapi_packet(cmd,unit)) == 0) {
-        unit->logicalSectors  = response.logicalSectors;
+        unit->logicalSectors  = response.logicalSectors + 1;
         unit->blockSize       = response.blockSize;
         
         while ((unit->blockSize >> unit->blockShift) > 1) {

@@ -187,6 +187,13 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
         }
     } else {
         // SCSI command handling for ATAPI Drives
+        
+        if (scsi_command->scsi_Command[0] == SCSI_CMD_READ_CAPACITY_10) {
+            // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
+            for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
+                scsi_command->scsi_Command[i] = 0;
+            }
+        }
         error = atapi_packet(scsi_command,unit);
     }
 
