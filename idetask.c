@@ -266,6 +266,17 @@ void __attribute__((noreturn)) ide_task () {
             direction = WRITE;
 
             switch (ioreq->io_Command) {
+
+                case TD_CHANGESTATE:
+                    ioreq->io_Error  = 0;
+                    if (unit->atapi) {
+                        if ((ioreq->io_Error = atapi_test_unit_ready(unit) == 0)) {
+                            ioreq->io_Error = atapi_test_unit_ready(unit);
+                        }
+                    }
+                    ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
+                    break;
+
                 case CMD_READ:
                 case TD_READ64:
                 case NSCMD_TD_READ64:

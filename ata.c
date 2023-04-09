@@ -254,9 +254,6 @@ bool ata_init_unit(struct IDEUnit *unit) {
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
     } else if (atapi_identify(unit,buf) == true) {
-        struct SCSICmd scsi_cmd;
-        struct SCSI_CDB_10 cdb;
-
         if ((buf[0] & 0xC000) != 0x8000) {
             Info("INIT: Not an ATAPI device.\n");
             FreeMem(buf,512);
@@ -273,29 +270,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             goto skip_capacity;
         };
 
-        memset(&cdb,0,sizeof(struct SCSI_CDB_10));
-        cdb.operation = SCSI_CMD_READ_CAPACITY_10;
-
-        memset(&scsi_cmd,0,sizeof(struct SCSICmd));
-        scsi_cmd.scsi_CmdLength = sizeof(struct SCSI_CDB_10);
-        scsi_cmd.scsi_CmdActual = 0;
-        scsi_cmd.scsi_Command   = (UBYTE *)&cdb;
-        scsi_cmd.scsi_Flags     = SCSIF_READ;
-        scsi_cmd.scsi_Data      = buf;
-        scsi_cmd.scsi_Length    = 8;
-        scsi_cmd.scsi_SenseData = NULL;
-
-        unit->cylinders       = 0;
-        unit->heads           = 0;
-        unit->sectorsPerTrack = 0;
-        unit->logicalSectors  = 0;
-        unit->blockShift      = 0;
-        unit->atapi           = true;
-
-        if ((atapi_packet(&scsi_cmd,unit) == 0)) {
-            unit->logicalSectors  = (*(ULONG *)buf) + 1;
-        }
-
+        atapi_get_capacity(unit);
 skip_capacity:
 
         Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
@@ -820,19 +795,20 @@ UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     ret = atapi_packet(cmd,unit);
 
     Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
-    if (cmd->scsi_Status == 0 && unit->mediumPresent != true) {
+    if (ret == 0 && (senseKey == 0) && unit->mediumPresent != true) {
+        Trace("ATAPI: marking media as present");
         unit->mediumPresent = true;
         unit->change_count++;
+        ret = atapi_get_capacity(unit);
     } else if (cmd->scsi_Status == 2) {
         ret = 0;
-        if ((senseKey == 2) & (unit->mediumPresent == true)) {
+        if ((senseKey == 2) && (unit->mediumPresent == true)) {
             Trace("ATAPI: marking media as absent");
             unit->mediumPresent = false;
             unit->change_count++;
-        } else if ((senseKey == 6) & (unit->mediumPresent = false)) {
-            Trace("ATAPI: marking media as present");
-            unit->mediumPresent = true;
-            unit->change_count++;
+        } else if ((senseKey == 6) && (unit->mediumPresent == false)) {
+            //unit->mediumPresent = true;
+            //unit->change_count++;
         }
     }
 
@@ -877,5 +853,55 @@ UBYTE atapi_request_sense(struct IDEUnit *unit) {
     if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
     if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
 
+    return ret;
+}
+
+UBYTE atapi_get_capacity(struct IDEUnit *unit) {
+    struct SCSI_CDB_10 *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+    UBYTE ret;
+    struct {
+        ULONG logicalSectors;
+        ULONG blockSize;
+    } response;
+
+
+    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: GC AllocMem failed.\n");
+        return TDERR_NoMem;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: GC AllocMem failed.\n");
+        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        return TDERR_NoMem;
+    }
+
+    cdb->operation = SCSI_CMD_READ_CAPACITY_10;
+
+    cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_CmdActual = 0;
+    cmd->scsi_Command   = (UBYTE *)cdb;
+    cmd->scsi_Flags     = SCSIF_READ;
+    cmd->scsi_Data      = (UWORD *)&response;
+    cmd->scsi_Length    = 8;
+    cmd->scsi_SenseData = NULL;
+
+    unit->cylinders       = 0;
+    unit->heads           = 0;
+    unit->sectorsPerTrack = 0;
+    unit->logicalSectors  = 0;
+    unit->blockShift      = 0;
+    unit->atapi           = true;
+
+    if ((ret = atapi_packet(cmd,unit) == 0)) {
+        unit->logicalSectors  = response.logicalSectors;
+        unit->blockSize       = response.blockSize;
+        unit->blockShift      = 11; // FIXME
+    }
+    Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
+    
+    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
     return ret;
 }

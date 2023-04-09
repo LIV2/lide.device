@@ -80,4 +80,5 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
 UBYTE atapi_test_unit_ready(struct IDEUnit *unit);
 UBYTE atapi_request_sense(struct IDEUnit *unit);
+UBYTE atapi_get_capacity(struct IDEUnit *unit);
 #endif
