@@ -11,6 +11,7 @@
 #define SCSI_CMD_READ_CAPACITY_10 0x25
 #define SCSI_CMD_READ_10          0x28
 #define SCSI_CMD_WRITE_10         0x2A
+#define SCSI_CMD_MODE_SENSE_10    0x5A
 
 #define SCSI_CHECK_CONDITION      0x02
 

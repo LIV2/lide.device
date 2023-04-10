@@ -188,13 +188,22 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     } else {
         // SCSI command handling for ATAPI Drives
         
-        if (scsi_command->scsi_Command[0] == SCSI_CMD_READ_CAPACITY_10) {
-            // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
-            for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
-                scsi_command->scsi_Command[i] = 0;
-            }
+        switch (scsi_command->scsi_Command[0]) {
+
+            case SCSI_CMD_MODE_SENSE_6:
+                error = atapi_scsi_mode_sense_6(scsi_command,unit);
+                break;
+
+            case SCSI_CMD_READ_CAPACITY_10:
+                // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
+                for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
+                    scsi_command->scsi_Command[i] = 0;
+                }
+
+            default:
+                error = atapi_packet(scsi_command,unit);
+                break;
         }
-        error = atapi_packet(scsi_command,unit);
     }
 
     // SCSI Command complete, handle any errors
@@ -276,6 +285,11 @@ void __attribute__((noreturn)) ide_task () {
                 case TD_FORMAT64:
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:
+                    if (unit->atapi == true && unit->mediumPresent == false) {
+                        ioreq->io_Error = IOERR_BADADDRESS;
+                        break;
+                    }
+                    
                     blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
                     count = (ioreq->io_Length >> blockShift);

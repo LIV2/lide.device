@@ -86,6 +86,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 */
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction)
 {
+    Trace("atapi_translate enter\n");
     struct SCSI_CDB_10 cdb;
     struct SCSICmd atapi_cmd;
 
@@ -111,6 +112,7 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
     cdb.length    = (UWORD)count;
 
     ret = atapi_packet(&atapi_cmd,unit);
+    Trace("atapi_packet returns %ld\n",ret);
     *io_Actual = atapi_cmd.scsi_Actual;
     return ret;
 }
@@ -122,7 +124,7 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
  * 
  * @param cmd Pointer to a SCSICmd struct
  * @param unit Pointer to the IDEUnit
- * @returns error
+ * @returns error, sense key returned in SenseData
 */
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     Trace("atapi_packet\n");
@@ -163,7 +165,10 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     *unit->drive->status_command = ATAPI_CMD_PACKET;
 
     // HP0
-    ata_wait_not_busy(unit);
+    if (!ata_wait_not_busy(unit)) {
+        Trace("ATAPI: Packet bsy timeout\n");
+        return HFERR_SelTimeout;
+    }
 
     if ((*status & ata_flag_drq) == 0) {
         Info("ATAPI: Bad state, Packet command refused?!\n");
@@ -273,7 +278,7 @@ xferdone:
  * @param unit Pointer to an IDEUnit struct
  * @returns nonzero if there was an error
 */
-UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
+BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     struct SCSI_CDB_10 *cdb = NULL;
     struct SCSICmd *cmd = NULL;
     UBYTE senseKey = 0;
@@ -291,8 +296,8 @@ UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     }
 
     // If the sense key returned is not 0 (Unit ready) or 2 (Medium not present) try again
-    // Mainly to run twice if sense code 6 is returned, so we can get the actual status of the medium
-    for (int i = 0; i < 2; i++) {
+    // Mainly to run a couple of times if sense code 6 is returned, so we can get the actual status of the medium
+    for (int i = 0; i < 3; i++) {
         cdb->operation        = SCSI_CMD_TEST_UNIT_READY;
         cmd->scsi_Command     = (UBYTE *)cdb;
         cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
@@ -305,25 +310,40 @@ UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
         ret = atapi_packet(cmd,unit);
 
         Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
-        if (ret == 0 && (senseKey == 0) && unit->mediumPresent != true) {
-            Trace("ATAPI: marking media as present\n");
-            unit->mediumPresent = true;
-            unit->change_count++;
-            ret = atapi_get_capacity(unit);
-            break;
-        } else if (cmd->scsi_Status == 2 && senseKey == 2) {
-            if (unit->mediumPresent == true) {
-                Trace("ATAPI: marking media as absent\n");
-                unit->mediumPresent = false;
-                unit->change_count++;
+
+        switch (senseKey) {
+            case 0: // Unit ready
+                if (ret == 0 && unit->mediumPresent == false) {
+                    Trace("ATAPI TUR: setting medium as present\n");
+                    unit->mediumPresent = true;
+                    unit->change_count++;
+                    ret = atapi_get_capacity(unit);
+                }
+                goto done;
                 break;
-            }
-        } else if (senseKey == 6) {
-            Trace("ATAPI: Unit attention, clearing with request_sense");
-            atapi_request_sense(unit,NULL,0);
+            case 2: // Not ready, no medium
+                if (unit->mediumPresent != false) {
+                    Trace("ATAPI TUR: Setting medium as not present\n");
+                    // Only increment change_count if the status changed
+                    unit->change_count++;
+                    ret = 0;
+                }
+
+                unit->mediumPresent = false;
+                unit->logicalSectors = 0;
+                unit->blockShift = 0;
+                unit->blockSize = 0;
+                goto done;
+                break;
+            case 6: // Unit attention
+                Trace("ATAPI: Unit attention, clearing with request_sense");
+            case 3: // Medium error
+                ret = atapi_request_sense(unit,NULL,0); // Get (and currently throw away) the sense data
+                break;
         }
     }
 
+done:
     if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
     if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
 
@@ -339,7 +359,7 @@ UBYTE atapi_test_unit_ready(struct IDEUnit *unit) {
  * @param unit Pointer to an IDEUnit struct
  * @return non-zero on error
 */
-UBYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *buffer, int length) {
+BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *buffer, int length) {
     struct SCSI_CDB_10 *cdb = NULL;
     struct SCSICmd *cmd = NULL;
     UBYTE ret;
@@ -380,10 +400,10 @@ UBYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *buffer, int length) {
  * @param unit Pointer to an IDEUnit struct
  * @return non-zero on error
 */
-UBYTE atapi_get_capacity(struct IDEUnit *unit) {
+BYTE atapi_get_capacity(struct IDEUnit *unit) {
     struct SCSI_CDB_10 *cdb = NULL;
     struct SCSICmd *cmd = NULL;
-    UBYTE ret;
+    BYTE ret;
     struct {
         ULONG logicalSectors;
         ULONG blockSize;
@@ -429,5 +449,114 @@ UBYTE atapi_get_capacity(struct IDEUnit *unit) {
     
     if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
     if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    return ret;
+}
+
+
+/** 
+ * atapi_mode_sense
+ * 
+ * Send a MODE SENSE (10) request to the ATAPI device
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param page_code Page code to request
+ * @param buffer Pointer to a buffer for the mode sense data response
+ * @param length Size of the buffer
+ * @param actual Pointer to the actual byte count returned
+ * @return Non-zero on error
+*/
+BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual) {
+    UBYTE *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+    BYTE ret;
+
+    if ((cdb = AllocMem(12,MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: MS AllocMem failed.\n");
+        return TDERR_NoMem;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        Trace("ATAPI: MS AllocMem failed.\n");
+        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        return TDERR_NoMem;
+    }
+
+    cdb[0] = SCSI_CMD_MODE_SENSE_10;
+    cdb[2] = page_code & 0x3F;
+    cdb[7] = length >> 8;
+    cdb[8] = length & 0xFF;
+
+    cmd->scsi_CmdLength = 12;
+    cmd->scsi_CmdActual = 0;
+    cmd->scsi_Command   = (UBYTE *)cdb;
+    cmd->scsi_Flags     = SCSIF_READ;
+    cmd->scsi_Data      = buffer;
+    cmd->scsi_Length    = length;
+    cmd->scsi_SenseData = NULL;
+
+    ret = atapi_packet(cmd,unit);
+
+    if (actual) *actual = cmd->scsi_Actual;
+
+    if (cdb) FreeMem(cdb,12);
+    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    return ret;
+}
+
+
+/**
+ * atapi_scsi_mode_sense_6
+ * 
+ * ATAPI devices do not support MODE SENSE (6) so translate to a MODE SENSE (10)
+ * 
+ * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error, mode-sense data in cmd->scsi_Data
+*/
+BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    BYTE ret;
+
+    UBYTE page_code;
+
+    UBYTE *buf  = NULL;
+    UBYTE *dest = (UBYTE *)cmd->scsi_Data; 
+
+    ULONG length = cmd->scsi_Length + 4;
+    UWORD actual = 0;
+
+    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0);
+
+    // ATAPI doesn't seem to support subpages at all;
+    if (cmd->scsi_Command[3] != 0) return IOERR_ABORTED;
+
+    if ((buf = AllocMem(length,MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        return TDERR_NoMem;
+    }
+
+    page_code = cmd->scsi_Command[2];
+    
+    ret = atapi_mode_sense(unit,page_code,(UWORD *)buf,length,&actual);
+
+    if (buf[0] != 0) { // Mode sense length MSB
+        Warn("ATAPI: MODESENSE 6 to 10 - Returned mode sense data too large\n");
+        ret = IOERR_BADLENGTH;
+    }
+
+    if (ret == 0) {
+        dest[0] = (buf[1] - 4); // Length
+        dest[1] = buf[1];       // Medium type
+        dest[2] = buf[3];       // WP/DPOFUA Flags
+        dest[3] = 0;            // Block descriptor length
+
+        for (int i = 4; i < actual; i++) {
+            // Copy the Mode Sense data
+            dest[i] = buf[i+4];
+        }
+        cmd->scsi_Actual    = actual - 4;
+        cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+    }
+
+    if (buf) FreeMem(buf,length);
+
     return ret;
 }
