@@ -282,7 +282,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     struct SCSI_CDB_10 *cdb = NULL;
     struct SCSICmd *cmd = NULL;
     UBYTE senseKey = 0;
-    UBYTE ret;
+    UBYTE ret = 0;
 
     if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
         Trace("ATAPI: TUR AllocMem failed.\n");
@@ -311,35 +311,35 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
 
         Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
 
-        switch (senseKey) {
-            case 0: // Unit ready
-                if (ret == 0 && unit->mediumPresent == false) {
+        if (ret == 0) {
+            if (unit->mediumPresent == false) {
                     Trace("ATAPI TUR: setting medium as present\n");
                     unit->mediumPresent = true;
                     unit->change_count++;
                     ret = atapi_get_capacity(unit);
                 }
                 goto done;
-                break;
-            case 2: // Not ready, no medium
-                if (unit->mediumPresent != false) {
-                    Trace("ATAPI TUR: Setting medium as not present\n");
-                    // Only increment change_count if the status changed
-                    unit->change_count++;
-                    ret = 0;
-                }
+        } else {
+            switch (senseKey) {
+                case 2: // Not ready, no medium
+                    if (unit->mediumPresent != false) {
+                        Trace("ATAPI TUR: Setting medium as not present\n");
+                        // Only increment change_count if the status changed
+                        unit->change_count++;
+                    }
 
-                unit->mediumPresent = false;
-                unit->logicalSectors = 0;
-                unit->blockShift = 0;
-                unit->blockSize = 0;
-                goto done;
-                break;
-            case 6: // Unit attention
-                Trace("ATAPI: Unit attention, clearing with request_sense");
-            case 3: // Medium error
-                ret = atapi_request_sense(unit,NULL,0); // Get (and currently throw away) the sense data
-                break;
+                    unit->mediumPresent = false;
+                    unit->logicalSectors = 0;
+                    unit->blockShift = 0;
+                    unit->blockSize = 0;
+                    ret = 0;
+                    break;
+                case 6: // Unit attention
+                    Trace("ATAPI: Unit attention, clearing with request_sense");
+                case 3: // Medium error
+                    ret = atapi_request_sense(unit,NULL,0); // Get the sense data
+                    break;
+            }
         }
     }
 
@@ -355,11 +355,10 @@ done:
  * 
  * Request extended sense data from the ATAPI device
  * 
- * Currently just gets the senseKey to clear a UNIT ATTENTION status
  * @param unit Pointer to an IDEUnit struct
  * @return non-zero on error
 */
-BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *buffer, int length) {
+BYTE atapi_request_sense(struct IDEUnit *unit, UWORD *buffer, int length) {
     struct SCSI_CDB_10 *cdb = NULL;
     struct SCSICmd *cmd = NULL;
     UBYTE ret;
@@ -378,13 +377,14 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *buffer, int length) {
     cdb->operation        = SCSI_CMD_REQUEST_SENSE;
     cmd->scsi_Command     = (UBYTE *)cdb;
     cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
-    cmd->scsi_Length      = 0;
-    cmd->scsi_Data        = NULL;
-    cmd->scsi_SenseData   = buffer;
-    cmd->scsi_SenseLength = length;
-    cmd->scsi_Flags       = SCSIF_AUTOSENSE | SCSIF_READ;
+    cmd->scsi_Length      = length;
+    cmd->scsi_Data        = buffer;
+    cmd->scsi_SenseData   = NULL;
+    cmd->scsi_SenseLength = 0;
+    cmd->scsi_Flags       = SCSIF_READ;
 
     ret = atapi_packet(cmd,unit);
+
     Trace("ATAPI RS: Status %lx\n",ret);
     if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
     if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
