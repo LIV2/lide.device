@@ -488,7 +488,7 @@ void ata_read_fast (void *source, void *destinaton) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-void ata_write_fast (void *source, void *destinaton) {
+static void ata_write_fast (void *source, void *destinaton) {
     asm volatile (
     "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
     "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
