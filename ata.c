@@ -261,6 +261,11 @@ bool ata_init_unit(struct IDEUnit *unit) {
             unit->cylinders = (unit->logicalSectors / (16*255));
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
+
+        
+        while ((unit->blockSize >> unit->blockShift) > 1) {
+            unit->blockShift++;
+        }
     } else if ((*unit->drive->lbaHigh == 0xEB) && (*unit->drive->lbaMid == 0x14)) { // Check for ATAPI Signature
         if (atapi_identify(unit,buf) == false || (buf[0] & 0xC000) != 0x8000) {
             Info("INIT: Not an ATAPI device.\n");
@@ -296,9 +301,6 @@ ident_failed:
         return false;
     }
 
-    while ((unit->blockSize >> unit->blockShift) > 1) {
-        unit->blockShift++;
-    }
     Info("INIT: Blockshift: %d",unit->blockShift);
     unit->present = true;
 
@@ -427,7 +429,7 @@ if (direction == READ) {
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-void ata_read_fast (void *source, void *destinaton) {
+static void ata_read_fast (void *source, void *destinaton) {
     asm volatile ("moveq  #48,d7\n\t"
 
     "movem.l (%0),d0-d6/a1-a4/a6\n\t"
