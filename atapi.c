@@ -227,7 +227,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     
     ULONG index = 0;
 
-    if (cmd->scsi_Length == 0) goto xferdone;
+    //if (cmd->scsi_Length == 0) goto xferdone;
 
     while (1) {
         ata_wait_not_busy(unit);
