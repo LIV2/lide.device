@@ -309,7 +309,7 @@ ident_failed:
         return false;
     }
 
-    Info("INIT: Blockshift: %d",unit->blockShift);
+    Info("INIT: Blockshift: %d\n",unit->blockShift);
     unit->present = true;
 
     if (buf) FreeMem(buf,512);
@@ -406,7 +406,7 @@ if (direction == READ) {
             unit->last_error[4] = unit->drive->status_command[0];
             unit->last_error[5] = unit->drive->devHead[0];
 
-            Warn("ATA ERROR!!!");
+            Warn("ATA ERROR!!!\n");
             Warn("last_error: %08lx\n",unit->last_error);
             Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
             return TDERR_NotSpecified;
