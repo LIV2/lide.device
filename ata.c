@@ -247,6 +247,11 @@ bool ata_init_unit(struct IDEUnit *unit) {
     if (ata_identify(unit,buf) == true) {
         Info("INIT: ATA Drive found!\n");
 
+        if ((*((UWORD *)buf + ata_identify_capabilities) & ata_capability_lba) == 0) {
+            Info("Rejecting drive due to lack of LBA support.\n");
+            goto ident_failed;
+        }
+
         unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
         unit->heads           = *((UWORD *)buf + ata_identify_heads);
         unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
