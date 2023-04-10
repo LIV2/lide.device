@@ -19,6 +19,14 @@
 #include "scsi.h"
 #include "string.h"
 
+
+static bool poll_drq(struct IDEUnit *unit) {
+    for (int i=0; i<1000; i++) {
+        if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
+    }
+    return false;
+}
+
 /**
  * atapi_identify
  * 
@@ -220,7 +228,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     while (1) {
         ata_wait_not_busy(unit);
 
-        if (!ata_wait_drq(unit)) {
+        //if (!ata_wait_drq(unit)) {
+        if (!poll_drq(unit)) {
             // Some commands (like mode-sense) may return less data than the length specified
             // Read/Write actual should always match, if not throw an error.
             if (operation == SCSI_CMD_READ_10 || operation == SCSI_CMD_WRITE_10) {
