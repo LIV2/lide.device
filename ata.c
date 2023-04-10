@@ -290,7 +290,7 @@ ident_failed:
 
     // It's faster to shift than divide
     // Figure out how many shifts are needed for the equivalent divide
-    if (unit->blockSize == 0) {
+    if (unit->atapi == false && unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
         return false;
