@@ -72,3 +72,41 @@ void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
             sense->asq      = 0x00;
     }
 }
+
+/**
+ * MakeSCSICmd()
+ * 
+ * Creates an new SCSICmd struct and CDB
+*/
+struct SCSICmd * MakeSCSICmd() {
+    UBYTE          *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+
+    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        return NULL;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        return NULL;
+    }
+
+    cmd->scsi_Command   = (UBYTE *)cmd;
+    cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_Data      = NULL;
+    cmd->scsi_SenseData = NULL;
+
+    return cmd;
+}
+
+/**
+ * DeleteSCSICmd
+ * 
+ * Delete a SCSICmd and its CDB
+*/
+void DeleteSCSICmd(struct SCSICmd *cmd) {
+    UBYTE *cdb = cmd->scsi_Command;
+
+    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+}

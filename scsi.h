@@ -65,3 +65,5 @@ struct __attribute__((packed)) SCSI_FIXED_SENSE {
 };
 
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
+struct SCSICmd * MakeSCSICmd();
+void DeleteSCSICmd(struct SCSICmd *cmd);

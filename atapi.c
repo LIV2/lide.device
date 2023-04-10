@@ -95,33 +95,37 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction)
 {
     Trace("atapi_translate enter\n");
-    struct SCSI_CDB_10 cdb;
-    struct SCSICmd atapi_cmd;
+    struct SCSICmd *cmd = MakeSCSICmd();
+    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
+
 
     if (count == 0) {
         return IOERR_BADLENGTH;
     }
 
     BYTE ret = 0;
-    atapi_cmd.scsi_Command     = (UBYTE *)&cdb;
-    atapi_cmd.scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
-    atapi_cmd.scsi_CmdActual   = 0;
-    atapi_cmd.scsi_Flags       = (direction == READ) ? SCSIF_READ : SCSIF_WRITE;
-    atapi_cmd.scsi_Data        = io_Data;
-    atapi_cmd.scsi_Length      = count * unit->blockSize;
-    atapi_cmd.scsi_SenseData   = NULL;
-    atapi_cmd.scsi_SenseLength = 0;
+    cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_CmdActual   = 0;
+    cmd->scsi_Flags       = (direction == READ) ? SCSIF_READ : SCSIF_WRITE;
+    cmd->scsi_Data        = io_Data;
+    cmd->scsi_Length      = count * unit->blockSize;
+    cmd->scsi_SenseData   = NULL;
+    cmd->scsi_SenseLength = 0;
 
-    cdb.operation = (direction == READ) ? SCSI_CMD_READ_10 : SCSI_CMD_WRITE_10;
-    cdb.control   = 0;
-    cdb.flags     = 0;
-    cdb.group     = 0;
-    cdb.lba       = lba;
-    cdb.length    = (UWORD)count;
+    cdb->operation = (direction == READ) ? SCSI_CMD_READ_10 : SCSI_CMD_WRITE_10;
+    cdb->control   = 0;
+    cdb->flags     = 0;
+    cdb->group     = 0;
+    cdb->lba       = lba;
+    cdb->length    = (UWORD)count;
 
-    ret = atapi_packet(&atapi_cmd,unit);
+    ret = atapi_packet(cmd,unit);
     Trace("atapi_packet returns %ld\n",ret);
-    *io_Actual = atapi_cmd.scsi_Actual;
+    *io_Actual = cmd->scsi_Actual;
+    
+    DeleteSCSICmd(cmd);
+
     return ret;
 }
 
@@ -288,21 +292,12 @@ xferdone:
  * @returns nonzero if there was an error
 */
 BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
-    struct SCSI_CDB_10 *cdb = NULL;
-    struct SCSICmd *cmd = NULL;
+    struct SCSICmd *cmd = MakeSCSICmd();
+    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
+
     UBYTE senseKey = 0;
     UBYTE ret = 0;
-
-    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: TUR AllocMem failed.\n");
-        return TDERR_NoMem;
-    }
-
-    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: TUR AllocMem failed.\n");
-        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-        return TDERR_NoMem;
-    }
 
     // If the sense key returned is not 0 (Unit ready) or 2 (Medium not present) try again
     // Mainly to run a couple of times if sense code 6 is returned, so we can get the actual status of the medium
@@ -353,8 +348,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     }
 
 done:
-    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    DeleteSCSICmd(cmd);
 
     return ret;
 }
@@ -368,35 +362,24 @@ done:
  * @return non-zero on error
 */
 BYTE atapi_request_sense(struct IDEUnit *unit, UWORD *buffer, int length) {
-    struct SCSI_CDB_10 *cdb = NULL;
-    struct SCSICmd *cmd = NULL;
+    struct SCSICmd *cmd = MakeSCSICmd();
+    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
+
     UBYTE ret;
-
-    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: RS AllocMem failed.\n");
-        return TDERR_NoMem;
-    }
-
-    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: RS AllocMem failed.\n");
-        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-        return TDERR_NoMem;
-    }
 
     cdb->operation        = SCSI_CMD_REQUEST_SENSE;
     cmd->scsi_Command     = (UBYTE *)cdb;
     cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
     cmd->scsi_Length      = length;
     cmd->scsi_Data        = buffer;
-    cmd->scsi_SenseData   = NULL;
-    cmd->scsi_SenseLength = 0;
     cmd->scsi_Flags       = SCSIF_READ;
 
     ret = atapi_packet(cmd,unit);
 
     Trace("ATAPI RS: Status %lx\n",ret);
-    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+
+    DeleteSCSICmd(cmd);
 
     return ret;
 }
@@ -410,25 +393,16 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UWORD *buffer, int length) {
  * @return non-zero on error
 */
 BYTE atapi_get_capacity(struct IDEUnit *unit) {
-    struct SCSI_CDB_10 *cdb = NULL;
-    struct SCSICmd *cmd = NULL;
+    struct SCSICmd *cmd = MakeSCSICmd();
+    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
+
     BYTE ret;
+
     struct {
         ULONG logicalSectors;
         ULONG blockSize;
     } response;
-
-
-    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: GC AllocMem failed.\n");
-        return TDERR_NoMem;
-    }
-
-    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: GC AllocMem failed.\n");
-        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-        return TDERR_NoMem;
-    }
 
     cdb->operation = SCSI_CMD_READ_CAPACITY_10;
 
@@ -456,8 +430,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     }
     Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
     
-    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    DeleteSCSICmd(cmd);
     return ret;
 }
 
@@ -475,20 +448,12 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
  * @return Non-zero on error
 */
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual) {
-    UBYTE *cdb = NULL;
-    struct SCSICmd *cmd = NULL;
+    struct SCSICmd *cmd = MakeSCSICmd();
+    if (cmd == NULL) return TDERR_NoMem;
+
+    UBYTE *cdb = cmd->scsi_Command;
     BYTE ret;
 
-    if ((cdb = AllocMem(12,MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: MS AllocMem failed.\n");
-        return TDERR_NoMem;
-    }
-
-    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        Trace("ATAPI: MS AllocMem failed.\n");
-        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-        return TDERR_NoMem;
-    }
 
     cdb[0] = SCSI_CMD_MODE_SENSE_10;
     cdb[2] = page_code & 0x3F;
@@ -507,8 +472,7 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD
 
     if (actual) *actual = cmd->scsi_Actual;
 
-    if (cdb) FreeMem(cdb,12);
-    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    DeleteSCSICmd(cmd);
     return ret;
 }
 
