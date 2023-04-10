@@ -23,6 +23,9 @@
 #define WAIT_TIMEOUT_S  5
 #define ATAPI_POLL_TRIES 100
 
+static void ata_read_fast (void *, void *);
+static void ata_write_fast (void *, void *);
+
 void MyGetSysTime(struct timerequest *tr) {
    tr->tr_node.io_Command = TR_GETSYSTIME;
    DoIO((struct IORequest *)tr);

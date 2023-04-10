@@ -73,6 +73,4 @@ bool ata_wait_drq(struct IDEUnit *unit);
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);
-static void ata_read_fast (void *, void *);
-static void ata_write_fast (void *, void *);
 #endif
