@@ -263,6 +263,14 @@ void __attribute__((noreturn)) ide_task () {
             direction = WRITE;
 
             switch (ioreq->io_Command) {
+                case TD_EJECT:
+                    if (!unit->atapi) {
+                        ioreq->io_Error = IOERR_NOCMD;
+                        break;
+                    }
+                    bool insert = (ioreq->io_Length == 0) ? true : false;
+                    ioreq->io_Error = atapi_start_stop_unit(unit,insert,1);
+                    break;
 
                 case TD_CHANGESTATE:
                     ioreq->io_Error  = 0;
@@ -283,6 +291,7 @@ void __attribute__((noreturn)) ide_task () {
 
                 case CMD_WRITE:
                 case TD_WRITE64:
+                case TD_FORMAT:
                 case TD_FORMAT64:
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:

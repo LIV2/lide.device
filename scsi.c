@@ -94,6 +94,7 @@ struct SCSICmd * MakeSCSICmd() {
     cmd->scsi_Command   = (UBYTE *)cdb;
     cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
     cmd->scsi_Data      = NULL;
+    cmd->scsi_Length    = 0;
     cmd->scsi_SenseData = NULL;
 
     return cmd;

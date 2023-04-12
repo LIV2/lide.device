@@ -578,3 +578,24 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     return ret;
 }
+
+BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
+    struct SCSICmd *cmd = NULL;
+    UBYTE operation = 0;
+    UBYTE ret;
+
+    if (loej)  operation |= (1<<1);
+    if (start) operation |= (1<<0);
+
+    if ((cmd = MakeSCSICmd()) == NULL) return TDERR_NoMem;
+    
+    cmd->scsi_Command[0] = SCSI_CMD_START_STOP_UNIT;
+    cmd->scsi_Command[1] = (1<<0); // Immediate bit set
+    cmd->scsi_Command[4] = operation;
+
+    ret = atapi_packet(cmd,unit);
+
+    DeleteSCSICmd(cmd);
+
+    return ret;
+}

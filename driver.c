@@ -371,6 +371,7 @@ static UWORD supported_commands[] =
     TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
+    TD_EJECT,
     TD_GETDRIVETYPE,
     TD_GETGEOMETRY,
     TD_MOTOR,
@@ -433,6 +434,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case CMD_READ:
         case CMD_WRITE:
             ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+        case TD_EJECT:
         case TD_FORMAT:
         case TD_READ64:
         case TD_WRITE64:
