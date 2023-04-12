@@ -65,11 +65,6 @@ enum xfer_dir {
     WRITE
 };
 
-bool ata_wait_not_busy(struct IDEUnit *unit);
-bool ata_wait_ready(struct IDEUnit *unit);
-bool ata_wait_drq(struct IDEUnit *unit);
-
-
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);

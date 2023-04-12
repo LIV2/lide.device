@@ -26,133 +26,59 @@
 static void ata_read_fast (void *, void *);
 static void ata_write_fast (void *, void *);
 
-void MyGetSysTime(struct timerequest *tr) {
-   tr->tr_node.io_Command = TR_GETSYSTIME;
-   DoIO((struct IORequest *)tr);
-}
+#define ATA_DRQ_WAIT_LOOP_US 50
+#define ATA_DRQ_WAIT_MS 10
+#define ATA_DRQ_WAIT_COUNT (ATA_DRQ_WAIT_MS * (1000 / ATA_DRQ_WAIT_LOOP_US))
 
-static void wait(int count) {
-   for (int i=0; i<count; i++) {
-        asm volatile ("nop");
-   }
-}
+#define ATA_BSY_WAIT_LOOP_US 50
+#define ATA_BSY_WAIT_S 3
+#define ATA_BSY_WAIT_COUNT (ATA_BSY_WAIT_S * 1000 * (1000 / ATA_BSY_WAIT_LOOP_US))
 
-/**
- * ata_wait_not_busy
- * 
- * Wait with a timeout for the unit to report that it is not busy
- * @param unit Pointer to an IDEUnit struct
- * @return false on timeout
-*/
-bool ata_wait_not_busy(struct IDEUnit *unit) {
-#ifndef NOTIMER
-    struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval then;
+#define ATA_RDY_WAIT_LOOP_US 50
+#define ATA_RDY_WAIT_S 3
+#define ATA_RDY_WAIT_COUNT (ATA_RDY_WAIT_S * 1000 * (1000 / ATA_RDY_WAIT_LOOP_US))
+
+static bool ata_wait_drq(struct IDEUnit *unit, ULONG count) {
     struct timerequest *tr = unit->TimeReq;
 
-    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-    then.tv_secs  = WAIT_TIMEOUT_S;
-    MyGetSysTime(tr);
-    AddTime(&then,&tr->tr_time);
-#endif
-    Trace("wait_not_busy\n");
+    for (int i=0; i < count; i++) {
+        for (int j=0; j<1000; j++) {
+            if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
+        }
+        tr->tr_time.tv_micro = ATA_DRQ_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
 
-    while (1) {
+    }
+    return false;
+}
+
+static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG count) {
+    struct timerequest *tr = unit->TimeReq;
+
+    for (int i=0; i < count; i++) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
-        wait(1000);
-#ifndef NOTIMER
-        MyGetSysTime(tr);
-        if (CmpTime(&then,&tr->tr_time) == 1) {
-            Warn("wait_not_busy timeout\n");
-            return false;
-        }
-#endif
+        tr->tr_time.tv_micro = ATA_BSY_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
     }
+    return false;
 }
 
-
-/**
- * ata_wait_ready
- * 
- * Wait with a timeout for the unit to report that it is ready
- * @param unit Pointer to an IDEUnit struct
- * @return false on timeout
-*/
-bool ata_wait_ready(struct IDEUnit *unit) {
-#ifndef NOTIMER
-    struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval then;
+static bool ata_wait_ready(struct IDEUnit *unit, ULONG count) {
     struct timerequest *tr = unit->TimeReq;
 
-    then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-    then.tv_secs  = WAIT_TIMEOUT_S;
-    MyGetSysTime(tr);
-    AddTime(&then,&tr->tr_time);
-#endif
-    Trace("wait_ready_enter\n");
-    while (1) {
-        if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
-        wait(1000);
-#ifndef NOTIMER
-        MyGetSysTime(tr);
-        if (CmpTime(&then,&tr->tr_time) == 1) {
-            Warn("wait_ready timeout\n");
-            return false;
-        }
-#endif
+    for (int i=0; i < count; i++) {
+        if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
+        tr->tr_time.tv_micro = ATA_RDY_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
     }
+    return false;
 }
-
-/**
- * ata_wait_drq
- * 
- * Wait with a timeout for the unit to set drq
- * @param unit Pointer to an IDEUnit struct
- * @return false on timeout
-*/
-bool ata_wait_drq(struct IDEUnit *unit) {
-    int tries = ATAPI_POLL_TRIES;
-#ifndef NOTIMER
-    struct Device *TimerBase = unit->TimeReq->tr_node.io_Device;
-    struct timeval then;
-    struct timerequest *tr;
-
-    // Performing these time functions halves throughput
-    // So only do time-out when we're not sure there's a drive there until I figure out a proper fix...
-    if (unit->present == false) {
-        tr = unit->TimeReq;
-        then.tv_micro = (WAIT_TIMEOUT_MS * 1000);
-        then.tv_secs  = WAIT_TIMEOUT_S;
-        MyGetSysTime(tr);
-        AddTime(&then,&tr->tr_time);
-    }
-#endif
-
-    Trace("wait_drq\n");
-    
-    while (1) {
-        if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_drq | ata_flag_busy | ata_flag_error)) == ata_flag_drq) return true;
-        if (*(volatile BYTE *)unit->drive->error_features & ata_err_flag_aborted) return false;
-        if (unit->present == false) {
-#ifndef NOTIMER
-            MyGetSysTime(tr);
-            if (CmpTime(&then,&tr->tr_time) == 1) {
-                Warn("wait_drq timeout\n");
-                return false;
-        }
-#endif
-        wait(1000);
-        } else if (unit->atapi == true) {
-            if (tries > 0) {
-                tries--;
-            } else {
-                return false;
-            }
-        }
-    }
-}
-
-
 /**
  * ata_identify
  * 
@@ -167,7 +93,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     
     if (*unit->shadowDevHead != drvSel) {
         *unit->drive->devHead = *unit->shadowDevHead = drvSel;
-        if (!ata_wait_ready(unit))
+        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
     }
 
@@ -178,7 +104,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit)) {
+    if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             Warn("ATA: IDENTIFY Status: Error\n");
             Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
@@ -237,7 +163,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
         }
     }
 
-    if (dev_found == false || !ata_wait_not_busy(unit))
+    if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
         return false;
 
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) // Allocate buffer for IDENTIFY result
@@ -354,7 +280,7 @@ if (direction == READ) {
 
         if (*unit->shadowDevHead != drvSelHead) {
             *unit->drive->devHead = *unit->shadowDevHead = drvSelHead;
-            if (!ata_wait_ready(unit))
+            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
                 return HFERR_SelTimeout;
         }
 
@@ -369,13 +295,13 @@ if (direction == READ) {
         *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
 
         for (int block = 0; block < subcount; block++) {
-            if (!ata_wait_drq(unit))
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                 return IOERR_UNITBUSY;
 
             if (direction == READ) {
 #if SLOWXFER
-                for (int i=0; i<(unit->blockSize / 2); i++) {
-                    ((UWORD *)buffer)[offset] = *(UWORD *)unit->drive->data;
+                for (int i=0; i<(unit->blockSize / 4); i++) {
+                    ((ULONG *)buffer)[offset] = *(ULONG *)unit->drive->data;
                     offset++;
                 }
 #else
@@ -385,8 +311,8 @@ if (direction == READ) {
 
             } else {
 #if SLOWXFER
-                for (int i=0; i<(unit->blockSize / 2); i++) {
-                    *(UWORD *)unit->drive->data = ((UWORD *)buffer)[offset];
+                for (int i=0; i<(unit->blockSize / 4); i++) {
+                    *(ULONG *)unit->drive->data = ((ULONG *)buffer)[offset];
                     offset++;
                 }
 #else
