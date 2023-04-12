@@ -19,10 +19,57 @@
 #include "scsi.h"
 #include "string.h"
 
+#define ATAPI_DRQ_WAIT_LOOP_US 50
+#define ATAPI_DRQ_WAIT_MS 10
+#define ATAPI_DRQ_WAIT_COUNT (ATAPI_DRQ_WAIT_MS * (1000 / ATAPI_DRQ_WAIT_LOOP_US))
 
-static bool poll_drq(struct IDEUnit *unit) {
-    for (int i=0; i<1000; i++) {
+#define ATAPI_BSY_WAIT_LOOP_US 50
+#define ATAPI_BSY_WAIT_S 5
+#define ATAPI_BSY_WAIT_COUNT (ATAPI_BSY_WAIT_S * 1000 * (1000 / ATAPI_BSY_WAIT_LOOP_US))
+
+#define ATAPI_RDY_WAIT_LOOP_US 50
+#define ATAPI_RDY_WAIT_S 1
+#define ATAPI_RDY_WAIT_COUNT (ATAPI_RDY_WAIT_S * 1000 * (1000 / ATAPI_RDY_WAIT_LOOP_US))
+
+static bool atapi_wait_drq(struct IDEUnit *unit, ULONG count) {
+    struct timerequest *tr = unit->TimeReq;
+    tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
+    tr->tr_time.tv_secs  = 0;
+
+    for (int i=0; i < count; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
+        if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
+        tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
+
+    }
+    return false;
+}
+
+static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG count) {
+    struct timerequest *tr = unit->TimeReq;
+
+    for (int i=0; i < count; i++) {
+        if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
+        tr->tr_time.tv_micro = ATAPI_BSY_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
+    }
+    return false;
+}
+
+static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG count) {
+    struct timerequest *tr = unit->TimeReq;
+
+    for (int i=0; i < count; i++) {
+        if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
+        tr->tr_time.tv_micro = ATAPI_RDY_WAIT_LOOP_US;
+        tr->tr_time.tv_secs  = 0;
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        DoIO((struct IORequest *)tr);
     }
     return false;
 }
@@ -43,7 +90,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
     // Only update the devHead register if absolutely necessary to save time
     if (*unit->shadowDevHead != drvSel) {
         *unit->drive->devHead = *unit->shadowDevHead = drvSel;
-        if (!ata_wait_ready(unit))
+        if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
     }
 
@@ -54,7 +101,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATAPI_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit)) {
+    if (!atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             Warn("ATAPI: IDENTIFY Status: Error\n");
             Warn("ATAPI: last_error: %08lx\n",&unit->last_error[0]);
@@ -158,7 +205,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     // Only update the devHead register if absolutely necessary to save time
     if (*unit->shadowDevHead != drvSelHead) {
         *unit->drive->devHead = *unit->shadowDevHead = drvSelHead;
-        if (!ata_wait_ready(unit))
+        if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
     }
 
@@ -177,7 +224,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     *unit->drive->status_command = ATAPI_CMD_PACKET;
 
     // HP0
-    if (!ata_wait_not_busy(unit)) {
+    if (!atapi_wait_not_bsy(unit,10000)) {
         Trace("ATAPI: Packet bsy timeout\n");
         return HFERR_SelTimeout;
     }
@@ -227,13 +274,10 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     
     ULONG index = 0;
 
-    //if (cmd->scsi_Length == 0) goto xferdone;
-
     while (1) {
-        ata_wait_not_busy(unit);
+        if (!atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT)) goto xferdone;
 
-        //if (!ata_wait_drq(unit)) {
-        if (!poll_drq(unit)) {
+        if (!atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT)) {
             // Some commands (like mode-sense) may return less data than the length specified
             // Read/Write actual should always match, if not throw an error.
             if (operation == SCSI_CMD_READ_10 || operation == SCSI_CMD_WRITE_10) {

@@ -315,13 +315,16 @@ void __attribute__((noreturn)) ide_task () {
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");
                     DeletePort(mp);
+                    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
+                    if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
+                    if (dev->TimerMP) DeletePort(dev->TimerMP);
                     dev->TaskMP = NULL;
                     dev->Task = NULL;
                     dev->TaskActive = false;
                     ReplyMsg(&ioreq->io_Message);
                     RemTask(NULL);
                     Wait(0);
-
+                    break;
                 default:
                     // Unknown commands.
                     ioreq->io_Error = IOERR_NOCMD;
