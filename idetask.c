@@ -250,6 +250,10 @@ void __attribute__((noreturn)) ide_task () {
         Wait(0);
     }
 
+    dev->TimerMP->mp_SigTask = FindTask(NULL);
+    dev->TimerMP->mp_SigBit = AllocSignal(-1);
+    dev->TimerMP->mp_Flags = PA_SIGNAL;
+
     dev->TaskMP = mp;
     dev->TaskActive = true;
 
