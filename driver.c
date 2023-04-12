@@ -204,6 +204,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     if (dev->num_units > 0) {
         Trace("Start the Task\n");
+
+        // The IDE Task will take over the Timer reply port when it starts
+        dev->TimerMP->mp_Flags = PA_IGNORE;
+        FreeSignal(dev->TimerMP->mp_SigBit);
+
         // Start the IDE Task
         dev->Task = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
         if (!dev->Task) {

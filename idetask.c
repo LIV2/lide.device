@@ -266,10 +266,11 @@ void __attribute__((noreturn)) ide_task () {
 
                 case TD_CHANGESTATE:
                     ioreq->io_Error  = 0;
+                    ioreq->io_Actual = 0;
                     if (unit->atapi) {
                         if ((ioreq->io_Error = atapi_test_unit_ready(unit) == TDERR_DiskChanged)) {
-                            // If the drive returned a unit attention status, we need to test again
-                            ioreq->io_Error = atapi_test_unit_ready(unit);
+                            ioreq->io_Actual = 1;
+                            ioreq->io_Error = 0;
                         }
                     }
                     ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;

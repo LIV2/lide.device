@@ -380,12 +380,13 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                     unit->logicalSectors = 0;
                     unit->blockShift = 0;
                     unit->blockSize = 0;
-                    ret = 0;
+                    ret = TDERR_DiskChanged;
                     break;
                 case 6: // Unit attention
                     Trace("ATAPI: Unit attention, clearing with request_sense");
                 case 3: // Medium error
-                    ret = atapi_request_sense(unit,NULL,0); // Get the sense data
+                    if ((ret = atapi_request_sense(unit,NULL,0)) == 0) // Get the sense data
+                        ret = TDERR_DiskChanged;
                     break;
             }
         }
