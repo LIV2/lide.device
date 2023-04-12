@@ -102,9 +102,15 @@ static void Cleanup(struct DeviceBase *dev) {
             dev->units[i].cd->cd_Flags |= CDF_CONFIGME;
         }
     }
+
     if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
     if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
-    if (dev->TimerMP) DeletePort(dev->TimerMP);
+
+    // If we still own the timer reply port we need to delete it now
+    if (dev->TimerMP->mp_SigTask == FindTask(NULL)) {
+        if (dev->TimerMP)  DeletePort(dev->TimerMP);
+    }
+
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
     if (dev->units) FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
 }
