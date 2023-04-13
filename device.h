@@ -40,6 +40,8 @@ struct IDEUnit {
     BOOL  present;
     BOOL  atapi;
     BOOL  mediumPresent;
+    BOOL  xfer_multiple;
+    UBYTE multiple_count;
     UWORD change_count;
     UWORD cylinders;
     UWORD heads;
@@ -59,13 +61,13 @@ struct DeviceBase {
     struct MsgPort  *TaskMP;
     volatile bool   TaskActive;
     struct MsgPort  *TimerMP;
-    struct   timerequest *TimeReq;
-    BPTR     saved_seg_list;
-    BOOL     is_open;
-    UBYTE    num_boards;
-    UBYTE    num_units;
-    struct   IDEUnit *units;
-    UBYTE    shadowDevHeads[MAX_UNITS/2];
+    struct          timerequest *TimeReq;
+    BPTR            saved_seg_list;
+    BOOL            is_open;
+    UBYTE           num_boards;
+    UBYTE           num_units;
+    struct          IDEUnit *units;
+    UBYTE           shadowDevHeads[MAX_UNITS/2];
 };
 
 

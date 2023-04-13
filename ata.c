@@ -191,6 +191,14 @@ bool ata_init_unit(struct IDEUnit *unit) {
         unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
         unit->blockShift      = 0;
         unit->mediumPresent   = true;
+        unit->multiple_count  = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
+
+        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->xfer_multiple) == 0)) {
+            unit->xfer_multiple = true;
+        } else {
+            unit->xfer_multiple = false;
+            unit->multiple_count = 1;
+        }
 
         Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
         if (unit->logicalSectors >= 16514064) {
@@ -249,6 +257,44 @@ ident_failed:
 }
 
 /**
+ * ata_set_multiple
+ * 
+ * Configure the DRQ block size for READ MULTIPLE and WRITE MULTIPLE
+ * @param unit Pointer to an IDEUnit struct
+ * @param multiple DRQ Block size
+ * @return non-zero on error
+*/
+bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
+    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    
+    if (*unit->shadowDevHead != drvSel) {
+        *unit->drive->devHead = *unit->shadowDevHead = drvSel;
+        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+            return HFERR_SelTimeout;
+    }
+
+    *unit->drive->sectorCount    = multiple;
+    *unit->drive->lbaLow         = 0;
+    *unit->drive->lbaMid         = 0;
+    *unit->drive->lbaHigh        = 0;
+    *unit->drive->error_features = 0;
+    *unit->drive->status_command = ATA_CMD_SET_MULTIPLE;
+
+    if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
+        return IOERR_UNITBUSY;
+    
+    if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+        if (*unit->drive->error_features & ata_err_flag_aborted) {
+            return IOERR_ABORTED;
+        } else {
+            return TDERR_NotSpecified;
+        }
+    }
+
+    return 0;
+}
+
+/**
  * ata_transfer
  * 
  * Read/write a block from/to the unit
@@ -269,6 +315,14 @@ if (direction == READ) {
     ULONG subcount = 0;
     ULONG offset = 0;
     *actual = 0;
+
+    UBYTE command;
+
+    if (unit->xfer_multiple) {
+        command = (direction == READ) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_WRITE_MULTIPLE;
+    } else {
+        command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+    }
 
     if (count == 0) return TDERR_TooFewSecs;
 
@@ -298,11 +352,13 @@ if (direction == READ) {
         *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
         *unit->drive->error_features = 0;
-        *unit->drive->status_command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+        *unit->drive->status_command = command;
 
         for (int block = 0; block < subcount; block++) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
-                return IOERR_UNITBUSY;
+            if (block % unit->multiple_count == 0) {
+                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                    return IOERR_UNITBUSY;
+            }
 
             if (direction == READ) {
 #if SLOWXFER

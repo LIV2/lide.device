@@ -40,9 +40,13 @@
 
 #define ata_err_flag_aborted (1<<2)
 
-#define ATA_CMD_IDENTIFY   0xEC
-#define ATA_CMD_READ       0x20
-#define ATA_CMD_WRITE      0x30
+#define ATA_CMD_IDENTIFY       0xEC
+#define ATA_CMD_READ           0x20
+#define ATA_CMD_READ_MULTIPLE  0xC4
+#define ATA_CMD_WRITE          0x30
+#define ATA_CMD_WRITE_MULTIPLE 0xC5
+#define ATA_CMD_SET_MULTIPLE   0xC6
+
 // Identify data word offsets
 #define ata_identify_cylinders       1
 #define ata_identify_heads           3
@@ -50,6 +54,7 @@
 #define ata_identify_serial          10
 #define ata_identify_fw_rev          23
 #define ata_identify_model           27
+#define ata_identify_multiple        47
 #define ata_identify_capabilities    49
 #define ata_identify_logical_sectors 60
 #define ata_identify_pio_modes       64
@@ -80,5 +85,6 @@ enum xfer_dir {
 
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
+bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);
 #endif
