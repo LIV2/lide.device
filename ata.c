@@ -110,7 +110,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+    if (!ata_wait_drq(unit,1000)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             Warn("ATA: IDENTIFY Status: Error\n");
             Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
@@ -193,7 +193,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
         unit->mediumPresent   = true;
         unit->multiple_count  = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
 
-        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->xfer_multiple) == 0)) {
+        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->multiple_count) == 0)) {
             unit->xfer_multiple = true;
         } else {
             unit->xfer_multiple = false;
