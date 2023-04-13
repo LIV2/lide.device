@@ -312,8 +312,8 @@ if (direction == READ) {
 } else {
     Trace("ata_write\n");
 }
-    ULONG subcount = 0;
-    ULONG offset = 0;
+    ULONG offset    = 0;
+    ULONG txn_count = 0; // Amount of sectors to transfer in the current READ/WRITE command
     *actual = 0;
 
     UBYTE command;
@@ -330,11 +330,11 @@ if (direction == READ) {
 
     while (count > 0) {
         if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
-            subcount = MAX_TRANSFER_SECTORS;
+            txn_count = MAX_TRANSFER_SECTORS;
         } else {
-            subcount = count;                // Get any remainders
+            txn_count = count;                // Get any remainders
         }
-        count -= subcount;
+        count -= txn_count;
 
         BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
@@ -345,16 +345,16 @@ if (direction == READ) {
         }
 
 
-        Trace("ATA: XFER Count: %ld, Subcount: %ld\n",count,subcount);
+        Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        *unit->drive->sectorCount    = subcount; // Count value of 0 indicates to transfer 256 sectors
+        *unit->drive->sectorCount    = txn_count; // Count value of 0 indicates to transfer 256 sectors
         *unit->drive->lbaLow         = (UBYTE)(lba);
         *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
         *unit->drive->error_features = 0;
         *unit->drive->status_command = command;
 
-        for (int block = 0; block < subcount; block++) {
+        for (int block = 0; block < txn_count; block++) {
             if (block % unit->multiple_count == 0) {
                 if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                     return IOERR_UNITBUSY;
@@ -400,7 +400,7 @@ if (direction == READ) {
             return TDERR_NotSpecified;
         }
 
-        lba += subcount;
+        lba += txn_count;
 
     }
 
