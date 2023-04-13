@@ -19,6 +19,18 @@
 #define ATAPI_CMD_PACKET   0xA0
 #define ATAPI_CMD_IDENTIFY 0xA1
 
+#define ATAPI_DRQ_WAIT_LOOP_US 50
+#define ATAPI_DRQ_WAIT_MS 10
+#define ATAPI_DRQ_WAIT_COUNT (ATAPI_DRQ_WAIT_MS * (1000 / ATAPI_DRQ_WAIT_LOOP_US))
+
+#define ATAPI_BSY_WAIT_LOOP_US 50
+#define ATAPI_BSY_WAIT_S 5
+#define ATAPI_BSY_WAIT_COUNT (ATAPI_BSY_WAIT_S * 1000 * (1000 / ATAPI_BSY_WAIT_LOOP_US))
+
+#define ATAPI_RDY_WAIT_LOOP_US 50
+#define ATAPI_RDY_WAIT_S 1
+#define ATAPI_RDY_WAIT_COUNT (ATAPI_RDY_WAIT_S * 1000 * (1000 / ATAPI_RDY_WAIT_LOOP_US))
+
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);

@@ -19,29 +19,20 @@
 #include "scsi.h"
 #include "string.h"
 
-#define WAIT_TIMEOUT_MS 0
-#define WAIT_TIMEOUT_S  5
-#define ATAPI_POLL_TRIES 100
-
 static void ata_read_fast (void *, void *);
 static void ata_write_fast (void *, void *);
 
-#define ATA_DRQ_WAIT_LOOP_US 50
-#define ATA_DRQ_WAIT_MS 10
-#define ATA_DRQ_WAIT_COUNT (ATA_DRQ_WAIT_MS * (1000 / ATA_DRQ_WAIT_LOOP_US))
-
-#define ATA_BSY_WAIT_LOOP_US 50
-#define ATA_BSY_WAIT_S 3
-#define ATA_BSY_WAIT_COUNT (ATA_BSY_WAIT_S * 1000 * (1000 / ATA_BSY_WAIT_LOOP_US))
-
-#define ATA_RDY_WAIT_LOOP_US 50
-#define ATA_RDY_WAIT_S 3
-#define ATA_RDY_WAIT_COUNT (ATA_RDY_WAIT_S * 1000 * (1000 / ATA_RDY_WAIT_LOOP_US))
-
-static bool ata_wait_drq(struct IDEUnit *unit, ULONG count) {
+/**
+ * ata_wait_drq
+ * 
+ * Poll DRQ in the status register until set or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
-    for (int i=0; i < count; i++) {
+    for (int i=0; i < tries; i++) {
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
         }
@@ -54,11 +45,18 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG count) {
     return false;
 }
 
-static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG count) {
+/**
+ * ata_wait_not_busy
+ * 
+ * Poll BSY in the status register until clear or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
-    for (int i=0; i < count; i++) {
-        if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
+    for (int i=0; i < tries; i++) {
+        if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
         tr->tr_time.tv_micro = ATA_BSY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
         tr->tr_node.io_Command = TR_ADDREQUEST;
@@ -67,10 +65,17 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG count) {
     return false;
 }
 
-static bool ata_wait_ready(struct IDEUnit *unit, ULONG count) {
+/**
+ * ata_wait_not_busy
+ * 
+ * Poll RDY in the status register until set or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
-    for (int i=0; i < count; i++) {
+    for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         tr->tr_time.tv_micro = ATA_RDY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
@@ -79,6 +84,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG count) {
     }
     return false;
 }
+
 /**
  * ata_identify
  * 

@@ -65,6 +65,19 @@ enum xfer_dir {
     WRITE
 };
 
+#define ATA_DRQ_WAIT_LOOP_US 50
+#define ATA_DRQ_WAIT_MS 10
+#define ATA_DRQ_WAIT_COUNT (ATA_DRQ_WAIT_MS * (1000 / ATA_DRQ_WAIT_LOOP_US))
+
+#define ATA_BSY_WAIT_LOOP_US 50
+#define ATA_BSY_WAIT_S 3
+#define ATA_BSY_WAIT_COUNT (ATA_BSY_WAIT_S * 1000 * (1000 / ATA_BSY_WAIT_LOOP_US))
+
+#define ATA_RDY_WAIT_LOOP_US 50
+#define ATA_RDY_WAIT_S 3
+#define ATA_RDY_WAIT_COUNT (ATA_RDY_WAIT_S * 1000 * (1000 / ATA_RDY_WAIT_LOOP_US))
+
+
 bool ata_init_unit(struct IDEUnit *);
 bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);

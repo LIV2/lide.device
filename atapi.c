@@ -19,24 +19,17 @@
 #include "scsi.h"
 #include "string.h"
 
-#define ATAPI_DRQ_WAIT_LOOP_US 50
-#define ATAPI_DRQ_WAIT_MS 10
-#define ATAPI_DRQ_WAIT_COUNT (ATAPI_DRQ_WAIT_MS * (1000 / ATAPI_DRQ_WAIT_LOOP_US))
-
-#define ATAPI_BSY_WAIT_LOOP_US 50
-#define ATAPI_BSY_WAIT_S 5
-#define ATAPI_BSY_WAIT_COUNT (ATAPI_BSY_WAIT_S * 1000 * (1000 / ATAPI_BSY_WAIT_LOOP_US))
-
-#define ATAPI_RDY_WAIT_LOOP_US 50
-#define ATAPI_RDY_WAIT_S 1
-#define ATAPI_RDY_WAIT_COUNT (ATAPI_RDY_WAIT_S * 1000 * (1000 / ATAPI_RDY_WAIT_LOOP_US))
-
-static bool atapi_wait_drq(struct IDEUnit *unit, ULONG count) {
+/**
+ * atapi_wait_drq
+ * 
+ * Poll DRQ in the status register until set or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
-    tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
-    tr->tr_time.tv_secs  = 0;
 
-    for (int i=0; i < count; i++) {
+    for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
         if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
         tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
@@ -48,10 +41,17 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG count) {
     return false;
 }
 
-static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG count) {
+/**
+ * atapi_wait_not_bsy
+ * 
+ * Poll BSY in the status register until clear or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
-    for (int i=0; i < count; i++) {
+    for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
         tr->tr_time.tv_micro = ATAPI_BSY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
@@ -61,10 +61,17 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG count) {
     return false;
 }
 
-static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG count) {
+/**
+ * atapi_wait_rdy
+ * 
+ * Poll RDY in the status register until set or timeout
+ * @param unit Pointer to an IDEUnit struct
+ * @param tries Tries, sets the timeout
+*/
+static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
-    for (int i=0; i < count; i++) {
+    for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         tr->tr_time.tv_micro = ATAPI_RDY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
