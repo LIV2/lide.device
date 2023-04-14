@@ -95,11 +95,10 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
 
     // Only update the devHead register if absolutely necessary to save time
-    if (*unit->shadowDevHead != drvSel) {
-        *unit->drive->devHead = *unit->shadowDevHead = drvSel;
-        if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
-            return HFERR_SelTimeout;
-    }
+    ata_select(unit,drvSel,false);
+
+    //if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
+    //        return HFERR_SelTimeout;
 
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
@@ -210,12 +209,11 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
 
     // Only update the devHead register if absolutely necessary to save time
-    if (*unit->shadowDevHead != drvSelHead) {
-        *unit->drive->devHead = *unit->shadowDevHead = drvSelHead;
-        if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
-            return HFERR_SelTimeout;
-    }
+    ata_select(unit,drvSelHead,true);
 
+    if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
+            return HFERR_SelTimeout;
+ 
     while ((*status & ata_flag_ready) == 0);
 
     if (cmd->scsi_Length > 65534) {

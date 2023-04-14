@@ -31,10 +31,13 @@ static void ata_write_fast (void *, void *);
 */
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
-
+    Info("wait_drq enter\n");
     for (int i=0; i < tries; i++) {
         for (int j=0; j<1000; j++) {
-            if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
+            if ((*unit->drive->status_command & ata_flag_drq) != 0) {
+                Info("*\n");
+                return true;
+            }
         }
         tr->tr_time.tv_micro = ATA_DRQ_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
@@ -42,6 +45,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
         DoIO((struct IORequest *)tr);
 
     }
+    Info("wait_drq timeout\n");
     return false;
 }
 
@@ -56,7 +60,9 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
-        if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
+        for (int j=0; j<1000; j++) {
+            if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
+        }
         tr->tr_time.tv_micro = ATA_BSY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
         tr->tr_node.io_Command = TR_ADDREQUEST;
@@ -66,7 +72,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
 }
 
 /**
- * ata_wait_not_busy
+ * ata_wait_ready
  * 
  * Poll RDY in the status register until set or timeout
  * @param unit Pointer to an IDEUnit struct
@@ -76,7 +82,9 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
-        if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
+        for (int j=0; j<1000; j++) {
+            if ((*unit->drive->status_command & (ata_flag_ready)) == ata_flag_ready) return true;
+        }
         tr->tr_time.tv_micro = ATA_RDY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
         tr->tr_node.io_Command = TR_ADDREQUEST;
@@ -85,6 +93,21 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     return false;
 }
 
+bool __always_inline ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
+{
+    bool ret = false;
+    if (*unit->shadowDevHead == select) {
+        return false;
+    } else if ((*unit->shadowDevHead & 0xF0) != (select & 0xF0)) {
+        if (wait) {
+            ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
+            ret = true;
+        }
+    }
+    *unit->drive->devHead = select;
+    *unit->shadowDevHead = select;
+    return ret;
+}
 /**
  * ata_identify
  * 
@@ -97,11 +120,10 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
     
-    if (*unit->shadowDevHead != drvSel) {
-        *unit->drive->devHead = *unit->shadowDevHead = drvSel;
-        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-            return HFERR_SelTimeout;
-    }
+    ata_select(unit,drvSel,true);
+    //if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+    //        return HFERR_SelTimeout;
+    ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
 
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
@@ -110,7 +132,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit,1000)) {
+    if (!ata_wait_drq(unit,10)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             Warn("ATA: IDENTIFY Status: Error\n");
             Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
@@ -267,11 +289,11 @@ ident_failed:
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
     
-    if (*unit->shadowDevHead != drvSel) {
-        *unit->drive->devHead = *unit->shadowDevHead = drvSel;
-        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+    ata_select(unit,drvSel,true);
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
-    }
+
 
     *unit->drive->sectorCount    = multiple;
     *unit->drive->lbaLow         = 0;
@@ -328,6 +350,10 @@ if (direction == READ) {
 
     Trace("ATA: Request sector count: %ld\n",count);
 
+    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+
+    ata_select(unit,drvSel,true);
+
     while (count > 0) {
         if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
             txn_count = MAX_TRANSFER_SECTORS;
@@ -338,12 +364,10 @@ if (direction == READ) {
 
         BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
-        if (*unit->shadowDevHead != drvSelHead) {
-            *unit->drive->devHead = *unit->shadowDevHead = drvSelHead;
-            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-                return HFERR_SelTimeout;
-        }
-
+        ata_select(unit,drvSelHead,false);
+        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+            return HFERR_SelTimeout;
+        
 
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 

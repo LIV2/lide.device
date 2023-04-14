@@ -410,7 +410,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
-    Info("Command %ld\n",ioreq->io_Command);
+    Trace("Command %lx\n",ioreq->io_Command);
     switch (ioreq->io_Command) {
         case CMD_CLEAR:
         case CMD_UPDATE:
