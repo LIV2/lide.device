@@ -31,7 +31,7 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
-        if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
+        //if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
         tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
         tr->tr_node.io_Command = TR_ADDREQUEST;

@@ -195,7 +195,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 dev->units[i].atapi          = false;
                 dev->units[i].xfer_multiple  = false;
                 dev->units[i].multiple_count = 0;
-                dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i/2];
+                dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i>>1];
                 *dev->units[i].shadowDevHead = 0;
                 Warn("testing unit %08lx\n",i);
 

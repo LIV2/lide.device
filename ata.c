@@ -83,7 +83,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         for (int j=0; j<1000; j++) {
-            if ((*unit->drive->status_command & (ata_flag_ready)) == ata_flag_ready) return true;
+            if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         }
         tr->tr_time.tv_micro = ATA_RDY_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
@@ -93,7 +93,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     return false;
 }
 
-bool __always_inline ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
+bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 {
     bool ret = false;
     if (*unit->shadowDevHead == select) {
