@@ -18,6 +18,7 @@
 #include "atapi.h"
 #include "scsi.h"
 #include "string.h"
+#include "blockcopy.h"
 
 static void ata_read_fast (void *, void *);
 static void ata_write_fast (void *, void *);
@@ -33,6 +34,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
     Info("wait_drq enter\n");
     for (int i=0; i < tries; i++) {
+        // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
             if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
@@ -58,6 +60,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
+        // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
         }
@@ -80,6 +83,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
+        // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         }
@@ -91,6 +95,17 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     return false;
 }
 
+/**
+ * ata_select
+ * 
+ * Selects the drive by writing to the dev head register
+ * If the request would not change the drive select then this will be a no-op to save time
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param select the dev head value to set
+ * @param wait whether to wait for the drive to clear BSY after selection
+ * @returns true if the drive selection was changed
+*/
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 {
     bool ret = false;
@@ -106,6 +121,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     *unit->shadowDevHead = select;
     return ret;
 }
+
 /**
  * ata_identify
  * 
@@ -242,7 +258,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
                 unit->atapi           = true;
                 if ((atapi_test_unit_ready(unit)) == 0) {
                     atapi_get_capacity(unit);
-                };
+                }
         } else {
 ident_failed:
             Warn("INIT: IDENTIFY failed\n");
@@ -252,8 +268,6 @@ ident_failed:
         }
     }
 
-    // It's faster to shift than divide
-    // Figure out how many shifts are needed for the equivalent divide
     if (unit->atapi == false && unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
@@ -284,7 +298,6 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
-
 
     *unit->drive->sectorCount    = multiple;
     *unit->drive->lbaLow         = 0;
@@ -482,122 +495,3 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
     return 0;
 }
-#pragma GCC optimize ("-fomit-frame-pointer")
-/**
- * ata_read_fast
- * 
- * Fast copy of a 512-byte sector using movem
- * Adapted from the open source at_apollo_device by Frédéric REQUIN
- * https://github.com/fredrequin/at_apollo_device
- * 
- * NOTE! source needs to be 48 bytes before the end of the data port!
- * The 68000 does an extra memory access at the end of a movem instruction!
- * Source: https://github.com/prb28/m68k-instructions-documentation/blob/master/instructions/movem.md
- * 
- * With the src of end-48 the error reg will be harmlessly read instead.
- * 
- * @param source Pointer to drive data port
- * @param destination Pointer to source buffer
-*/
-static inline void ata_read_fast (void *source, void *destinaton) {
-    asm volatile ("moveq  #48,d7\n\t"
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 1
-    
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 2
-    
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 3
-    
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 4
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 5
-    
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 6
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                  
-    "add.l   d7,%1\n\t" // 7
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
-    "add.l   d7,%1\n\t" // 8
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
-    "add.l   d7,%1\n\t" // 9
-
-    "movem.l (%0),d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    "add.l   d7,%1\n\t" // 10
-
-    "movem.l 16(%0),d0-d6/a1\n\t"
-    "movem.l d0-d6/a1,(%1)\n\t"
-    :
-    :"a" (source),"a" (destinaton)
-    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
-    );
-}
-
-/**
- * ata_write_fast
- * 
- * Fast copy of a 512-byte sector using movem
- * Adapted from the open source at_apollo_device by Frédéric REQUIN
- * https://github.com/fredrequin/at_apollo_device
- * 
- * @param source Pointer to source buffer
- * @param destination Pointer to drive data port
-*/
-static inline void ata_write_fast (void *source, void *destinaton) {
-    asm volatile (
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-    
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                  
-
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
-
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"                   
-
-    "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
-    "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
-
-    "movem.l (%0)+,d0-d6/a1\n\t"
-    "movem.l d0-d6/a1,(%1)\n\t"
-    :
-    :"a" (source),"a" (destinaton)
-    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
-    );
-}
-
-#pragma GCC reset_options
