@@ -82,6 +82,41 @@ static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG tries) {
 }
 
 /**
+ * atapi_dev_reset
+ * 
+ * Resets the device by sending a DEVICE RESET command to it
+ * @param unit Pointer to an IDEUnit struct
+*/
+void atapi_dev_reset(struct IDEUnit *unit) {
+    struct timerequest *tr = unit->TimeReq;
+    
+    atapi_wait_not_bsy(unit,10);
+    *unit->drive->status_command = ATA_CMD_DEVICE_RESET;
+
+    tr->tr_time.tv_micro   = 100;
+    tr->tr_time.tv_sec     = 0;
+    tr->tr_node.io_Command = TR_ADDREQUEST;
+    DoIO((struct IORequest *)tr);
+}
+
+/**
+ * atapi_check_signature
+ * 
+ * Resets the device then checks the signature in the LBA High and Mid registers to see if an ATAPI device is present
+ * @param unit Pointer to an IDEUnit struct
+*/
+bool atapi_check_signature(struct IDEUnit *unit) {
+    
+    atapi_dev_reset(unit);
+
+    for (int i=0; i<20; i++) {
+        if ((*unit->drive->lbaHigh == 0xEB) && (*unit->drive->lbaMid == 0x14)) return true;
+    }
+
+    return false;
+}
+
+/**
  * atapi_identify
  * 
  * Send an "IDENTIFY PACKET DEVICE" command and read the results into a buffer

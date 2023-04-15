@@ -34,10 +34,8 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     Info("wait_drq enter\n");
     for (int i=0; i < tries; i++) {
         for (int j=0; j<1000; j++) {
-            if ((*unit->drive->status_command & ata_flag_drq) != 0) {
-                Info("*\n");
-                return true;
-            }
+            if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
+            if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
         }
         tr->tr_time.tv_micro = ATA_DRQ_WAIT_LOOP_US;
         tr->tr_time.tv_secs  = 0;
@@ -190,7 +188,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             break;
         }
     }
-
+    
     if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
         return false;
 
@@ -236,31 +234,22 @@ bool ata_init_unit(struct IDEUnit *unit) {
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
-    } else if ((*unit->drive->lbaHigh == 0xEB) && (*unit->drive->lbaMid == 0x14)) { // Check for ATAPI Signature
-        if (atapi_identify(unit,buf) == false || (buf[0] & 0xC000) != 0x8000) {
-            Info("INIT: Not an ATAPI device.\n");
-            goto ident_failed;
-        }
+    } else if (atapi_check_signature(unit)) { // Check for ATAPI Signature
+        if (atapi_identify(unit,buf) && (buf[0] & 0xC000) == 0x8000) {
+            Info("INIT: ATAPI Drive found!\n");
 
-        Info("INIT: ATAPI Drive found!\n");
-
-        unit->device_type     = (buf[0] >> 8) & 0x1F;
-        unit->atapi           = true;
-        if ((atapi_test_unit_ready(unit)) != 0) {
-            Trace("ATAPI: Identify - TUR failed\n");
-            goto skip_capacity;
-        };
-
-        atapi_get_capacity(unit);
-skip_capacity:
-
-        Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
-    } else {
+                unit->device_type     = (buf[0] >> 8) & 0x1F;
+                unit->atapi           = true;
+                if ((atapi_test_unit_ready(unit)) == 0) {
+                    atapi_get_capacity(unit);
+                };
+        } else {
 ident_failed:
-        Warn("INIT: IDENTIFY failed\n");
-        // Command failed with a timeout or error
-        FreeMem(buf,512);
-        return false;
+            Warn("INIT: IDENTIFY failed\n");
+            // Command failed with a timeout or error
+            FreeMem(buf,512);
+            return false;
+        }
     }
 
     // It's faster to shift than divide
@@ -273,6 +262,8 @@ ident_failed:
 
     Info("INIT: Blockshift: %d\n",unit->blockShift);
     unit->present = true;
+
+    Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
 
     if (buf) FreeMem(buf,512);
     return true;

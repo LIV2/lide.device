@@ -182,7 +182,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-            
+
             // Detect if there are 1 or 2 IDE channels on this board
             // 2 channel boards use the CS2 decode for the second channel
             UBYTE channels = 1;

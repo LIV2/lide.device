@@ -40,6 +40,7 @@
 
 #define ata_err_flag_aborted (1<<2)
 
+#define ATA_CMD_DEVICE_RESET   0x08
 #define ATA_CMD_IDENTIFY       0xEC
 #define ATA_CMD_READ           0x20
 #define ATA_CMD_READ_MULTIPLE  0xC4

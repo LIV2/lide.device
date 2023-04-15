@@ -31,6 +31,8 @@
 #define ATAPI_RDY_WAIT_S 1
 #define ATAPI_RDY_WAIT_COUNT (ATAPI_RDY_WAIT_S * 1000 * (1000 / ATAPI_RDY_WAIT_LOOP_US))
 
+void atapi_dev_reset(struct IDEUnit *unit);
+bool atapi_check_signature(struct IDEUnit *unit);
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
