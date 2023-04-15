@@ -183,7 +183,20 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
             
-            for (BYTE i=0; i<2; i++) {
+            // Detect if there are 1 or 2 IDE channels on this board
+            // 2 channel boards use the CS2 decode for the second channel
+            UBYTE channels = 1;
+
+            UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
+            UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1; // Alt status register
+
+            if (*status == *alt_status) { // Status == Alt status?
+                channels = 2;             // No, there is probably 2 channels
+            }
+
+            Info("Channels: %ld\n",channels);
+
+            for (BYTE i=0; i < (2 * channels); i++) {
                 dev->units[i].SysBase        = SysBase;
                 dev->units[i].TimeReq        = dev->TimeReq;
                 dev->units[i].cd             = cd;
