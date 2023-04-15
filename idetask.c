@@ -169,7 +169,12 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
                 direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
 
-                if ((error = ata_transfer(data,lba,count,&scsi_command->scsi_Actual,unit,direction)) != 0 ) {
+                if (direction == READ) {
+                    error = ata_read(data,lba,count,&scsi_command->scsi_Actual,unit);
+                } else {
+                    error = ata_write(data,lba,count,&scsi_command->scsi_Actual,unit);
+                }
+                if (error != 0 ) {
                     if (error == TDERR_NotSpecified) {
                         scsi_sense(scsi_command,lba,
                         (unit->last_error[0] << 8 | unit->last_error[4])
@@ -329,7 +334,11 @@ void __attribute__((noreturn)) ide_task () {
                     if (unit->atapi == true) {
                         ioreq->io_Error = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     } else {
-                        ioreq->io_Error = ata_transfer(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                        if (direction == READ) {
+                            ioreq->io_Error = ata_read(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                        } else {
+                            ioreq->io_Error = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                        }
                     }
                     break;
 

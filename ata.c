@@ -316,35 +316,111 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     return 0;
 }
 
+#pragma GCC optimize ("-O3")
+
 /**
- * ata_transfer
+ * ata_read
  * 
- * Read/write a block from/to the unit
- * @param buffer Source buffer
+ * Read blocks from the unit
+ * @param buffer destination buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
  * @param actual Pointer to the io requests io_Actual 
  * @param unit Pointer to the unit structure
- * @param direction READ/WRITE
  * @returns error
 */
-BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction) {
-if (direction == READ) {
-    Trace("ata_read\n");
-} else {
-    Trace("ata_write\n");
-}
-    ULONG offset    = 0;
-    ULONG txn_count = 0; // Amount of sectors to transfer in the current READ/WRITE command
-    *actual = 0;
+BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
+    Trace("ata_read enter\n");
+    ULONG offset = 0;
+    ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
-    UBYTE command;
+    UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
 
-    if (unit->xfer_multiple) {
-        command = (direction == READ) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_WRITE_MULTIPLE;
-    } else {
-        command = (direction == READ) ? ATA_CMD_READ : ATA_CMD_WRITE;
+    if (count == 0) return TDERR_TooFewSecs;
+
+    Trace("ATA: Request sector count: %ld\n",count);
+
+    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+
+    ata_select(unit,drvSel,true);
+
+    while (count > 0) {
+        if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
+            txn_count = MAX_TRANSFER_SECTORS;
+        } else {
+            txn_count = count;                // Get any remainders
+        }
+        count -= txn_count;
+
+        BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+
+        ata_select(unit,drvSelHead,false);
+        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+            return HFERR_SelTimeout;
+        
+        Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
+
+        *unit->drive->sectorCount    = txn_count; // Count value of 0 indicates to transfer 256 sectors
+        *unit->drive->lbaLow         = (UBYTE)(lba);
+        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
+        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+        *unit->drive->status_command = command;
+
+        for (int block = 0; block < txn_count; block++) {
+            if (block % unit->multiple_count == 0) {
+                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                    return IOERR_UNITBUSY;
+            }
+#if SLOWXFER
+                for (int i=0; i<(unit->blockSize / 4); i++) {
+                    ((ULONG *)buffer)[offset] = *(ULONG *)unit->drive->data;
+                    offset++;
+                }
+#else
+                ata_read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
+                offset += 512;
+#endif
+            *actual += unit->blockSize;
+        }
+
+        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+            unit->last_error[0] = unit->drive->error_features[0];
+            unit->last_error[1] = unit->drive->lbaHigh[0];
+            unit->last_error[2] = unit->drive->lbaMid[0];
+            unit->last_error[3] = unit->drive->lbaLow[0];
+            unit->last_error[4] = unit->drive->status_command[0];
+            unit->last_error[5] = unit->drive->devHead[0];
+
+            Warn("ATA ERROR!!!\n");
+            Warn("last_error: %08lx\n",unit->last_error);
+            Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
+            return TDERR_NotSpecified;
+        }
+
+        lba += txn_count;
+
     }
+
+    return 0;
+}
+
+/**
+ * ata_write
+ * 
+ * Write blocks to the unit
+ * @param buffer source buffer
+ * @param lba LBA Address
+ * @param count Number of blocks to transfer
+ * @param actual Pointer to the io requests io_Actual 
+ * @param unit Pointer to the unit structure
+ * @returns error
+*/
+BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
+    Trace("ata_write enter\n");
+    ULONG offset = 0;
+    ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
+
+    UBYTE command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
 
     if (count == 0) return TDERR_TooFewSecs;
 
@@ -375,7 +451,6 @@ if (direction == READ) {
         *unit->drive->lbaLow         = (UBYTE)(lba);
         *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-        *unit->drive->error_features = 0;
         *unit->drive->status_command = command;
 
         for (int block = 0; block < txn_count; block++) {
@@ -383,29 +458,15 @@ if (direction == READ) {
                 if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                     return IOERR_UNITBUSY;
             }
-
-            if (direction == READ) {
-#if SLOWXFER
-                for (int i=0; i<(unit->blockSize / 4); i++) {
-                    ((ULONG *)buffer)[offset] = *(ULONG *)unit->drive->data;
-                    offset++;
-                }
-#else
-                ata_read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
-                offset += 512;
-#endif
-
-            } else {
-#if SLOWXFER
-                for (int i=0; i<(unit->blockSize / 4); i++) {
-                    *(ULONG *)unit->drive->data = ((ULONG *)buffer)[offset];
-                    offset++;
-                }
-#else
-                ata_write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
-                offset += 512;
-#endif
+ #if SLOWXFER
+            for (int i=0; i<(unit->blockSize / 4); i++) {
+                *(ULONG *)unit->drive->data = ((ULONG *)buffer)[offset];
+                offset++;
             }
+#else
+            ata_write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
+            offset += 512;
+#endif
 
             *actual += unit->blockSize;
         }
@@ -430,8 +491,6 @@ if (direction == READ) {
 
     return 0;
 }
-
-
 #pragma GCC optimize ("-fomit-frame-pointer")
 /**
  * ata_read_fast
@@ -449,7 +508,7 @@ if (direction == READ) {
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-static void ata_read_fast (void *source, void *destinaton) {
+static inline void ata_read_fast (void *source, void *destinaton) {
     asm volatile ("moveq  #48,d7\n\t"
 
     "movem.l (%0),d0-d6/a1-a4/a6\n\t"
@@ -510,7 +569,7 @@ static void ata_read_fast (void *source, void *destinaton) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-static void ata_write_fast (void *source, void *destinaton) {
+static inline void ata_write_fast (void *source, void *destinaton) {
     asm volatile (
     "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
     "movem.l d0-d6/a1-a4/a6,(%1)\n\t"

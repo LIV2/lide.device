@@ -9,7 +9,7 @@
 #include "device.h"
 #include <exec/types.h>
 
-#define MAX_TRANSFER_SECTORS 255 // Max amount of sectors to transfer per read/write command
+#define MAX_TRANSFER_SECTORS 256 // Max amount of sectors to transfer per read/write command
 #if MAX_TRANSFER_SECTORS > 256
 #error "MAX_TRANSFER_SECTORS cannot be larger than 256"
 #endif
@@ -87,5 +87,6 @@ bool ata_init_unit(struct IDEUnit *);
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait);
 bool ata_identify(struct IDEUnit *, UWORD *);
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
-BYTE ata_transfer(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir direction);
+BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
+BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
 #endif
