@@ -584,6 +584,16 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     return ret;
 }
 
+/**
+ * atapi_start_stop_unit
+ * 
+ * send START STOP command to ATAPI drive e.g to eject the disc
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param start Start bit of START STOP
+ * @param loej loej bit of START STOP
+ * @returns non-zero on error
+*/
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
     struct SCSICmd *cmd = NULL;
     UBYTE operation = 0;
@@ -603,4 +613,37 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
     DeleteSCSICmd(cmd);
 
     return ret;
+}
+
+/**
+ * atapi_check_wp
+ * 
+ * Check write-protect status of the disk
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error
+*/
+BYTE atapi_check_wp(struct IDEUnit *unit) {
+    struct SCSICmd *cmd = MakeSCSICmd();
+    UBYTE *cdb = cmd->scsi_Command;
+    UBYTE *buf;
+    BYTE ret;
+    cdb[0] = SCSI_CMD_MODE_SENSE_10;
+    cdb[2] = 0x3F; // All pages
+    cdb[7] = 7;    // Allocation length (we only really want the header)
+
+    if ((buf = AllocMem(7,MEMF_ANY|MEMF_CLEAR)) == NULL) return TDERR_NoMem;
+
+    cmd->scsi_Length = 7;
+    cmd->scsi_Data = (UWORD *)buf;
+
+    if ((ret = atapi_packet(cmd,unit)) == 0) {
+        if (buf[3] & 1<<7)
+            ret = TDERR_WriteProt;
+    }
+
+    if (buf) FreeMem(buf,7);
+
+    return ret;
+
 }

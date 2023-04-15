@@ -40,5 +40,5 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UWORD *buffer, int length);
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual);
 BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej);
-
+BYTE atapi_check_wp(struct IDEUnit *unit);
 #endif

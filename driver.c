@@ -429,11 +429,6 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             ioreq->io_Error  = 0;
             break;
 
-        case TD_PROTSTATUS:
-            ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->atapi) ? 1 : 0 ; // Not protected
-            ioreq->io_Error  = 0;
-            break;
-
         case TD_GETGEOMETRY:
             td_get_geometry(ioreq);
             break;
@@ -442,6 +437,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case CMD_READ:
         case CMD_WRITE:
             ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+        case TD_PROTSTATUS:
         case TD_EJECT:
         case TD_FORMAT:
         case TD_READ64:

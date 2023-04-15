@@ -288,6 +288,19 @@ void __attribute__((noreturn)) ide_task () {
                     ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
                     break;
 
+                case TD_PROTSTATUS:
+                    ioreq->io_Error  = 0;
+                    if (unit->atapi) {
+                        if (unit->device_type == 0x05 || (ioreq->io_Error = atapi_check_wp(unit)) == TDERR_WriteProt) {
+                            ioreq->io_Error = 0;
+                            ioreq->io_Actual = 1;
+                            break;
+                        }
+                    }
+                    ioreq->io_Actual = 0; // Not protected
+                    break;
+
+
                 case CMD_READ:
                 case TD_READ64:
                 case NSCMD_TD_READ64:
