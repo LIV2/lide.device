@@ -288,6 +288,7 @@ void __attribute__((noreturn)) ide_task () {
                         if ((ioreq->io_Error = atapi_test_unit_ready(unit) == TDERR_DiskChanged)) {
                             ioreq->io_Actual = 1;
                             ioreq->io_Error = 0;
+                            break;
                         }
                     }
                     ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
