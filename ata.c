@@ -198,7 +198,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
-        if ((*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
+        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
             dev_found = true;
             Trace("INIT: Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;
@@ -335,7 +335,6 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 */
 BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
-    ULONG offset = 0;
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
@@ -370,21 +369,17 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
         *unit->drive->status_command = command;
 
-        for (int block = 0; block < txn_count; block++) {
-            if (block % unit->multiple_count == 0) {
-                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
-                    return IOERR_UNITBUSY;
+        while (txn_count) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                return IOERR_UNITBUSY;
+
+            for (int i = 0; i < unit->multiple_count && txn_count; i++) {
+                ata_read_fast((void *)(unit->drive->error_features - 48),(buffer + *actual));
+
+                lba++;
+                txn_count--;
+                *actual += unit->blockSize;
             }
-#if SLOWXFER
-                for (int i=0; i<(unit->blockSize / 4); i++) {
-                    ((ULONG *)buffer)[offset] = *(ULONG *)unit->drive->data;
-                    offset++;
-                }
-#else
-                ata_read_fast((void *)(unit->drive->error_features - 48),(buffer + offset));
-                offset += 512;
-#endif
-            *actual += unit->blockSize;
         }
 
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
@@ -400,9 +395,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
             return TDERR_NotSpecified;
         }
-
-        lba += txn_count;
-
     }
 
     return 0;
@@ -421,7 +413,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 */
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
-    ULONG offset = 0;
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
@@ -457,22 +448,18 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
         *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
         *unit->drive->status_command = command;
 
-        for (int block = 0; block < txn_count; block++) {
-            if (block % unit->multiple_count == 0) {
-                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
-                    return IOERR_UNITBUSY;
-            }
- #if SLOWXFER
-            for (int i=0; i<(unit->blockSize / 4); i++) {
-                *(ULONG *)unit->drive->data = ((ULONG *)buffer)[offset];
-                offset++;
-            }
-#else
-            ata_write_fast((buffer + offset),(void *)(unit->drive->error_features - 48));
-            offset += 512;
-#endif
 
-            *actual += unit->blockSize;
+        while (txn_count) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                return IOERR_UNITBUSY;
+
+            for (int i = 0; i < unit->multiple_count && txn_count; i++) {
+                ata_write_fast((buffer + *actual),(void *)(unit->drive->error_features - 48));
+
+                lba++;
+                txn_count--;
+                *actual += unit->blockSize;
+            }
         }
 
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
@@ -488,9 +475,6 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
             return TDERR_NotSpecified;
         }
-
-        lba += txn_count;
-
     }
 
     return 0;
