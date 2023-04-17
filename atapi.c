@@ -246,8 +246,10 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
 
+    if (unit->present) {
     if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
+    }
  
     while ((*status & ata_flag_ready) == 0);
 
