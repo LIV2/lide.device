@@ -4,7 +4,7 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/opt/amiga/m68k-amigaos/ndk13-include"
+                "/opt/amiga/m68k-amigaos/ndk-include"
             ],
             "defines": [],
             "compilerPath": "/opt/amiga/bin/m68k-amigaos-gcc",
