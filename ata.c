@@ -19,6 +19,7 @@
 #include "scsi.h"
 #include "string.h"
 #include "blockcopy.h"
+#include "wait.h"
 
 static void ata_read_fast (void *, void *);
 static void ata_write_fast (void *, void *);
@@ -39,11 +40,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
             if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
             if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
         }
-        tr->tr_time.tv_micro = ATA_DRQ_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
-
+        wait_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
     Info("wait_drq timeout\n");
     return false;
@@ -64,10 +61,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
         }
-        tr->tr_time.tv_micro = ATA_BSY_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
+        wait_us(tr,ATA_BSY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -87,10 +81,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
         for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         }
-        tr->tr_time.tv_micro = ATA_RDY_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
+        wait_us(tr,ATA_RDY_WAIT_LOOP_US);
     }
     return false;
 }

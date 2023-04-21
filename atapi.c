@@ -19,14 +19,7 @@
 #include "atapi.h"
 #include "scsi.h"
 #include "string.h"
-
-static void wait(struct IDEUnit *unit, ULONG seconds) {
-    struct timerequest *tr = unit->TimeReq;
-    tr->tr_node.io_Command = TR_ADDREQUEST;
-    tr->tr_time.tv_sec   = seconds;
-    tr->tr_time.tv_micro = 0;
-    DoIO((struct IORequest *)tr);
-}
+#include "wait.h"
 
 /**
  * atapi_wait_drq
@@ -41,11 +34,7 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
         //if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
-        tr->tr_time.tv_micro = ATAPI_DRQ_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
-
+        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -62,10 +51,7 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
-        tr->tr_time.tv_micro = ATAPI_BSY_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
+        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -82,10 +68,7 @@ static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
-        tr->tr_time.tv_micro = ATAPI_RDY_WAIT_LOOP_US;
-        tr->tr_time.tv_secs  = 0;
-        tr->tr_node.io_Command = TR_ADDREQUEST;
-        DoIO((struct IORequest *)tr);
+        wait_us(tr,ATAPI_RDY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -234,7 +217,7 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
                     }
                 } else if (senseKey == 0x02) { // Unit becoming ready
                     if (asc == 0x04) {
-                        wait(unit,1);  // Wait
+                        wait(unit->TimeReq,1);  // Wait
                         continue; // and try again
                     } else { // Medium Error / Not ready
                         ret = IOERR_UNITBUSY;
@@ -461,7 +444,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                     case 2: // Not ready
                         if (asc == 4 && tries > 0) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
-                            wait(unit,3);
+                            wait(unit->TimeReq,3);
                         } else { // Anything else - No medium/bad medium etc
                             if (unit->mediumPresent == true) {
                                 Trace("ATAPI TUR: Setting medium as not present\n");
