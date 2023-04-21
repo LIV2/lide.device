@@ -265,7 +265,7 @@ ident_failed:
         return false;
     }
 
-    Info("INIT: Blockshift: %d\n",unit->blockShift);
+    Info("INIT: Blockshift: %ld\n",unit->blockShift);
     unit->present = true;
 
     Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);

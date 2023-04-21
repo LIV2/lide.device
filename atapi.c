@@ -33,7 +33,6 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
-        //if ((*unit->drive->status_command & (ata_flag_df | ata_flag_error)) != 0) return false;
         wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     return false;
@@ -80,7 +79,7 @@ static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG tries) {
  * @param unit Pointer to an IDEUnit struct
 */
 void atapi_dev_reset(struct IDEUnit *unit) {
-    
+    Info("ATAPI: Resetting device\n");
     atapi_wait_not_bsy(unit,10);
     *unit->drive->status_command = ATA_CMD_DEVICE_RESET;
     atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT);
@@ -233,7 +232,8 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
                     continue; // Try again
                 }
             } else {
-                // Command time outs / bad phase etc end up here 
+                // Command time outs / bad phase etc end up here
+                atapi_dev_reset(unit); // Reset the unit before trying again
                 break;
             }
         }
@@ -441,6 +441,10 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
             if ((ret = atapi_request_sense(unit,&senseError,&senseKey,&asc,&asq)) == 0) {
                 Trace("SenseKey: %lx ASC: %lx ASQ: %lx\n",senseKey,asc,asq);
                 switch (senseKey) {
+                    case 0: // If there's no Sense Key it must have been a timeout or bad phase
+                        // Reset the device before trying again
+                        atapi_dev_reset(unit);
+                        break;
                     case 2: // Not ready
                         if (asc == 4 && tries > 0) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again

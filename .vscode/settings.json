@@ -19,7 +19,8 @@
         "idetask.h": "c",
         "td64.h": "c",
         "string.h": "c",
-        "scsidisk.h": "c"
+        "scsidisk.h": "c",
+        "ndkcompat.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
