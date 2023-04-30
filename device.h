@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* This file is part of liv2ride.device
+/* This file is part of lide.device
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
 #ifndef _DEVICE_H
@@ -75,9 +75,9 @@ struct DeviceBase {
                           if invoked from a macro, macro arguments are expanded). */
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
-#define DEVICE_NAME "2nd.liv2ride.device"
+#define DEVICE_NAME "2nd.lide.device"
 #define DEVICE_DATE "(" __DATE__ ")"
-#define DEVICE_ID_STRING "liv2ride " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
+#define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
 #define DEVICE_VERSION 1
 #define DEVICE_REVISION 0
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
