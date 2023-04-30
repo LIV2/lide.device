@@ -9,3 +9,4 @@
 #define CMD_DIE 0x1000
 
 void ide_task();
+void diskchange_task();

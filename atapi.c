@@ -29,12 +29,14 @@
  * @param tries Tries, sets the timeout
 */
 static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
+    Trace("atapi_wait_drq enter\n");
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
-        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
+        wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
     }
+    Trace("atapi_wait_drq timeout\n");
     return false;
 }
 
@@ -46,12 +48,14 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
  * @param tries Tries, sets the timeout
 */
 static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
+    Trace("atapi_wait_not_bsy enter\n");
     struct timerequest *tr = unit->TimeReq;
 
     for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
         wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
+    Trace("atapi_wait_not_bsy timeout\n");
     return false;
 }
 
@@ -95,7 +99,7 @@ void atapi_dev_reset(struct IDEUnit *unit) {
 bool atapi_check_signature(struct IDEUnit *unit) {
     
     atapi_dev_reset(unit);
-
+    wait_us(unit->TimeReq,10000);
     for (int i=0; i<20; i++) {
         if ((*unit->drive->lbaHigh == 0xEB) && (*unit->drive->lbaMid == 0x14)) return true;
     }
@@ -131,8 +135,8 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 
     if (!atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
-            Warn("ATAPI: IDENTIFY Status: Error\n");
-            Warn("ATAPI: last_error: %08lx\n",&unit->last_error[0]);
+            Info("ATAPI: IDENTIFY Status: Error\n");
+            Info("ATAPI: last_error: %08lx\n",&unit->last_error[0]);
             // Save the error details
             unit->last_error[0] = *unit->drive->error_features;
             unit->last_error[1] = *unit->drive->lbaHigh;
@@ -208,17 +212,18 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
                 }
                 if (senseKey == 0x06) {
                     if (asc == 0x28) {
-                        ret = TDERR_DiskChanged; // Medium changed
+                        if (atapi_update_presence(unit,true)) ret = TDERR_DiskChanged; // Medium changed
                         break;
                     } else {
                         // Otherwise it was a reset complete message
                         continue;
                     }
-                } else if (senseKey == 0x02) { // Unit becoming ready
-                    if (asc == 0x04) {
+                } else if (senseKey == 0x02) {  // Unit not ready
+                    if (asc == 0x04) {          // Unit becoming ready
                         wait(unit->TimeReq,1);  // Wait
-                        continue; // and try again
-                    } else { // Medium Error / Not ready
+                        continue;               // and try again
+                    } else {                    // Medium Error / Not ready
+                        atapi_update_presence(unit,false);
                         ret = IOERR_UNITBUSY;
                         break; // done
                     }
@@ -332,11 +337,11 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         Info("Error: %02lx\n",*status);
         Info("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
         cmd->scsi_Status = 2;
-        if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL && cmd->scsi_SenseLength >= 18) {
-            UBYTE *sense = cmd->scsi_SenseData;
-            cmd->scsi_SenseActual = 18;
-            atapi_request_sense(unit,&sense[0],&sense[2],&sense[12],&sense[13]);
-        }
+        // if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL && cmd->scsi_SenseLength >= 18) {
+        //     UBYTE *sense = cmd->scsi_SenseData;
+        //     cmd->scsi_SenseActual = 18;
+        //     atapi_request_sense(unit,&sense[0],&sense[2],&sense[12],&sense[13]);
+        // }
         return HFERR_BadStatus;
     }
 
@@ -429,59 +434,44 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
 
         Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
 
-        if (ret == 0) {
-            if (unit->mediumPresent == false) {
-                    Trace("ATAPI TUR: setting medium as present\n");
-                    unit->mediumPresent = true;
-                    unit->change_count++;
-                    ret = atapi_get_capacity(unit);
-                }
-                goto done;
-        } else {
+        if (ret != 0) {
             if ((ret = atapi_request_sense(unit,&senseError,&senseKey,&asc,&asq)) == 0) {
                 Trace("SenseKey: %lx ASC: %lx ASQ: %lx\n",senseKey,asc,asq);
                 switch (senseKey) {
                     case 0: // If there's no Sense Key it must have been a timeout or bad phase
                         // Reset the device before trying again
+                        ret = TDERR_NotSpecified;
                         atapi_dev_reset(unit);
                         break;
                     case 2: // Not ready
-                        if (asc == 4 && tries > 0) { // Becoming ready
+                        if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
-                            wait(unit->TimeReq,3);
+                            ret = TDERR_DiskChanged;
+                            if (tries > 0) wait(unit->TimeReq,3);
                         } else { // Anything else - No medium/bad medium etc
-                            if (unit->mediumPresent == true) {
-                                Trace("ATAPI TUR: Setting medium as not present\n");
-                                unit->change_count++;
-                                unit->mediumPresent = false;
-                                unit->logicalSectors = 0;
-                                unit->blockShift = 0;
-                                unit->blockSize = 0;
-                                ret = TDERR_DiskChanged;
-                                goto done;
-                            }
+                            Trace("ATAPI TUR: Setting medium as not present\n");
+                            ret = TDERR_DiskChanged;
+                            goto done;
                         }
                         break;
                     case 6: // Unit attention
                         if (asc == 0x28) { // Medium became ready
-                            if (unit->mediumPresent == false) {
-                                Trace("ATAPI TUR: Not-ready to ready - setting medium as present\n");
-                                unit->mediumPresent = true;
-                                unit->change_count++;
-                                ret = atapi_get_capacity(unit);
-                                goto done;
-                            }
+                            ret = 0;
                         }
                         break;
                     case 3: // Medium error
                         ret = TDERR_DiskChanged;
                         break;
+                    default:
+                        ret = TDERR_NotSpecified;
+                        goto done;
                 }
             }
         }
     }
 
 done:
+    if (atapi_update_presence(unit,(ret == 0))) Info("Media state changed\n");
     DeleteSCSICmd(cmd);
 
     return ret;
@@ -739,4 +729,30 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 
     return ret;
 
+}
+
+/**
+ * atapi_update_presence
+ * 
+ * If the medium has changed state update the unit info, geometry etc
+ * @param unit Pointer to an IDEUnit struct
+ * @param present Medium present
+ * @returns bool true if changed
+*/
+bool atapi_update_presence(struct IDEUnit *unit, bool present) {
+    bool ret = false;
+    if (present && unit->mediumPresent == false) {
+        unit->change_count++;
+        unit->mediumPresent = true;
+        atapi_get_capacity(unit);
+        ret = true;
+    } else if (!present && unit->mediumPresent == true) {
+        unit->change_count++;
+        unit->mediumPresent = false;
+        unit->logicalSectors = 0;
+        unit->blockShift = 0;
+        unit->blockSize = 0;
+        ret = true;
+    }
+    return ret;
 }

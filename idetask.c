@@ -17,6 +17,7 @@
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
+#include "wait.h"
 
 /**
  * handle_scsi_command
@@ -206,7 +207,21 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 }
 
             default:
-                error = atapi_packet(scsi_command,unit);
+                if ((error = atapi_packet(scsi_command,unit)) != 0) {
+                    if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
+                        Trace("Auto sense requested\n");
+                        struct SCSICmd *cmd = MakeSCSICmd();
+                        cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+                        cmd->scsi_Command[4] = 18;
+                        cmd->scsi_Data = (UWORD *)scsi_command->scsi_SenseData;
+                        cmd->scsi_Length = scsi_command->scsi_SenseLength;
+                        cmd->scsi_Flags = SCSIF_READ;
+                        cmd->scsi_CmdLength = 1;
+                        atapi_packet(cmd,unit);
+                        scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+                        DeleteSCSICmd(cmd);
+                    }
+                }
                 break;
         }
     }
@@ -227,6 +242,64 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     }
 }
 
+void __attribute__((noreturn)) diskchange_task () {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    struct Task volatile *task = FindTask(NULL);
+    struct MsgPort *TimerMP, *iomp = NULL;
+    struct timerequest *TimerReq = NULL;
+    struct IOStdReq *ioreq = NULL;
+    struct IDEUnit *unit = NULL;
+    bool previous;
+    bool present;
+
+    while (task->tc_UserData == NULL); // Wait for Task Data to be populated
+    struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
+
+    if ((TimerMP = CreatePort(NULL,0)) == NULL || (TimerReq = (struct timerequest *)CreateExtIO(TimerMP, sizeof(struct timerequest))) == NULL) goto die;
+    if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
+    if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)TimerReq,0) != 0) goto die;
+
+    ioreq->io_Command = TD_CHANGESTATE;
+    ioreq->io_Data    = NULL;
+    ioreq->io_Length  = 1;
+    ioreq->io_Actual  = 0;
+
+    while (1) {
+        ioreq->io_Data   = NULL;
+        ioreq->io_Length = 0;
+
+        for (int i=-0; i < MAX_UNITS; i++) {
+            unit = &dev->units[i];
+            Info("Testing unit %ld\n",i);
+            if (unit->present && unit->atapi) {
+                Info("Current state: %ld\n",unit->mediumPresent);
+                previous = unit->mediumPresent;
+                ioreq->io_Unit = (struct Unit *)unit;
+                PutMsg(dev->TaskMP,(struct Message *)ioreq);
+                WaitPort(iomp);
+                GetMsg(iomp);
+                present = (ioreq->io_Actual == 0);
+
+                Info("previous / new  state:%ld  %ld\n",previous,present);
+            }
+        }
+        Info("Wait...\n");
+        wait(TimerReq,3);
+    }
+
+die:
+    Info("Change task dying...\n");
+    if (ioreq) DeleteStdIO(ioreq);
+    if (iomp) DeletePort(iomp);
+    if (TimerReq) DeleteExtIO((struct IORequest *)TimerReq);
+    if (TimerMP) DeletePort(TimerMP);
+
+    RemTask(NULL);
+    Wait(0);
+    while (1);
+}
+
+
 /**
  * ide_task
  *
@@ -244,10 +317,10 @@ void __attribute__((noreturn)) ide_task () {
     ULONG count;
     enum xfer_dir direction = WRITE;
 
-    Info("Task: waiting for init\n");
+    Info("IDE Task: waiting for init\n");
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
     struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
-    Trace("Task: CreatePort()\n");
+    Trace("IDE Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
         dev->Task = NULL; // Failed to create MP, let the device know
@@ -264,7 +337,7 @@ void __attribute__((noreturn)) ide_task () {
 
     while (1) {
         // Main loop, handle IO Requests as they come in.
-        Trace("Task: WaitPort()\n");
+        Trace("IDE Task: WaitPort()\n");
         Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
@@ -285,11 +358,8 @@ void __attribute__((noreturn)) ide_task () {
                     ioreq->io_Error  = 0;
                     ioreq->io_Actual = 0;
                     if (unit->atapi) {
-                        if ((ioreq->io_Error = atapi_test_unit_ready(unit) == TDERR_DiskChanged)) {
-                            ioreq->io_Actual = 1;
-                            ioreq->io_Error = 0;
-                            break;
-                        }
+                        ioreq->io_Actual = (atapi_test_unit_ready(unit) != 0);
+                        break;
                     }
                     ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
                     break;
@@ -319,7 +389,8 @@ void __attribute__((noreturn)) ide_task () {
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:
                     if (unit->atapi == true && unit->mediumPresent == false) {
-                        ioreq->io_Error = IOERR_BADADDRESS;
+                        Trace("Access attempt without media\n");
+                        ioreq->io_Error = TDERR_DiskChanged;
                         break;
                     }
                     
@@ -328,7 +399,8 @@ void __attribute__((noreturn)) ide_task () {
                     count = (ioreq->io_Length >> blockShift);
 
                     if ((lba + count) > (unit->logicalSectors)) {
-                        ioreq->io_Error = IOERR_BADADDRESS;
+                        Trace("Read past end of device\n");
+                        ioreq->io_Error = TDERR_SeekError;
                         break;
                     }
 

@@ -248,6 +248,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
                 unit->device_type     = (buf[0] >> 8) & 0x1F;
                 unit->atapi           = true;
                 if ((atapi_test_unit_ready(unit)) == 0) {
+                    atapi_update_presence(unit,true);
                     atapi_get_capacity(unit);
                 }
         } else {

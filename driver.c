@@ -196,7 +196,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
             Info("Channels: %ld\n",channels);
 
-            for (BYTE i=0; i < (2 * channels); i++) {
+            for (BYTE i=0; i < 2/*(2 * channels)*/; i++) {
                 dev->units[i].SysBase        = SysBase;
                 dev->units[i].TimeReq        = dev->TimeReq;
                 dev->units[i].cd             = cd;
@@ -250,6 +250,10 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 return NULL;
             }
         }
+
+        dev->ChangeTask = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)diskchange_task,TASK_STACK_SIZE);
+        dev->ChangeTask->tc_UserData = dev;
+
         Info("Startup finished.\n");
         return (struct Library *)dev;
     } else {
@@ -415,6 +419,8 @@ static UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+    struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
+
     Trace((CONST_STRPTR) "running begin_io()\n");
     ioreq->io_Error = TDERR_NotSpecified;
 
@@ -425,20 +431,20 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
     Trace("Command %lx\n",ioreq->io_Command);
     switch (ioreq->io_Command) {
+        case TD_MOTOR:
         case CMD_CLEAR:
         case CMD_UPDATE:
-        case TD_MOTOR:
             ioreq->io_Actual = 0;
             ioreq->io_Error  = 0;
             break;
 
         case TD_CHANGENUM:
-            ioreq->io_Actual = ((struct IDEUnit *)ioreq->io_Unit)->change_count;
+            ioreq->io_Actual = unit->change_count;
             ioreq->io_Error  = 0;
             break;
 
         case TD_GETDRIVETYPE:
-            ioreq->io_Actual = ((struct IDEUnit *)ioreq->io_Unit)->device_type;
+            ioreq->io_Actual = unit->device_type;
             ioreq->io_Error  = 0;
             break;
 
