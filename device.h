@@ -50,6 +50,7 @@ struct IDEUnit {
     UWORD blockShift;
     ULONG logicalSectors;
     UBYTE *shadowDevHead;
+    struct MinList changeints;
 };
 
 struct DeviceBase {

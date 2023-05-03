@@ -206,40 +206,44 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
             break;
         } else {
             if (cmd->scsi_Status == 2) {
+                // Unit reported CHECK STATUS
+                // Request the sense data
                 if ((ret = atapi_request_sense(unit,&errorCode,&senseKey,&asc,&asq)) != 0) {
                     // Got an error even trying to get the sense data :/
                     goto done;
                 }
-                if (senseKey == 0x06) {
-                    if (asc == 0x28) {
-                        if (atapi_update_presence(unit,true)) ret = TDERR_DiskChanged; // Medium changed
-                        break;
-                    } else {
-                        // Otherwise it was a reset complete message
-                        continue;
-                    }
-                } else if (senseKey == 0x02) {  // Unit not ready
-                    if (asc == 0x04) {          // Unit becoming ready
-                        wait(unit->TimeReq,1);  // Wait
-                        continue;               // and try again
-                    } else {                    // Medium Error / Not ready
-                        atapi_update_presence(unit,false);
-                        ret = IOERR_UNITBUSY;
-                        break; // done
-                    }
-                } else if (senseKey == 0x01) {
-                    // Some recovered error
-                    ret = 0;
-                    break; // done
-                } else {
-                    // Anything else
-                    ret = TDERR_NotSpecified;
-                    continue; // Try again
+                switch (senseKey) {
+                    case 0x01:                       // Recovered error
+                        ret = 0;
+                        goto done;
+
+                    case 0x02:                       // Unit not ready
+                        if (asc == 0x4) {            // Becoming ready
+                            ret = TDERR_DiskChanged;
+                            wait(unit->TimeReq,1);   // Wait
+                            continue;                // and try again
+                        } else {
+                            ret = TDERR_DiskChanged; // No media
+                            atapi_update_presence(unit,false);
+                            goto done;
+                        }
+
+                    case 0x06:                       // Media changed or unit completed reset
+                        continue;                    // Try the command again
+
+                    case 0x07:                       // Disk is write protected
+                        ret = TDERR_WriteProt;
+                        goto done;
+                    
+                    default:                         // Anything else
+                        ret = TDERR_NotSpecified;
+                        continue;                    // Try again
                 }
+
             } else {
                 // Command time outs / bad phase etc end up here
                 atapi_dev_reset(unit); // Reset the unit before trying again
-                break;
+                continue;
             }
         }
     }
@@ -297,7 +301,6 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATAPI_CMD_PACKET;
 
-    // HP0
     if (!atapi_wait_not_bsy(unit,10000)) {
         Trace("ATAPI: Packet bsy timeout\n");
         return HFERR_SelTimeout;
@@ -314,7 +317,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         Trace("ATAPI: Failed command phase\n");
         return HFERR_Phase;
     }
-    // HP1
+
     for (int i=0; i < (cmd->scsi_CmdLength/2); i++)
     {
         data = *((UWORD *)cmd->scsi_Command + i);
@@ -337,11 +340,6 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         Info("Error: %02lx\n",*status);
         Info("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
         cmd->scsi_Status = 2;
-        // if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL && cmd->scsi_SenseLength >= 18) {
-        //     UBYTE *sense = cmd->scsi_SenseData;
-        //     cmd->scsi_SenseActual = 18;
-        //     atapi_request_sense(unit,&sense[0],&sense[2],&sense[12],&sense[13]);
-        // }
         return HFERR_BadStatus;
     }
 
@@ -364,7 +362,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         }
 
         byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
-        //byte_count += (byte_count & 1); // Make sure it's an even count
+        byte_count += (byte_count & 1); // Make sure it's an even count
         for (int i=0; i < (byte_count / 2); i++) {
             if (cmd->scsi_Flags & SCSIF_READ) {
                 cmd->scsi_Data[index] = *unit->drive->data;
@@ -438,33 +436,30 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
             if ((ret = atapi_request_sense(unit,&senseError,&senseKey,&asc,&asq)) == 0) {
                 Trace("SenseKey: %lx ASC: %lx ASQ: %lx\n",senseKey,asc,asq);
                 switch (senseKey) {
-                    case 0: // If there's no Sense Key it must have been a timeout or bad phase
-                        // Reset the device before trying again
-                        ret = TDERR_NotSpecified;
-                        atapi_dev_reset(unit);
-                        break;
-                    case 2: // Not ready
+                    case 0x02: // Not ready
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
                             if (tries > 0) wait(unit->TimeReq,3);
                         } else { // Anything else - No medium/bad medium etc
-                            Trace("ATAPI TUR: Setting medium as not present\n");
                             ret = TDERR_DiskChanged;
                             goto done;
                         }
                         break;
-                    case 6: // Unit attention
+                    case 0x06: // Unit attention
                         if (asc == 0x28) { // Medium became ready
                             ret = 0;
                         }
                         break;
-                    case 3: // Medium error
+                    case 0x03: // Medium error
                         ret = TDERR_DiskChanged;
                         break;
                     default:
+                        // Anything else, could be a timeout/bad phase etc
+                        // Reset the unit and try again
+                        atapi_dev_reset(unit);
                         ret = TDERR_NotSpecified;
-                        goto done;
+                        break;
                 }
             }
         }
@@ -748,10 +743,10 @@ bool atapi_update_presence(struct IDEUnit *unit, bool present) {
         ret = true;
     } else if (!present && unit->mediumPresent == true) {
         unit->change_count++;
-        unit->mediumPresent = false;
+        unit->mediumPresent  = false;
         unit->logicalSectors = 0;
-        unit->blockShift = 0;
-        unit->blockSize = 0;
+        unit->blockShift     = 0;
+        unit->blockSize      = 0;
         ret = true;
     }
     return ret;

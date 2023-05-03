@@ -159,7 +159,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->ExpansionBase = ExpansionBase;
     }
 
-#ifndef NOTIMER
     if ((dev->TimerMP = CreatePort(NULL,0)) != NULL && (dev->TimeReq = (struct timerequest *)CreateExtIO(dev->TimerMP, sizeof(struct timerequest))) != NULL) {
         if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)dev->TimeReq,0)) {
             Info("Failed to open timer.device\n");
@@ -171,14 +170,14 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         Cleanup(dev);
         return NULL;
     }
-#endif
+
     struct ConfigDev *cd = NULL;
     cd = FindConfigDev(NULL,MANUF_ID,DEV_ID);
     while (cd != NULL)
     {
 
         if (cd->cd_Flags & CDF_CONFIGME) {
-            Info("Checking boards.. %08lx\n",cd->cd_BoardAddr);
+            Info("Checking board.. %08lx\n",cd->cd_BoardAddr);
             cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
             dev->num_boards++;
             Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
@@ -197,6 +196,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             Info("Channels: %ld\n",channels);
 
             for (BYTE i=0; i < 2/*(2 * channels)*/; i++) {
+                // Setup each unit structure
                 dev->units[i].SysBase        = SysBase;
                 dev->units[i].TimeReq        = dev->TimeReq;
                 dev->units[i].cd             = cd;
@@ -210,15 +210,21 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 dev->units[i].multiple_count = 0;
                 dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i>>1];
                 *dev->units[i].shadowDevHead = 0;
+
+                // Initialize the change int list
+                dev->units[i].changeints.mlh_Tail     = NULL;
+                dev->units[i].changeints.mlh_Head     = (struct MinNode *)&dev->units[i].changeints.mlh_Tail;
+                dev->units[i].changeints.mlh_TailPred = (struct MinNode *)&dev->units[i].changeints;
+
                 Warn("testing unit %08lx\n",i);
 
                 if (ata_init_unit(&dev->units[i])) {
                     dev->num_units++;
                 }
             }
-            break;
+            break; // We found a board so break out of the loop
         }
-        cd = FindConfigDev(cd,MANUF_ID,DEV_ID);
+        cd = FindConfigDev(cd,MANUF_ID,DEV_ID); // Keep looking for an unclaimed board
     }
 
     Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
@@ -356,6 +362,11 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
+    if (unit->atapi && unit->mediumPresent == false) {
+        ioreq->io_Error = TDERR_DiskChanged;
+        return;
+    }
+
     geometry->dg_SectorSize   = unit->blockSize;
     geometry->dg_TotalSectors = unit->logicalSectors;
     geometry->dg_Cylinders    = unit->cylinders;
@@ -364,7 +375,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
     geometry->dg_DeviceType   = unit->device_type;
-    geometry->dg_Flags        = (unit->device_type == DG_CDROM) ? DGF_REMOVABLE : 0;
+    geometry->dg_Flags        = (unit->atapi) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Error = 0;
     ioreq->io_Actual = sizeof(struct DriveGeometry);
@@ -393,6 +404,8 @@ static UWORD supported_commands[] =
     CMD_UPDATE,
     CMD_READ,
     CMD_WRITE,
+    TD_ADDCHANGEINT,
+    TD_REMCHANGEINT,
     TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
@@ -457,6 +470,8 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case CMD_WRITE:
             ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
         case TD_PROTSTATUS:
+        case TD_ADDCHANGEINT:
+        case TD_REMCHANGEINT:
         case TD_EJECT:
         case TD_FORMAT:
         case TD_READ64:

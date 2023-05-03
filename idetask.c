@@ -248,6 +248,7 @@ void __attribute__((noreturn)) diskchange_task () {
     struct MsgPort *TimerMP, *iomp = NULL;
     struct timerequest *TimerReq = NULL;
     struct IOStdReq *ioreq = NULL;
+    struct IOStdReq *intreq = NULL;
     struct IDEUnit *unit = NULL;
     bool previous;
     bool present;
@@ -259,7 +260,7 @@ void __attribute__((noreturn)) diskchange_task () {
     if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
     if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)TimerReq,0) != 0) goto die;
 
-    ioreq->io_Command = TD_CHANGESTATE;
+    ioreq->io_Command = TD_CHANGESTATE; // Run TD_CHANGESTATE to update medium presence, this should be replaced with a TUR call
     ioreq->io_Data    = NULL;
     ioreq->io_Length  = 1;
     ioreq->io_Actual  = 0;
@@ -272,19 +273,29 @@ void __attribute__((noreturn)) diskchange_task () {
             unit = &dev->units[i];
             Info("Testing unit %ld\n",i);
             if (unit->present && unit->atapi) {
-                Info("Current state: %ld\n",unit->mediumPresent);
-                previous = unit->mediumPresent;
+                previous = unit->mediumPresent;  // Get old state
                 ioreq->io_Unit = (struct Unit *)unit;
-                PutMsg(dev->TaskMP,(struct Message *)ioreq);
+
+                PutMsg(dev->TaskMP,(struct Message *)ioreq); // Send request directly to the ide task
                 WaitPort(iomp);
                 GetMsg(iomp);
-                present = (ioreq->io_Actual == 0);
+                
+                present = (ioreq->io_Actual == 0); // Get current state
 
-                Info("previous / new  state:%ld  %ld\n",previous,present);
+                if (present != previous) {
+                    // Forbid while accessing the list;
+                    Forbid();
+                    for (intreq = (struct IOStdReq *)unit->changeints.mlh_Head; intreq->io_Message.mn_Node.ln_Succ != NULL; intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
+                        if (intreq->io_Data) {
+                            Cause(intreq->io_Data);
+                        }
+                    }
+                    Permit();
+                }
             }
         }
         Info("Wait...\n");
-        wait(TimerReq,3);
+        wait(TimerReq,CHANGEINT_INTERVAL);
     }
 
 die:
@@ -365,7 +376,7 @@ void __attribute__((noreturn)) ide_task () {
                     break;
 
                 case TD_PROTSTATUS:
-                    ioreq->io_Error  = 0;
+                    ioreq->io_Error = 0;
                     if (unit->atapi) {
                         if (unit->device_type == 0x05 || (ioreq->io_Error = atapi_check_wp(unit)) == TDERR_WriteProt) {
                             ioreq->io_Error = 0;
@@ -376,6 +387,26 @@ void __attribute__((noreturn)) ide_task () {
                     ioreq->io_Actual = 0; // Not protected
                     break;
 
+                case TD_ADDCHANGEINT:
+                    Info("Addchangeint\n");
+                    ioreq->io_Error = 0;
+                    Forbid();
+                    AddHead((struct List *)&unit->changeints,(struct Node *)&ioreq->io_Message.mn_Node);
+                    Permit();
+                    // Don't reply to this request
+                    continue;
+
+                case TD_REMCHANGEINT:
+                    ioreq->io_Error = 0;
+                    struct MinNode *changeint;
+                    Forbid();
+                    for (changeint = unit->changeints.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
+                        if (ioreq == (struct IOStdReq *)changeint) {
+                            Remove(&ioreq->io_Message.mn_Node);
+                        }
+                    }
+                    Permit();
+                    break;
 
                 case CMD_READ:
                 case TD_READ64:
