@@ -20,6 +20,7 @@
 #include "scsi.h"
 #include "string.h"
 #include "wait.h"
+#include "blockcopy.h"
 
 /**
  * atapi_wait_drq
@@ -171,7 +172,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
  * @param direction Transfer direction
  * @returns error
 */
-BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction) 
+BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction) 
 {
     Trace("atapi_translate enter\n");
     struct SCSICmd *cmd = MakeSCSICmd();
@@ -294,6 +295,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     } else {
         byte_count = cmd->scsi_Length;
     }
+
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
     *unit->drive->lbaMid         = byte_count;
@@ -333,6 +335,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
             Trace("ATAPI: CMD Word: %ld\n",0);
         }
     }
+
     if (*status & ata_flag_error) {
         senseKey = *unit->drive->error_features >> 4;
         Info("ATAPI ERROR!\n");
@@ -349,8 +352,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     while (1) {
         if (!atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT)) goto xferdone;
-
-        if (!atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT)) {
+        if (cmd->scsi_Length == 0 || ((*unit->drive->sectorCount & 0x01) == 0x01)) {
             // Some commands (like mode-sense) may return less data than the length specified
             // Read/Write actual should always match, if not throw an error.
             if (operation == SCSI_CMD_READ_10 || operation == SCSI_CMD_WRITE_10) {
@@ -362,21 +364,44 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         }
 
         byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
-        byte_count += (byte_count & 1); // Make sure it's an even count
-        for (int i=0; i < (byte_count / 2); i++) {
-            if (cmd->scsi_Flags & SCSIF_READ) {
-                cmd->scsi_Data[index] = *unit->drive->data;
+        while (byte_count > 0) {
+            if ((byte_count >= 512)) {
+                ata_read_fast((void *)unit->drive->error_features - 48, cmd->scsi_Data + index);
+                index += 256;
+                cmd->scsi_Actual += 512;
+                byte_count -= 512;
             } else {
-                *unit->drive->data = cmd->scsi_Data[index];
+                if (cmd->scsi_Flags & SCSIF_READ) {
+                    cmd->scsi_Data[index] = *unit->drive->data;
+                } else {
+                    *unit->drive->data = cmd->scsi_Data[index];
+                }
+                index++;
+                cmd->scsi_Actual+=2;
+                byte_count -= 2;
             }
-            index++;
-            cmd->scsi_Actual+=2;
             if (cmd->scsi_Actual >= cmd->scsi_Length) {
-                Trace("Ending command %ld with %ld bytes remaining.\n", (ULONG)(*(UBYTE *)cmd->scsi_Command),(byte_count - (i*2)) -2);
-                Trace("SCSI Len: %ld Buf Len %ld\n",((struct SCSI_CDB_10 *)cmd->scsi_Command)->length * unit->blockSize, cmd->scsi_Length);
+                // Trace("Ending command %ld with %ld bytes remaining.\n", (ULONG)(*(UBYTE *)cmd->scsi_Command),(byte_count - (i*2)) -2);
+                // Trace("SCSI Len: %ld Buf Len %ld\n",((struct SCSI_CDB_10 *)cmd->scsi_Command)->length * unit->blockSize, cmd->scsi_Length);
                 goto xferdone;
             }
         }
+
+        //byte_count += (byte_count & 1); // Make sure it's an even count
+        // for (int i=0; i < (byte_count / 2); i++) {
+        //     if (cmd->scsi_Flags & SCSIF_READ) {
+        //         cmd->scsi_Data[index] = *unit->drive->data;
+        //     } else {
+        //         *unit->drive->data = cmd->scsi_Data[index];
+        //     }
+        //     index++;
+        //     cmd->scsi_Actual+=2;
+        //     if (cmd->scsi_Actual >= cmd->scsi_Length) {
+        //         Trace("Ending command %ld with %ld bytes remaining.\n", (ULONG)(*(UBYTE *)cmd->scsi_Command),(byte_count - (i*2)) -2);
+        //         Trace("SCSI Len: %ld Buf Len %ld\n",((struct SCSI_CDB_10 *)cmd->scsi_Command)->length * unit->blockSize, cmd->scsi_Length);
+        //         goto xferdone;
+        //     }
+        // }
     }
 xferdone:
     if (unit->SysBase->SoftVer > 36) {
@@ -390,11 +415,11 @@ xferdone:
         Warn("Error: %02lx\n",*status);
         Warn("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
         cmd->scsi_Status = 2;
-        if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL && cmd->scsi_SenseLength >= 18) {
-            UBYTE *sense = cmd->scsi_SenseData;
-            cmd->scsi_SenseActual = 18;
-            atapi_request_sense(unit,&sense[0],&sense[2],&sense[12],&sense[13]);
-        }
+        // if (cmd->scsi_Flags & (SCSIF_AUTOSENSE | SCSIF_OLDAUTOSENSE) && cmd->scsi_SenseData != NULL && cmd->scsi_SenseLength >= 18) {
+        //     UBYTE *sense = cmd->scsi_SenseData;
+        //     cmd->scsi_SenseActual = 18;
+        //     atapi_request_sense(unit,&sense[0],&sense[2],&sense[12],&sense[13]);
+        // }
         return HFERR_BadStatus;
     }
     if (cmd->scsi_Actual != cmd->scsi_Length) {
@@ -428,9 +453,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
         cmd->scsi_Data        = NULL;
         cmd->scsi_Flags       = SCSIF_READ;
 
-        ret = atapi_packet(cmd,unit);
-
-        Trace("ATAPI: TUR Return: %ld SenseKey %lx\n",ret,senseKey);
+        if ((ret = atapi_packet(cmd,unit)) == 0) break;
 
         if (ret != 0) {
             if ((ret = atapi_request_sense(unit,&senseError,&senseKey,&asc,&asq)) == 0) {
@@ -457,7 +480,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                     default:
                         // Anything else, could be a timeout/bad phase etc
                         // Reset the unit and try again
-                        atapi_dev_reset(unit);
+                        //atapi_dev_reset(unit);
                         ret = TDERR_NotSpecified;
                         break;
                 }
@@ -466,7 +489,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     }
 
 done:
-    if (atapi_update_presence(unit,(ret == 0))) Info("Media state changed\n");
+    atapi_update_presence(unit,(ret == 0)); // Update the media presence
     DeleteSCSICmd(cmd);
 
     return ret;
@@ -537,7 +560,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     struct {
         ULONG logicalSectors;
         ULONG blockSize;
-    } response;
+    } capacity;
 
     cdb->operation = SCSI_CMD_READ_CAPACITY_10;
 
@@ -545,7 +568,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     cmd->scsi_CmdActual = 0;
     cmd->scsi_Command   = (UBYTE *)cdb;
     cmd->scsi_Flags     = SCSIF_READ;
-    cmd->scsi_Data      = (UWORD *)&response;
+    cmd->scsi_Data      = (UWORD *)&capacity;
     cmd->scsi_Length    = 8;
     cmd->scsi_SenseData = NULL;
 
@@ -556,8 +579,8 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     unit->blockShift      = 0;
 
     if ((ret = atapi_packet(cmd,unit)) == 0) {
-        unit->logicalSectors  = response.logicalSectors + 1;
-        unit->blockSize       = response.blockSize;
+        unit->logicalSectors  = capacity.logicalSectors + 1;
+        unit->blockSize       = capacity.blockSize;
         
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
@@ -709,8 +732,9 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
  * @returns non-zero on error
 */
 BYTE atapi_check_wp(struct IDEUnit *unit) {
-    UBYTE ret;
+    UBYTE ret  = 0;
     UWORD *buf = NULL;
+
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) return TDERR_NoMem;
 
     UWORD actual = 0;

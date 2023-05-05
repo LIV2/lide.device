@@ -1011,20 +1011,6 @@ LONG MountDrive(struct MountStruct *ms)
 	dbg("Exit code %"PRId32"\n", ret);
 	return ret;
 }
-/*
-int main() {
-	SysBase = *(struct ExecBase **)4UL;
-	struct ExpansionBase *ExpansionBase = NULL;
-	struct ConfigDev *cd = NULL;
-	if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
-		if ((cd = FindConfigDev(NULL,0x082c,0x06)) != NULL) {
-			mount_drives(cd);
-		}
-	}
- 	if (ExpansionBase) CloseLibrary((struct Library *)ExpansionBase);
-
-}
-*/
 
 int mount_drives(struct ConfigDev *cd, char *devName)
 {
@@ -1032,12 +1018,12 @@ int mount_drives(struct ConfigDev *cd, char *devName)
 	int ret = 0;
 
 	dbg("Mounter:\n");
-	ms.deviceName = devName;
-	ULONG units[] = {2,0,1};
-	ms.unitNum = (ULONG *)&units;
+	ms.deviceName  = devName;
+	ULONG units[]  = {2,0,1};
+	ms.unitNum     = (ULONG *)&units;
 	ms.creatorName = NULL;
-	ms.configDev = cd;
-	ms.SysBase =  *(struct ExecBase **)4UL;
+	ms.configDev   = cd;
+	ms.SysBase     = *(struct ExecBase **)4UL;
 
 	ret = MountDrive(&ms);
 

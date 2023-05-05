@@ -107,8 +107,8 @@ static void Cleanup(struct DeviceBase *dev) {
     if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
 
     // If we still own the timer reply port we need to delete it now
-    if (dev->TimerMP->mp_SigTask == FindTask(NULL)) {
-        if (dev->TimerMP)  DeletePort(dev->TimerMP);
+    if (dev->IDETimerMP->mp_SigTask == FindTask(NULL)) {
+        if (dev->IDETimerMP)  DeletePort(dev->IDETimerMP);
     }
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
@@ -142,9 +142,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->is_open    = FALSE;
     dev->num_boards = 0;
     dev->num_units  = 0;
-    dev->TaskMP     = NULL;
-    dev->Task       = NULL;
-    dev->TaskActive = false;
+    dev->IDETaskMP     = NULL;
+    dev->IDETask       = NULL;
+    dev->IDETaskActive = false;
 
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
@@ -159,7 +159,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->ExpansionBase = ExpansionBase;
     }
 
-    if ((dev->TimerMP = CreatePort(NULL,0)) != NULL && (dev->TimeReq = (struct timerequest *)CreateExtIO(dev->TimerMP, sizeof(struct timerequest))) != NULL) {
+    if ((dev->IDETimerMP = CreatePort(NULL,0)) != NULL && (dev->TimeReq = (struct timerequest *)CreateExtIO(dev->IDETimerMP, sizeof(struct timerequest))) != NULL) {
         if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)dev->TimeReq,0)) {
             Info("Failed to open timer.device\n");
             Cleanup(dev);
@@ -233,24 +233,24 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         Trace("Start the Task\n");
 
         // The IDE Task will take over the Timer reply port when it starts
-        dev->TimerMP->mp_Flags = PA_IGNORE;
-        FreeSignal(dev->TimerMP->mp_SigBit);
+        dev->IDETimerMP->mp_Flags = PA_IGNORE;
+        FreeSignal(dev->IDETimerMP->mp_SigBit);
 
         // Start the IDE Task
-        dev->Task = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
-        if (!dev->Task) {
+        dev->IDETask = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
+        if (!dev->IDETask) {
             Info("IDE Task failed\n");
             Cleanup(dev);
             return NULL;
         } else {
             Trace("Task created!, waiting for init\n");
         }
-        dev->Task->tc_UserData = dev;
+        dev->IDETask->tc_UserData = dev;
 
         // Wait for task to init
-        while (dev->TaskActive == false) {
-            // If dev->task has been set to NULL it means the task failed to start
-             if (dev->Task == NULL) {
+        while (dev->IDETaskActive == false) {
+            // If dev->IDETask has been set to NULL it means the task failed to start
+             if (dev->IDETask == NULL) {
                 Info("IDE Task failed.\n");
                 Cleanup(dev);
                 return NULL;
@@ -282,7 +282,7 @@ static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6
         return 0;
     }
 
-    if (dev->Task != NULL && dev->TaskActive == true) {
+    if (dev->IDETask != NULL && dev->IDETaskActive == true) {
         // Shut down ide_task
 
         struct MsgPort *mp = NULL;
@@ -297,7 +297,7 @@ static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6
 
         ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
 
-        PutMsg(dev->TaskMP,(struct Message *)ioreq);
+        PutMsg(dev->IDETaskMP,(struct Message *)ioreq);
         WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
 
         if (ioreq) DeleteStdIO(ioreq);
@@ -340,7 +340,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
     ioreq->io_Error = IOERR_OPENFAIL;
 
-    if (dev->Task == NULL || dev->TaskActive == false) {
+    if (dev->IDETask == NULL || dev->IDETaskActive == false) {
         ioreq->io_Error = IOERR_OPENFAIL;
         return;
     }
@@ -397,7 +397,6 @@ static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6")
     return 0;
 }
 
-
 static UWORD supported_commands[] =
 {
     CMD_CLEAR,
@@ -437,7 +436,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     Trace((CONST_STRPTR) "running begin_io()\n");
     ioreq->io_Error = TDERR_NotSpecified;
 
-    if (dev->Task == NULL || dev->TaskActive == false) {
+    if (dev->IDETask == NULL || dev->IDETaskActive == false) {
         ioreq->io_Error = IOERR_OPENFAIL;
     }
 
@@ -483,7 +482,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case HD_SCSICMD:
             // Send all of these to ide_task
             ioreq->io_Flags &= ~IOF_QUICK;
-            PutMsg(dev->TaskMP,&ioreq->io_Message);
+            PutMsg(dev->IDETaskMP,&ioreq->io_Message);
             Trace((CONST_STRPTR) "IO queued\n");
             return;
 
@@ -548,10 +547,10 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
     Info("Init driver.\n");
     SysBase = *(struct ExecBase **)4UL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
-                                                        NULL,                      // InitStruct data
-                                                        (APTR)init_device,         // Init function
-                                                        sizeof(struct DeviceBase), // Library data size
-                                                        seg_list);                 // Segment list
+                                                                NULL,                      // InitStruct data
+                                                                (APTR)init_device,         // Init function
+                                                                sizeof(struct DeviceBase), // Library data size
+                                                                seg_list);                 // Segment list
 
     if (mydev != NULL) {
     Info("Add Device.\n");

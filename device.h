@@ -58,11 +58,11 @@ struct DeviceBase {
     struct ExecBase *SysBase;
     struct Library  *ExpansionBase;
     struct Library  *TimerBase;
-    struct Task     *Task;
+    struct Task     *IDETask;
+    struct MsgPort  *IDETaskMP;
+    struct MsgPort  *IDETimerMP;
     struct Task     *ChangeTask;
-    struct MsgPort  *TaskMP;
-    volatile bool   TaskActive;
-    struct MsgPort  *TimerMP;
+    volatile bool   IDETaskActive;
     struct          timerequest *TimeReq;
     BPTR            saved_seg_list;
     BOOL            is_open;

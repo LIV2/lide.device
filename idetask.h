@@ -6,7 +6,8 @@
 #define TASK_PRIORITY 0
 #define TASK_STACK_SIZE 65535
 
-#define CHANGEINT_INTERVAL 1 // Poll units every x seconds for disk change
+#define CHANGEINT_INTERVAL 2 // Poll units every x seconds for disk change
+
 #define CMD_DIE 0x1000
 
 void ide_task();
