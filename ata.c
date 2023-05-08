@@ -326,23 +326,39 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 */
 BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
+    Trace("ATA: Request sector count: %ld\n",count);
+
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
 
     if (count == 0) return TDERR_TooFewSecs;
 
-    Trace("ATA: Request sector count: %ld\n",count);
+    void (*ata_read)(void *source, void *destination);
+
+    /* If the buffer is not word-aligned we need to use a slower routine */
+    if ((ULONG)buffer & 0x01) {
+        ata_read = &ata_read_unaligned;
+    } else {
+        ata_read = &ata_read_fast;
+    }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
 
+    /**
+     * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
+     * 
+     * count:          Number of sectors to transfer for this io request
+     * txn_count:      Number of sectors to transfer to/from the drive in one ATA command transaction
+     * multiple_count: Max number of sectors that can be transferred before polling DRQ
+     */
     while (count > 0) {
         if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
             txn_count = MAX_TRANSFER_SECTORS;
         } else {
-            txn_count = count;                // Get any remainders
+            txn_count = count;               // Get any remainders
         }
         count -= txn_count;
 
@@ -364,9 +380,9 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                 return IOERR_UNITBUSY;
 
+            /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_read_fast((void *)(unit->drive->error_features - 48),(buffer + *actual));
-
+                ata_read((void *)(unit->drive->error_features - 48),buffer + *actual);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
@@ -404,23 +420,38 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 */
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
+    Trace("ATA: Request sector count: %ld\n",count);
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
 
     if (count == 0) return TDERR_TooFewSecs;
 
-    Trace("ATA: Request sector count: %ld\n",count);
+    void (*ata_write)(void *source, void *destination);
+
+    /* If the buffer is not word-aligned we need to use a slower routine */
+    if ((ULONG)buffer & 0x01) {
+        ata_write = &ata_write_unaligned;
+    } else {
+        ata_write = &ata_write_fast;
+    }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
 
+    /**
+     * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
+     * 
+     * count:          Number of sectors to transfer for this io request
+     * txn_count:      Number of sectors to transfer to/from the drive in one ATA command transaction
+     * multiple_count: Max number of sectors that can be transferred before polling DRQ
+     */
     while (count > 0) {
         if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
             txn_count = MAX_TRANSFER_SECTORS;
         } else {
-            txn_count = count;                // Get any remainders
+            txn_count = count;               // Get any remainders
         }
         count -= txn_count;
 
@@ -444,8 +475,9 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                 return IOERR_UNITBUSY;
 
+            /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_write_fast((buffer + *actual),(void *)(unit->drive->error_features - 48));
+                ata_write((buffer + *actual),(void *)(unit->drive->error_features - 48));
 
                 lba++;
                 txn_count--;
@@ -469,4 +501,40 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
     }
 
     return 0;
+}
+
+/**
+ * ata_read_unaligned
+ * 
+ * Read data to an unaligned buffer
+ * @param source Pointer to the drive data port
+ * @param destination Pointer to the data buffer
+*/
+void ata_read_unaligned(void *source, void *destination) {
+    ULONG readLong;
+    UBYTE *dest = (UBYTE *)destination;
+
+    for (int i=0; i<(512/4); i++) {          // Read (512 / 4) Long words from drive
+        readLong = *(ULONG *)source;
+        dest[0] = ((readLong >> 24) & 0xFF); // Write it out in 4 bytes
+        dest[1] = ((readLong >> 16) & 0xFF);
+        dest[2] = ((readLong >> 8) & 0xFF);
+        dest[3] = (readLong & 0xFF);
+        dest += 4;                           // Increment dest pointer by 4 bytes
+    }
+}
+
+/**
+ * ata_write_unaligned
+ * 
+ * Write data from an unaligned buffer
+ * @param source Pointer to the data buffer
+ * @param destination Pointer to the drive data port
+*/
+void ata_write_unaligned(void *source, void *destination) {
+    UBYTE *src = (UBYTE *)source;
+    for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
+        *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
+        src += 4;
+    }
 }
