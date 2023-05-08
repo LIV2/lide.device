@@ -328,6 +328,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
+    *actual = 0;
+
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
@@ -337,7 +339,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     void (*ata_read)(void *source, void *destination);
 
     /* If the buffer is not word-aligned we need to use a slower routine */
-    if ((ULONG)buffer & 0x01) {
+    if (((ULONG)buffer) & 0x01) {
         ata_read = &ata_read_unaligned;
     } else {
         ata_read = &ata_read_fast;
@@ -421,6 +423,9 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
+
+    *actual = 0;
+
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
