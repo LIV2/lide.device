@@ -27,10 +27,6 @@
 #define ATAPI_BSY_WAIT_S 5
 #define ATAPI_BSY_WAIT_COUNT (ATAPI_BSY_WAIT_S * 1000 * (1000 / ATAPI_BSY_WAIT_LOOP_US))
 
-#define ATAPI_RDY_WAIT_LOOP_US 100
-#define ATAPI_RDY_WAIT_S 1
-#define ATAPI_RDY_WAIT_COUNT (ATAPI_RDY_WAIT_S * 1000 * (1000 / ATAPI_RDY_WAIT_LOOP_US))
-
 void atapi_dev_reset(struct IDEUnit *unit);
 bool atapi_check_signature(struct IDEUnit *unit);
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);

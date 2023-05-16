@@ -304,7 +304,7 @@ void __attribute__((noreturn)) diskchange_task () {
     struct Task volatile *task = FindTask(NULL);
     struct MsgPort *TimerMP, *iomp = NULL;
     struct timerequest *TimerReq = NULL;
-    struct IOStdReq *ioreq, *intreq = NULL;
+    struct IOStdReq *ioreq = NULL, *intreq = NULL;
     struct IDEUnit *unit = NULL;
     bool previous;
     bool present;

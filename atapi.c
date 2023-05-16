@@ -61,23 +61,6 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 }
 
 /**
- * atapi_wait_rdy
- * 
- * Poll RDY in the status register until set or timeout
- * @param unit Pointer to an IDEUnit struct
- * @param tries Tries, sets the timeout
-*/
-static bool atapi_wait_rdy(struct IDEUnit *unit, ULONG tries) {
-    struct timerequest *tr = unit->TimeReq;
-
-    for (int i=0; i < tries; i++) {
-        if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
-        wait_us(tr,ATAPI_RDY_WAIT_LOOP_US);
-    }
-    return false;
-}
-
-/**
  * atapi_dev_reset
  * 
  * Resets the device by sending a DEVICE RESET command to it
