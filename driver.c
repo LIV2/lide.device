@@ -171,60 +171,61 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    struct ConfigDev *cd = NULL;
-    cd = FindConfigDev(NULL,MANUF_ID,DEV_ID);
-    while (cd != NULL)
-    {
+    struct CurrentBinding cb;
 
-        if (cd->cd_Flags & CDF_CONFIGME) {
-            Info("Checking board.. %08lx\n",cd->cd_BoardAddr);
-            cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
-            dev->num_boards++;
-            Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+    GetCurrentBinding(&cb,sizeof(struct CurrentBinding));
 
-            // Detect if there are 1 or 2 IDE channels on this board
-            // 2 channel boards use the CS2 decode for the second channel
-            UBYTE channels = 1;
+    struct ConfigDev *cd = cb.cb_ConfigDev;
 
-            UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-            UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1; // Alt status register
+    if (cd->cd_Rom.er_Manufacturer != 5194 && cd->cd_Rom.er_Manufacturer != 2092) {
+        Cleanup(dev);
+        return 0;
+    }
 
-            if (*status == *alt_status) { // Status == Alt status?
-                channels = 2;             // No, there is probably 2 channels
-            }
+    Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+    cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
 
-            Info("Channels: %ld\n",channels);
+    dev->num_boards++;
 
-            for (BYTE i=0; i < 2/*(2 * channels)*/; i++) {
-                // Setup each unit structure
-                dev->units[i].SysBase        = SysBase;
-                dev->units[i].TimeReq        = dev->TimeReq;
-                dev->units[i].cd             = cd;
-                dev->units[i].primary        = ((i%2) == 1) ? false : true;
-                dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
-                dev->units[i].change_count   = 1;
-                dev->units[i].device_type    = DG_DIRECT_ACCESS;
-                dev->units[i].present        = false;
-                dev->units[i].atapi          = false;
-                dev->units[i].xfer_multiple  = false;
-                dev->units[i].multiple_count = 0;
-                dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i>>1];
-                *dev->units[i].shadowDevHead = 0;
+    // Detect if there are 1 or 2 IDE channels on this board
+    // 2 channel boards use the CS2 decode for the second channel
+    UBYTE channels = 1;
 
-                // Initialize the change int list
-                dev->units[i].changeints.mlh_Tail     = NULL;
-                dev->units[i].changeints.mlh_Head     = (struct MinNode *)&dev->units[i].changeints.mlh_Tail;
-                dev->units[i].changeints.mlh_TailPred = (struct MinNode *)&dev->units[i].changeints;
+    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
+    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1; // Alt status register
 
-                Warn("testing unit %08lx\n",i);
+    if (*status == *alt_status) { // Status == Alt status?
+        channels = 2;             // No, there is probably 2 channels
+    }
 
-                if (ata_init_unit(&dev->units[i])) {
-                    dev->num_units++;
-                }
-            }
-            break; // We found a board so break out of the loop
+    Info("Channels: %ld\n",channels);
+
+    for (BYTE i=0; i < 2/*(2 * channels)*/; i++) {
+        // Setup each unit structure
+        dev->units[i].SysBase        = SysBase;
+        dev->units[i].TimeReq        = dev->TimeReq;
+        dev->units[i].cd             = cd;
+        dev->units[i].primary        = ((i%2) == 1) ? false : true;
+        dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
+        dev->units[i].change_count   = 1;
+        dev->units[i].device_type    = DG_DIRECT_ACCESS;
+        dev->units[i].present        = false;
+        dev->units[i].atapi          = false;
+        dev->units[i].xfer_multiple  = false;
+        dev->units[i].multiple_count = 0;
+        dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i>>1];
+        *dev->units[i].shadowDevHead = 0;
+
+        // Initialize the change int list
+        dev->units[i].changeints.mlh_Tail     = NULL;
+        dev->units[i].changeints.mlh_Head     = (struct MinNode *)&dev->units[i].changeints.mlh_Tail;
+        dev->units[i].changeints.mlh_TailPred = (struct MinNode *)&dev->units[i].changeints;
+
+        Warn("testing unit %08lx\n",i);
+
+        if (ata_init_unit(&dev->units[i])) {
+            dev->num_units++;
         }
-        cd = FindConfigDev(cd,MANUF_ID,DEV_ID); // Keep looking for an unclaimed board
     }
 
     Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
