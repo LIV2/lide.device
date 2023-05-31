@@ -255,7 +255,30 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 }
 
             default:
-                if ((error = atapi_packet(scsi_command,unit)) != 0) {
+                if (!((ULONG)scsi_command->scsi_Data & 0x01)) { // Buffer is word-aligned?
+                    error = atapi_packet(scsi_command,unit);
+                } else {
+                    // Some bozo with an unaligned data buffer... (lookin' at you HDToolbox!)
+                    // Allocate an aligned buffer and CopyMem to / from this one
+                    UWORD *orig_buffer = scsi_command->scsi_Data;
+                    if ((scsi_command->scsi_Data = AllocMem(scsi_command->scsi_Length,MEMF_CLEAR|MEMF_ANY)) == NULL) {
+                        scsi_command->scsi_Data = orig_buffer;
+                        error = TDERR_NoMem;
+                        break;
+                    }
+
+                    if (scsi_command->scsi_Flags & SCSIF_READ) {
+                        error = atapi_packet(scsi_command,unit);
+                        CopyMem(scsi_command->scsi_Data,orig_buffer,scsi_command->scsi_Length);
+                    } else {
+                        CopyMem(orig_buffer,scsi_command->scsi_Data,scsi_command->scsi_Length);
+                        error = atapi_packet(scsi_command,unit);
+                    }
+                    FreeMem(scsi_command->scsi_Data,scsi_command->scsi_Length);
+                    scsi_command->scsi_Data = orig_buffer;
+                }
+
+                if (error != 0) {
                     if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
 
                         Trace("Auto sense requested\n");
