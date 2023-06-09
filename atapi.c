@@ -710,13 +710,13 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
 */
 BYTE atapi_check_wp(struct IDEUnit *unit) {
     UBYTE ret  = 0;
-    UWORD *buf = NULL;
+    UBYTE *buf = NULL;
 
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) return TDERR_NoMem;
 
     UWORD actual = 0;
 
-    if ((ret = atapi_mode_sense(unit,0x3F,buf,512,&actual)) == 0) {
+    if ((ret = atapi_mode_sense(unit,0x3F,(UWORD *)buf,512,&actual)) == 0) {
         if (buf[3] & 1<<7)
             ret = TDERR_WriteProt;
     }
