@@ -257,7 +257,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     UBYTE senseKey;
     UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
 
-    if (cmd->scsi_Length > 0 && cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
+    if (cmd->scsi_Length == 0 && cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
 
     volatile UBYTE *status = unit->drive->status_command;
 
@@ -632,7 +632,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     ULONG length = cmd->scsi_Length + 4;
     UWORD actual = 0;
 
-    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0);
+    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
 
     // ATAPI doesn't seem to support subpages at all;
     if (cmd->scsi_Command[3] != 0) return IOERR_ABORTED;
