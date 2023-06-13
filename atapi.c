@@ -257,7 +257,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     UBYTE senseKey;
     UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
 
-    if (cmd->scsi_Length == 0 && cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
+    if (cmd->scsi_Length > 0 && cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
 
     volatile UBYTE *status = unit->drive->status_command;
 
