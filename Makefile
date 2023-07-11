@@ -23,7 +23,7 @@ endif
 LDFLAGS+= -lnix13
 
 .PHONY:	clean all
-all:	$(PROJECT)
+all:	rom
 
 OBJ = driver.o \
       ata.o \
@@ -40,5 +40,8 @@ SRCS += $(ASMOBJ:%.o=%.S)
 $(PROJECT): $(SRCS)
 	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)
 
+rom: $(PROJECT)
+	make -C bootrom
 clean:
 	-rm $(PROJECT)
+	make -C bootrom clean

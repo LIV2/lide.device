@@ -32,8 +32,8 @@ Thanks to [Stefan Reinauer](https://github.com/reinauer) and [Chris Hooper](http
 Chris' [devtest](https://github.com/cdhooper/amiga_devtest) has also been very helpful for testing the driver.
 
 ## Third-party notice
-lide.device: mounter.c is adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen
-lide.device: The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
+mounter.c and reloc.S are adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen
+The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
 
 ## License
 All software contained that is not provided by a third-party is covered by a GPL 2.0 Only license  
