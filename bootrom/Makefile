@@ -37,9 +37,6 @@ $(OBJDIR)/assets.o: assets.S $(OBJDIR)/bootnibbles ../lide.device
 ../$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o
 	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $(OBJDIR)/assets.o
 
-disk:
-	$(MAKE) -C disk all
-
 clean:
 	rm -f $(OBJDIR)/*
 	rm -f ../$(PROJECT).rom
