@@ -1,0 +1,46 @@
+name: Generate release files
+
+permissions:
+  contents: write
+on:
+  push:
+    tags:
+      - "Release_**"
+  workflow_dispatch:
+
+jobs:
+  make_software:
+    runs-on: ubuntu-latest
+    container: liv2/amiga-gcc-amitools
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          submodules: true
+
+      - name: Build
+        run: make clean rom
+
+      - uses: actions/upload-artifact@master
+        with:
+          name: software
+          path: "*.rom"
+          if-no-files-found: error
+
+  draft_release:
+    runs-on: ubuntu-latest
+    needs:
+      - make_software
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+      - name: release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          files: "artifacts/software/*.rom"
