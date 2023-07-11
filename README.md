@@ -8,8 +8,12 @@
 * Boot from ZIP/LS-120 etc
 * SCSI Direct, NSD, TD64 support
 
-## TODO
-* Add disk change int support for ATAPI devices
+# Downloads
+ROM downloads are available under [releases](https://github.com/LIV2/lide.device/releases)
+
+Currently there are two builds
+* lide.rom - Used for boards designed by me that feature an IDE interface (such as CIDER)
+* lide-atbus.rom - For AT-Bus style devices i.e AT-Bus 2008 + clone, Matze accelerators etc
 
 ## Hardware implementation
 * IDECS1 is asserted when A12 is low and the IDE device's base address is decoded
@@ -32,7 +36,8 @@ Thanks to [Stefan Reinauer](https://github.com/reinauer) and [Chris Hooper](http
 Chris' [devtest](https://github.com/cdhooper/amiga_devtest) has also been very helpful for testing the driver.
 
 ## Third-party notice
-mounter.c and reloc.S are adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen
+reloc.S is adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright Stefan Reinauer  
+mounter.c adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen  
 The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
 
 ## License
