@@ -36,7 +36,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     Info("wait_drq enter\n");
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
-        for (int j=0; j<1000; j++) {
+        for (int j=0; j<100; j++) {
             if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
             if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
         }
@@ -58,7 +58,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
-        for (int j=0; j<1000; j++) {
+        for (int j=0; j<100; j++) {
             if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
         }
         wait_us(tr,ATA_BSY_WAIT_LOOP_US);
