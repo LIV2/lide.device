@@ -238,7 +238,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         FreeSignal(dev->IDETimerMP->mp_SigBit);
 
         // Start the IDE Task
-        dev->IDETask = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)ide_task,TASK_STACK_SIZE);
+        dev->IDETask = CreateTask(dev->lib.lib_Node.ln_Name,0,(APTR)ide_task,TASK_STACK_SIZE);
         if (!dev->IDETask) {
             Info("IDE Task failed\n");
             Cleanup(dev);
@@ -258,7 +258,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             }
         }
 
-        dev->ChangeTask = CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,(APTR)diskchange_task,TASK_STACK_SIZE);
+        dev->ChangeTask = CreateTask(dev->lib.lib_Node.ln_Name,0,(APTR)diskchange_task,TASK_STACK_SIZE);
         dev->ChangeTask->tc_UserData = dev;
 
         Info("Startup finished.\n");

@@ -410,6 +410,7 @@ void __attribute__((noreturn)) ide_task () {
     Info("IDE Task: waiting for init\n");
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
     struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
+
     Trace("IDE Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
     if ((mp = CreatePort(NULL,0)) == NULL) {
