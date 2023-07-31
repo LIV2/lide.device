@@ -3,7 +3,7 @@
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
 #define TASK_NAME "idetask"
-#define TASK_PRIORITY 5
+#define TASK_PRIORITY 11
 #define TASK_STACK_SIZE 65535
 
 #define CHANGEINT_INTERVAL 2 // Poll units every x seconds for disk change
