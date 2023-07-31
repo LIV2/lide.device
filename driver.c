@@ -89,6 +89,58 @@ char * set_dev_name(struct DeviceBase *dev) {
 }
 
 /**
+ * L_CreateTask
+ * 
+ * Create a task with tc_UserData populated before it starts
+ * @param taskName Pointer to a null-terminated string
+ * @param priority Task Priority between -128 and 127
+ * @param funcEntry Pointer to the first executable instruction of the Task code
+ * @param stackSize Size in bytes of stack for the task
+ * @param userData Pointer to User Data
+*/
+struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData) {
+        stackSize = (stackSize + 3UL) & ~3UL;
+        
+        struct Task *task;
+        
+        struct {
+            struct Node ml_Node;
+            UWORD ml_NumEntries;
+            struct MemEntry ml_ME[2];
+        } alloc_ml = {
+            .ml_NumEntries = 2,
+            .ml_ME[0].me_Un.meu_Reqs = MEMF_PUBLIC|MEMF_CLEAR,
+            .ml_ME[1].me_Un.meu_Reqs = MEMF_ANY|MEMF_CLEAR,
+            .ml_ME[0].me_Length = sizeof(struct Task),
+            .ml_ME[1].me_Length = stackSize
+        };
+
+        memset(&alloc_ml.ml_Node,0,sizeof(struct Node));
+
+        struct MemList *ml = AllocEntry((struct MemList *)&alloc_ml);
+        if ((ULONG)ml & 1<<31) {
+            Info("Couldn't allocate memory for task\n");
+            return NULL;
+        }
+
+        task                  = ml->ml_ME[0].me_Un.meu_Addr;
+        task->tc_SPLower      = ml->ml_ME[1].me_Un.meu_Addr;
+        task->tc_SPUpper      = ml->ml_ME[1].me_Un.meu_Addr + stackSize;
+        task->tc_SPReg        = task->tc_SPUpper;
+        task->tc_UserData     = userData;
+        task->tc_Node.ln_Name = taskName;
+        task->tc_Node.ln_Type = NT_TASK;
+        task->tc_Node.ln_Pri  = priority;
+        NewList(&task->tc_MemEntry);
+        AddHead(&task->tc_MemEntry,(struct Node *)ml);
+
+        AddTask(task,funcEntry,NULL);
+
+        return task;
+}
+
+
+/**
  * Cleanup
  *
  * Free used resources back to the system
@@ -238,7 +290,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         FreeSignal(dev->IDETimerMP->mp_SigBit);
 
         // Start the IDE Task
-        dev->IDETask = CreateTask(dev->lib.lib_Node.ln_Name,0,(APTR)ide_task,TASK_STACK_SIZE);
+        dev->IDETask = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev);
         if (!dev->IDETask) {
             Info("IDE Task failed\n");
             Cleanup(dev);
@@ -246,7 +298,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         } else {
             Trace("Task created!, waiting for init\n");
         }
-        dev->IDETask->tc_UserData = dev;
 
         // Wait for task to init
         while (dev->IDETaskActive == false) {
@@ -258,8 +309,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             }
         }
 
-        dev->ChangeTask = CreateTask(dev->lib.lib_Node.ln_Name,0,(APTR)diskchange_task,TASK_STACK_SIZE);
-        dev->ChangeTask->tc_UserData = dev;
+        dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
 
         Info("Startup finished.\n");
         return (struct Library *)dev;
