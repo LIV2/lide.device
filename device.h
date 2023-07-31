@@ -5,8 +5,9 @@
 #ifndef _DEVICE_H
 #define _DEVICE_H
 
-#define MANUF_ID  2092
-#define DEV_ID    6
+#define OAHR_MANUF_ID 5194
+#define BSC_MANUF_ID  2092
+
 #define MAX_UNITS 4
 
 /**

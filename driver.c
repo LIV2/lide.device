@@ -241,18 +241,21 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     // Detect if there are 1 or 2 IDE channels on this board
     // 2 channel boards use the CS2 decode for the second channel
-    UBYTE channels = 1;
+    UBYTE channels = 2;
 
     UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
     UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1; // Alt status register
 
-    if (*status == *alt_status) { // Status == Alt status?
-        channels = 2;             // No, there is probably 2 channels
+    // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
+    // Not a problem in single channel mode - the drive registers there only use the upper byte
+    // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
+    if (*status == *alt_status || cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID) {
+        channels = 1;
     }
 
     Info("Channels: %ld\n",channels);
 
-    for (BYTE i=0; i < 2/*(2 * channels)*/; i++) {
+    for (BYTE i=0; i < (2 * channels); i++) {
         // Setup each unit structure
         dev->units[i].SysBase        = SysBase;
         dev->units[i].TimeReq        = dev->TimeReq;
