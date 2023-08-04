@@ -47,6 +47,15 @@ struct __attribute__((packed)) SCSI_CDB_10 {
     UBYTE control;
 };
 
+struct __attribute__((packed)) SCSI_READ_CAPACITY_10 {
+    UBYTE operation;
+    UBYTE reserved1;
+    ULONG lba;
+    UWORD reserved2;
+    UBYTE flags;
+    UBYTE control;
+};
+
 struct __attribute__((packed)) SCSI_CAPACITY_10 {
     ULONG lba;
     ULONG block_size;

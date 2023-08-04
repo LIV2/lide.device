@@ -76,8 +76,19 @@ static BYTE scsi_read_capaity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_com
         return error;
     }
 
-    data->lba        = (unit->logicalSectors) - 1;
+    struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)scsi_command->scsi_Command;
+
     data->block_size = unit->blockSize;
+
+    if (cdb->flags & 0x01) {
+        // Partial Medium Indicator - Return end of cylinder
+        // Implement this so HDToolbox stops moaning about track size
+        ULONG spc = unit->cylinders * unit->heads;
+        data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
+    } else {
+        data->lba = (unit->logicalSectors) - 1;
+    }
+
 
     scsi_command->scsi_Actual = 8;
 
