@@ -29,6 +29,7 @@
 #define ata_reg_devHead      0xC00
 #define ata_reg_status       0xE00
 #define ata_reg_command      0xE00
+#define ata_reg_altStatus    0x1C00
 
 #define drv_sel_secondary (1<<4)
 

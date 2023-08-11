@@ -244,7 +244,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     UBYTE channels = 2;
 
     UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1; // Alt status register
+    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
+
+    UBYTE *drvsel     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
+
+    *drvsel = 0xE0;
 
     // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
     // Not a problem in single channel mode - the drive registers there only use the upper byte
