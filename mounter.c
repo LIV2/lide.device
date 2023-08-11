@@ -1012,15 +1012,14 @@ LONG MountDrive(struct MountStruct *ms)
 	return ret;
 }
 
-int mount_drives(struct ConfigDev *cd, char *devName)
+int mount_drives(struct ConfigDev *cd, char *devName, ULONG *units)
 {
 	struct MountStruct ms;
 	int ret = 0;
 
 	dbg("Mounter:\n");
 	ms.deviceName  = devName;
-	ULONG units[]  = {2,0,1};
-	ms.unitNum     = (ULONG *)&units;
+	ms.unitNum     = units;
 	ms.creatorName = NULL;
 	ms.configDev   = cd;
 	ms.SysBase     = *(struct ExecBase **)4UL;

@@ -611,9 +611,23 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                                                                 seg_list);                 // Segment list
 
     if (mydev != NULL) {
-    Info("Add Device.\n");
+        Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
+
+        
+        // Build a list of units to mount
+        // Mounter takes a list of unit numbers to mount, the first entry of the list is the unit count
+        ULONG mountUnits[MAX_UNITS+1];
+        ULONG idx = 1;
+        mountUnits[0] = 0;
+
+        for (int i=0; i<MAX_UNITS; i++) {
+            if (mydev->units[i].present == true && mydev->units[i].device_type == DG_DIRECT_ACCESS) {
+                mountUnits[0]++;
+                mountUnits[idx++] = i;
+            }
+        }
+        if (mountUnits[0] > 0) mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name,mountUnits);
     }
-    mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name);
     return (struct Library *)mydev;
 }
