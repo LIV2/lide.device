@@ -102,14 +102,19 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     bool ret = false;
     if (*unit->shadowDevHead == select) {
         return false;
-    } else if ((*unit->shadowDevHead & 0xF0) != (select & 0xF0)) {
+    }
+
+    *unit->drive->devHead = select;
+
+    if ((*unit->shadowDevHead & 0xF0) != (select & 0xF0)) {
         if (wait) {
             ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
-            ret = true;
         }
+        ret = true;
     }
-    *unit->drive->devHead = select;
+
     *unit->shadowDevHead = select;
+
     return ret;
 }
 
