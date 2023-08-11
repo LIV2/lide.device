@@ -348,7 +348,7 @@ void __attribute__((noreturn)) diskchange_task () {
 
     if ((TimerMP = CreatePort(NULL,0)) == NULL || (TimerReq = (struct timerequest *)CreateExtIO(TimerMP, sizeof(struct timerequest))) == NULL) goto die;
     if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
-    if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)TimerReq,0) != 0) goto die;
+    if (OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)TimerReq,0) != 0) goto die;
 
     ioreq->io_Command = TD_CHANGESTATE; // Run TD_CHANGESTATE to update medium presence, this should be replaced with a TUR call
     ioreq->io_Data    = NULL;
