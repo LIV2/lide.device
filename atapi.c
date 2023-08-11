@@ -253,6 +253,7 @@ done:
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     Trace("atapi_packet\n");
     ULONG byte_count;
+    ULONG remaining;
     UWORD data;
     UBYTE senseKey;
     UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
@@ -346,8 +347,12 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         if ((*unit->drive->sectorCount & 0x01) != 0x00) break; // CoD doesn't indicate further data transfer
 
         byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
+        
         while (byte_count > 0) {
-            if ((byte_count >= 512)) {
+            remaining = cmd->scsi_Length - cmd->scsi_Actual;
+
+            if ((byte_count >= 512 && remaining >= 512)) {
+              // 512 or more bytes to transfer, use the fast ATA transfer routines
               if (cmd->scsi_Flags & SCSIF_READ) {
                   ata_read_fast((void *)unit->drive->error_features - 48, cmd->scsi_Data + index);
               } else {
@@ -356,7 +361,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
               index += 256;
               cmd->scsi_Actual += 512;
               byte_count -= 512;
-            } else {
+            } else if (remaining > 0) {
+                // Less than 512 bytes means we can't use the fast ATA transfer routines, copy word-by-word
                 if (cmd->scsi_Flags & SCSIF_READ) {
                     cmd->scsi_Data[index] = *unit->drive->data;
                 } else {
@@ -365,6 +371,9 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 index++;
                 cmd->scsi_Actual+=2;
                 byte_count -= 2;
+            } else {
+                // If we got here the drive wanted to transfer more data than the buffer could take
+                return HFERR_BadStatus;
             }
         }
     }
@@ -461,6 +470,9 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         ret = TDERR_NotSpecified;
                         break;
                 }
+            } else {
+                atapi_dev_reset(unit);
+                break;
             }
         }
     }
