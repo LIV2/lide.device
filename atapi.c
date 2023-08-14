@@ -252,8 +252,8 @@ done:
 */
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     Trace("atapi_packet\n");
-    ULONG byte_count;
-    ULONG remaining;
+    LONG byte_count;
+    LONG remaining;
     UWORD data;
     UBYTE senseKey;
     UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
@@ -347,7 +347,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         if ((*unit->drive->sectorCount & 0x01) != 0x00) break; // CoD doesn't indicate further data transfer
 
         byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
-        
+        byte_count += (byte_count & 0x01); // Ensure that the byte count is always an even number
+
         while (byte_count > 0) {
             remaining = cmd->scsi_Length - cmd->scsi_Actual;
 
@@ -607,7 +608,7 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD
     cdb[7] = length >> 8;
     cdb[8] = length & 0xFF;
 
-    cmd->scsi_CmdLength = 12;
+    cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
     cmd->scsi_CmdActual = 0;
     cmd->scsi_Command   = (UBYTE *)cdb;
     cmd->scsi_Flags     = SCSIF_READ;
