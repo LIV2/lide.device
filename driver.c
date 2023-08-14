@@ -333,40 +333,51 @@ will execute your Expunge at a time. */
 static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
 {
     Trace((CONST_STRPTR) "running expunge()\n");
+ 
+    /**
+     * Don't expunge
+     * 
+     * If expunged the driver will be gone until reboot
+     * 
+     * Also need to figure out how to kill the disk change int task cleanly before this can be enabled
+    */
 
-    if (dev->lib.lib_OpenCnt != 0)
-    {
-        dev->lib.lib_Flags |= LIBF_DELEXP;
-        return 0;
-    }
+    dev->lib.lib_Flags |= LIBF_DELEXP;
+    return 0;
 
-    if (dev->IDETask != NULL && dev->IDETaskActive == true) {
-        // Shut down ide_task
+    // if (dev->lib.lib_OpenCnt != 0)
+    // {
+    //     dev->lib.lib_Flags |= LIBF_DELEXP;
+    //     return 0;
+    // }
 
-        struct MsgPort *mp = NULL;
-        struct IOStdReq *ioreq = NULL;
+    // if (dev->IDETask != NULL && dev->IDETaskActive == true) {
+    //     // Shut down ide_task
 
-        if ((mp = CreatePort(NULL,0)) == NULL)
-            return 0;
-        if ((ioreq = CreateStdIO(mp)) == NULL) {
-            DeletePort(mp);
-            return 0;
-        }
+    //     struct MsgPort *mp = NULL;
+    //     struct IOStdReq *ioreq = NULL;
 
-        ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
+    //     if ((mp = CreatePort(NULL,0)) == NULL)
+    //         return 0;
+    //     if ((ioreq = CreateStdIO(mp)) == NULL) {
+    //         DeletePort(mp);
+    //         return 0;
+    //     }
 
-        PutMsg(dev->IDETaskMP,(struct Message *)ioreq);
-        WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
+    //     ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
 
-        if (ioreq) DeleteStdIO(ioreq);
-        if (mp) DeletePort(mp);
-    }
+    //     PutMsg(dev->IDETaskMP,(struct Message *)ioreq);
+    //     WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
 
-    Cleanup(dev);
-    BPTR seg_list = dev->saved_seg_list;
-    Remove(&dev->lib.lib_Node);
-    FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
-    return seg_list;
+    //     if (ioreq) DeleteStdIO(ioreq);
+    //     if (mp) DeletePort(mp);
+    // }
+
+    // Cleanup(dev);
+    // BPTR seg_list = dev->saved_seg_list;
+    // Remove(&dev->lib.lib_Node);
+    // FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
+    // return seg_list;
 }
 
 /* device dependent open function
