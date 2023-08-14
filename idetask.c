@@ -255,6 +255,12 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
         
         switch (scsi_command->scsi_Command[0]) {
 
+            case SCSI_CMD_READ_6:
+            case SCSI_CMD_WRITE_6:
+                // ATAPI devices don't support READ/WRITE(6) so translate it
+                error = atapi_scsi_read_write_6(scsi_command,unit);
+                break;
+
             case SCSI_CMD_MODE_SENSE_6:
                 error = atapi_scsi_mode_sense_6(scsi_command,unit);
                 break;
@@ -269,24 +275,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
                 if (!((ULONG)scsi_command->scsi_Data & 0x01)) { // Buffer is word-aligned?
                     error = atapi_packet(scsi_command,unit);
                 } else {
-                    // Some bozo with an unaligned data buffer... (lookin' at you HDToolbox!)
-                    // Allocate an aligned buffer and CopyMem to / from this one
-                    UWORD *orig_buffer = scsi_command->scsi_Data;
-                    if ((scsi_command->scsi_Data = AllocMem(scsi_command->scsi_Length,MEMF_CLEAR|MEMF_ANY)) == NULL) {
-                        scsi_command->scsi_Data = orig_buffer;
-                        error = TDERR_NoMem;
-                        break;
-                    }
-
-                    if (scsi_command->scsi_Flags & SCSIF_READ) {
-                        error = atapi_packet(scsi_command,unit);
-                        CopyMem(scsi_command->scsi_Data,orig_buffer,scsi_command->scsi_Length);
-                    } else {
-                        CopyMem(orig_buffer,scsi_command->scsi_Data,scsi_command->scsi_Length);
-                        error = atapi_packet(scsi_command,unit);
-                    }
-                    FreeMem(scsi_command->scsi_Data,scsi_command->scsi_Length);
-                    scsi_command->scsi_Data = orig_buffer;
+                    error = atapi_packet_unaligned(scsi_command,unit);
                 }
 
                 if (error != 0) {

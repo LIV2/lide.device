@@ -31,6 +31,8 @@ void atapi_dev_reset(struct IDEUnit *unit);
 bool atapi_check_signature(struct IDEUnit *unit);
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
 BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction);
+BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit);
+BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_test_unit_ready(struct IDEUnit *unit);
 BYTE atapi_get_capacity(struct IDEUnit *unit);

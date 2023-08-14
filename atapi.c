@@ -683,6 +683,81 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 }
 
 /**
+ * atapi_scsi_read_write_6
+ * 
+ * ATAPI devices do not support READ (6) or WRITE (6)
+ * Translate these calls to READ (10) / WRITE (10);
+ * 
+ * @param cmd Pointer to a SCSICmd struct
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error
+*/
+BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
+    BYTE ret;
+    Alert(0xBADC0DE);
+    struct SCSI_CDB_10 *cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR);
+    if (!cdb) return TDERR_NoMem;
+
+    struct SCSI_CDB_6 *oldcdb  = (struct SCSI_CDB_6 *)cmd->scsi_Command;
+
+    cdb->operation = oldcdb->operation | 0x20;
+    cdb->length    = oldcdb->length;
+    cdb->lba       = oldcdb->lba_high << 16 |
+                     oldcdb->lba_mid  << 8  | 
+                     oldcdb->lba_low;
+
+    if (cdb->length == 0) cdb->length = 256; // for SCSI READ/WRITE 6 a transfer length of 0 specifies that 256 blocks will be transferred
+
+    cmd->scsi_Command = (BYTE *)cdb;
+
+    if (!((ULONG)cmd->scsi_Data & 0x01)) { // Buffer is word-aligned?
+        ret = atapi_packet(cmd,unit);
+    } else {
+        ret = atapi_packet_unaligned(cmd,unit);
+    }
+
+    FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+
+    cmd->scsi_Command = (BYTE *)oldcdb;
+
+    return ret;
+}
+
+/**
+ * atapi_packet_unaligned
+ * 
+ * In the unlikely event that someone has allocated an unaligned data buffer, align the data first by making a copy
+ * 
+ * @param cmd Pointer to a SCSICmd struct
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on exit 
+*/
+BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    BYTE error = 0;
+
+    // Some bozo with an unaligned data buffer... (lookin' at you HDToolbox!)
+    // Allocate an aligned buffer and CopyMem to / from this one
+    UWORD *orig_buffer = cmd->scsi_Data;
+    if ((cmd->scsi_Data = AllocMem(cmd->scsi_Length,MEMF_CLEAR|MEMF_ANY)) == NULL) {
+        cmd->scsi_Data = orig_buffer;
+        error = TDERR_NoMem;
+        return error;
+    }
+
+    if (cmd->scsi_Flags & SCSIF_READ) {
+        error = atapi_packet(cmd,unit);
+        CopyMem(cmd->scsi_Data,orig_buffer,cmd->scsi_Length);
+    } else {
+        CopyMem(orig_buffer,cmd->scsi_Data,cmd->scsi_Length);
+        error = atapi_packet(cmd,unit);
+    }
+    FreeMem(cmd->scsi_Data,cmd->scsi_Length);
+    cmd->scsi_Data = orig_buffer;
+
+    return error;
+}
+
+/**
  * atapi_start_stop_unit
  * 
  * send START STOP command to ATAPI drive e.g to eject the disc
