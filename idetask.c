@@ -115,7 +115,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
     UBYTE page    = command[2] & 0x3F;
     UBYTE subpage = command[3];
 
-    if (subpage != 0) {
+    if (subpage != 0 || (page != 0x3F && page != 0x03 && page != 0x04)) {
         error = HFERR_BadStatus;
         scsi_sense(scsi_command,0,0,error);
         return error;
@@ -459,7 +459,7 @@ void __attribute__((noreturn)) ide_task () {
                 case TD_PROTSTATUS:
                     ioreq->io_Error = 0;
                     if (unit->atapi) {
-                        if (unit->device_type == 0x05 || (ioreq->io_Error = atapi_check_wp(unit)) == TDERR_WriteProt) {
+                        if ((ioreq->io_Error = atapi_check_wp(unit)) == TDERR_WriteProt) {
                             ioreq->io_Error = 0;
                             ioreq->io_Actual = 1;
                             break;
