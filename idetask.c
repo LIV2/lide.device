@@ -381,7 +381,7 @@ die:
     Info("Change task dying...\n");
     if (ioreq) DeleteStdIO(ioreq);
     if (iomp) DeletePort(iomp);
-    if (TimerReq && TimerReq->tr_node.io_Device) CloseDevice(TimerReq->tr_node.io_Device);
+    if (TimerReq && TimerReq->tr_node.io_Device) CloseDevice((struct IORequest *)TimerReq);
     if (TimerReq) DeleteExtIO((struct IORequest *)TimerReq);
     if (TimerMP) DeletePort(TimerMP);
     
