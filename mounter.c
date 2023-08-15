@@ -782,7 +782,7 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 	if (!(part->pb_Flags & PBFF_NOMOUNT)) {
 		struct ParameterPacket *pp = AllocMem(sizeof(struct ParameterPacket), MEMF_PUBLIC | MEMF_CLEAR);
 		if (pp) {
-			copymem(&pp->de, &part->pb_Environment, 17 * sizeof(ULONG));
+			copymem(&pp->de, &part->pb_Environment, (part->pb_Environment[0] + 1) * sizeof(ULONG));
 			struct FileSysEntry *fse = ParseFSHD(buf + md->blocksize, filesysblock, pp->de.de_DosType, md);
 			pp->execname = md->devicename;
 			pp->unitnum = md->unitnum;
