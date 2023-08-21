@@ -49,6 +49,7 @@
 
 #include "ndkcompat.h"
 #include "mounter.h"
+#include "scsi.h"
 
 #if TRACE
 #define dbg Trace
@@ -91,6 +92,43 @@ struct MountData
 	BOOL wasLastDev;
 	int blocksize;
 };
+
+// Get Block size of unit by sending a SCSI READ CAPACITY 10 command
+int GetBlockSize(struct IOStdReq *req) {
+	struct SCSICmd *cmd = MakeSCSICmd();
+	struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)cmd->scsi_Command;
+	int ret = -1;
+
+	struct SCSI_CAPACITY_10 *result = AllocMem(sizeof(struct SCSI_CAPACITY_10),MEMF_CLEAR|MEMF_ANY);
+
+	if (!result) {
+		DeleteSCSICmd(cmd);
+		return -1;
+	}
+
+	cdb->operation   = SCSI_CMD_READ_CAPACITY_10;
+	cmd->scsi_Length = sizeof(struct SCSI_CAPACITY_10);
+	cmd->scsi_Data   = (UWORD *)result;
+	cmd->scsi_Flags  = SCSIF_READ;
+	cdb->lba         = 0;
+
+	req->io_Command = HD_SCSICMD;
+	req->io_Data    = cmd;
+	req->io_Length  = sizeof(struct SCSICmd);
+
+	DoIO((struct IORequest *)req);
+
+	if (req->io_Error == 0 && req->io_Length > 0) {
+		ret = result->block_size;
+	} else {
+		ret = -1;
+	}
+
+	if (cmd)    DeleteSCSICmd(cmd);
+	if (result) FreeMem(result,sizeof(struct SCSI_CAPACITY_10));
+
+	return ret;
+}
 
 // KS 1.3 compatibility functions
 APTR W_CreateIORequest(struct MsgPort *ioReplyPort, ULONG size, struct ExecBase *SysBase)
@@ -906,41 +944,13 @@ static struct FileSysEntry *scan_filesystems(void)
 }
 #endif
 
-struct MountStruct
-{
-	// Device name. ("myhddriver.device")
-	// Offset 0.
-	const UBYTE *deviceName;
-	// Unit number pointer or single integer value.
-	// if >= 0x100 (256), pointer to array of ULONGs, first ULONG is number of unit numbers followed (for example { 2, 0, 1 }. 2 units, unit numbers 0 and 1).
-	// if < 0x100 (256): used as a single unit number value.
-	// Offset 4.
-	ULONG *unitNum;
-	// Name string used to set Creator field in FileSystem.resource (if KS 1.3) and in FileSystem.resource entries.
-	// If NULL: use device name.
-	// Offset 8.
-	const UBYTE *creatorName;
-	// ConfigDev: set if autoconfig board autoboot support is wanted.
-	// If NULL and bootable partition found: fake ConfigDev is automatically created.
-	// Offset 12.
-	struct ConfigDev *configDev;
-	// SysBase.
-	// Offset 16.
-	struct ExecBase *SysBase;
-};
-
-// Return values:
-// If single unit number:
-// -1 = No RDB found, device failed to open, disk error or RDB block checksum error.
-// 0 = RDB found but no partitions found, disk error or mount failure.
-// >0: Number of partitions mounted.
-// If unit number array:
-// Unit number is replaced with error code:
-// Error codes are same as above except:
-// -2 = Skipped, previous unit had RDBFF_LAST set.
+// Mount drives
 LONG MountDrive(struct MountStruct *ms)
 {
-	LONG ret = -1;
+	LONG  ret = -1;
+	ULONG uidx = 0;
+	int   blockSize = 0;
+	struct UnitStruct *unit;
 	struct MsgPort *port = NULL;
 	struct IOExtTD *request = NULL;
 	struct ExpansionBase *ExpansionBase;
@@ -955,46 +965,38 @@ LONG MountDrive(struct MountStruct *ms)
 			md->SysBase = SysBase;
 			md->ExpansionBase = ExpansionBase;
 			dbg("SysBase=%p ExpansionBase=%p DosBase=%p\n", md->SysBase, md->ExpansionBase, md->DOSBase);
-			md->configDev = ms->configDev;
 			md->creator = ms->creatorName;
 			port = W_CreateMsgPort(SysBase);
 			if(port) {
 				request = (struct IOExtTD*)W_CreateIORequest(port, sizeof(struct IOExtTD), SysBase);
 				if(request) {
-					ULONG *unitNumP = ms->unitNum;
-					ULONG unitNumVal[2];
-					unitNumVal[0] = 1;
-					unitNumVal[1] = (ULONG)unitNumP;
-					if (unitNumVal[1] < 0x100) {
-						unitNumP = &unitNumVal[0];
-					}
-					ULONG unitNumCnt = *unitNumP++;
+					UWORD unitNumCnt = ms->numUnits;
 					while (unitNumCnt-- > 0) {
-						ULONG unitNum = *unitNumP;
-						dbg("OpenDevice('%s', %"PRId32", %p, 0)\n", ms->deviceName, unitNum, request);
-						UBYTE err = OpenDevice(ms->deviceName, unitNum, (struct IORequest*)request, 0);
+						unit = &ms->Units[uidx++];
+						dbg("OpenDevice('%s', %"PRId32", %p, 0)\n", ms->deviceName, unit->unitNum, request);
+						UBYTE err = OpenDevice(ms->deviceName, unit->unitNum, (struct IORequest*)request, 0);
 						if (err == 0) {
-							md->request = request;
-							md->devicename = ms->deviceName;
-							md->unitnum = unitNum;
-							ret = -1;
-                            md->blocksize=512;
-                            ret = ScanRDSK(md);
+							if ((blockSize = GetBlockSize((struct IOStdReq *)request)) > 0) {
+								ret = -1;
+								md->request    = request;
+								md->devicename = ms->deviceName;
+								md->unitnum    = unit->unitNum;
+								md->blocksize  = blockSize;
+								md->configDev  = unit->configDev;
+								ret = ScanRDSK(md);
+								CloseDevice((struct IORequest*)request);
 
-							CloseDevice((struct IORequest*)request);
-							*unitNumP++ = ret;
-
-
-							if (md->wasLastDev) {
-								while (unitNumCnt-- > 0) {
-									*unitNumP++ = -2;
+#ifndef NO_RDBLAST
+								if (md->wasLastDev) {
+									dbg("RDBFF_LAST exit\n");
+									break;
 								}
-								dbg("RDBFF_LAST exit\n");
-								break;
+							} else {
+								dbg("Couldn't get block size\n");
 							}
+#endif
 						} else {
-							dbg("OpenDevice(%s,%"PRId32") failed: %"PRId32"\n", ms->deviceName, unitNum, (BYTE)err);
-							*unitNumP++ = -1;
+							dbg("OpenDevice(%s,%"PRId32") failed: %"PRId32"\n", ms->deviceName, unit->unitNum, (BYTE)err);
 						}
 					}
 					W_DeleteIORequest(request, SysBase);
@@ -1009,22 +1011,5 @@ LONG MountDrive(struct MountStruct *ms)
 		CloseLibrary(&ExpansionBase->LibNode);
 	}
 	dbg("Exit code %"PRId32"\n", ret);
-	return ret;
-}
-
-int mount_drives(struct ConfigDev *cd, char *devName, ULONG *units)
-{
-	struct MountStruct ms;
-	int ret = 0;
-
-	dbg("Mounter:\n");
-	ms.deviceName  = devName;
-	ms.unitNum     = units;
-	ms.creatorName = NULL;
-	ms.configDev   = cd;
-	ms.SysBase     = *(struct ExecBase **)4UL;
-
-	ret = MountDrive(&ms);
-
 	return ret;
 }

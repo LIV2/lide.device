@@ -615,6 +615,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
     Info("Init driver.\n");
     SysBase = *(struct ExecBase **)4UL;
+    struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                                 NULL,                      // InitStruct data
                                                                 (APTR)init_device,         // Init function
@@ -622,23 +623,33 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                                                                 seg_list);                 // Segment list
 
     if (mydev != NULL) {
+        ULONG ms_size = (sizeof(struct MountStruct) + (MAX_UNITS * sizeof(struct UnitStruct)));
         Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
 
-        
-        // Build a list of units to mount
-        // Mounter takes a list of unit numbers to mount, the first entry of the list is the unit count
-        ULONG mountUnits[MAX_UNITS+1];
-        ULONG idx = 1;
-        mountUnits[0] = 0;
+        if ((ms = AllocMem(ms_size,MEMF_ANY|MEMF_PUBLIC)) == NULL) goto done;
+
+        ms->deviceName  = mydev->lib.lib_Node.ln_Name;
+        ms->creatorName = NULL;
+        ms->numUnits    = 0;
+        ms->SysBase     = SysBase;
+
+        UWORD *idx = &ms->numUnits;
 
         for (int i=0; i<MAX_UNITS; i++) {
-            if (mydev->units[i].present == true && mydev->units[i].device_type == DG_DIRECT_ACCESS) {
-                mountUnits[0]++;
-                mountUnits[idx++] = i;
+            if (mydev->units[i].present == true) {
+                ms->Units[*idx].unitNum    = i;
+                ms->Units[*idx].deviceType = mydev->units[i].device_type;
+                ms->Units[*idx].configDev  = mydev->units[i].cd;
+                *idx += 1;
             }
         }
-        if (mountUnits[0] > 0) mount_drives(mydev->units[0].cd,mydev->lib.lib_Node.ln_Name,mountUnits);
+        if (ms->numUnits > 0) {
+            MountDrive(ms);
+        }
+
+        FreeMem(ms,ms_size);
     }
+done:
     return (struct Library *)mydev;
 }
