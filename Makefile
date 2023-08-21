@@ -1,4 +1,7 @@
 PROJECT=lide.device
+BUILDDIR=build
+DISK=lide-update.adf
+ROM=lide.rom
 CC=m68k-amigaos-gcc
 CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer
 LDFLAGS=-lamiga -lgcc -lc
@@ -22,8 +25,8 @@ endif
 
 LDFLAGS+= -lnix13
 
-.PHONY:	clean all
-all:	rom
+.PHONY:	clean all lideflash disk
+all:	$(ROM) lideflash
 
 OBJ = driver.o \
       ata.o \
@@ -40,8 +43,25 @@ SRCS += $(ASMOBJ:%.o=%.S)
 $(PROJECT): $(SRCS)
 	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)
 
-rom: $(PROJECT)
+$(ROM): $(PROJECT)
 	make -C bootrom
+
+lideflash:
+	make -C lideflash
+
+disk: $(ROM) lideflash
+	@mkdir -p $(BUILDDIR)
+	cp $(ROM) build
+	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
+	xdftool $(BUILDDIR)/$(DISK) format lide-update + \
+	                            boot install boot1x + \
+	                            write $(ROM) + \
+	                            write lideflash/lideflash lideflash + \
+	                            makedir s + \
+	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
+
 clean:
 	-rm $(PROJECT)
 	make -C bootrom clean
+	make -C lideflash clean
+	-rm -rf $(BUILDDIR)

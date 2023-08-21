@@ -20,12 +20,14 @@ jobs:
           submodules: true
 
       - name: Build
-        run: make clean rom
+        run: make clean disk
 
       - uses: actions/upload-artifact@master
         with:
           name: software
-          path: "*.rom"
+          path: |
+            *.rom
+            **/*.adf
           if-no-files-found: error
 
   draft_release:
@@ -43,4 +45,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           draft: true
-          files: "artifacts/software/*.rom"
+          files: |
+            artifacts/software/*.rom
+            artifacts/software/**/*.adf
