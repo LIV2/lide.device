@@ -350,7 +350,7 @@ void __attribute__((noreturn)) diskchange_task () {
 
         for (int i=-0; i < MAX_UNITS; i++) {
             unit = &dev->units[i];
-            if (unit->present && unit->atapi) {
+            if (unit->present && unit->atapi && unit->unitOpened) {
                 Trace("Testing unit %ld\n",i);
                 previous = unit->mediumPresent;  // Get old state
                 ioreq->io_Unit = (struct Unit *)unit;
@@ -559,3 +559,40 @@ void __attribute__((noreturn)) ide_task () {
 
 }
 
+/**
+ * direct_changestate
+ * 
+ * Send a TD_CHANGESTATE request directly to the IDE Task
+ * This will have the side-effect of updating the presence status and geometry of the unit if the status changed
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param dev Pointer to DeviceBase
+ * @returns -1 on error, 0 if disk present, >0 if no disk
+*/
+BYTE direct_changestate (struct IDEUnit *unit, struct DeviceBase *dev) {
+    BYTE ret = -1;
+    struct MsgPort *iomp = NULL;
+    struct IOStdReq *ioreq = NULL;
+
+    if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
+
+    ioreq->io_Command = TD_CHANGESTATE;
+    ioreq->io_Data    = NULL;
+    ioreq->io_Length  = 1;
+    ioreq->io_Actual  = 0;
+    ioreq->io_Unit    = (struct Unit *)unit;
+    PutMsg(dev->IDETaskMP,(struct Message *)ioreq); // Send request directly to the ide task
+    WaitPort(iomp);
+    GetMsg(iomp);
+
+    if (ioreq->io_Error == 0) {
+        ret = ioreq->io_Actual; // TD_CHANGESTATE returns 0 in io_Actual if disk preset, nonzero if no disk
+    } else {
+        ret = -1;
+    }
+die:
+    if (ioreq) DeleteStdIO(ioreq);
+    if (iomp)  DeletePort(iomp);
+
+    return ret;
+}

@@ -12,3 +12,4 @@
 
 void ide_task();
 void diskchange_task();
+BYTE direct_changestate(struct IDEUnit *unit, struct DeviceBase *dev);

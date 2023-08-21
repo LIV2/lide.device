@@ -268,6 +268,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
         dev->units[i].change_count   = 1;
         dev->units[i].device_type    = DG_DIRECT_ACCESS;
+        dev->units[i].unitOpened     = false;
+        dev->units[i].mediumPresent  = false;
         dev->units[i].present        = false;
         dev->units[i].atapi          = false;
         dev->units[i].xfer_multiple  = false;
@@ -388,6 +390,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 {
     UBYTE lun = unitnum / 10;
     unitnum = (unitnum % 10);
+    struct IDEUnit *unit = NULL;
 
     if (lun != 0) {
         // No LUNs for IDE drives
@@ -399,8 +402,10 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         ioreq->io_Error = IOERR_OPENFAIL;
         return;
     }
-    
-    if (dev->units[unitnum].present == false) {
+
+    unit = &dev->units[unitnum];
+
+    if (unit->present == false) {
         ioreq->io_Error = TDERR_BadUnitNum;
         return;
     }
@@ -415,7 +420,13 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     }
 
 
-    ioreq->io_Unit = (struct Unit *)&dev->units[unitnum];
+    ioreq->io_Unit = (struct Unit *)unit;
+
+    // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
+    // This will update the media presence & geometry
+    if (unit->atapi && unit->unitOpened == false) direct_changestate(unit,dev);
+
+    unit->unitOpened = true;
 
     if (!dev->is_open)
     {
@@ -637,7 +648,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         UWORD *idx = &ms->numUnits;
 
         for (int i=0; i<MAX_UNITS; i++) {
-            if (mydev->units[i].present == true) {
+            if (mydev->units[i].present == true && mydev->units[i].device_type != DG_CDROM) {
                 ms->Units[*idx].unitNum    = i;
                 ms->Units[*idx].deviceType = mydev->units[i].device_type;
                 ms->Units[*idx].configDev  = mydev->units[i].cd;
