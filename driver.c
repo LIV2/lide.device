@@ -11,6 +11,7 @@
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
+#include <resources/filesysres.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -139,6 +140,27 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         return task;
 }
 
+#if CDBOOT
+/**
+ * FindCDFS
+ * 
+ * Look for a CD Filesystem in FileSystem.resource
+ * 
+ * @return BOOL True if CDFS found
+*/
+static BOOL FindCDFS() {
+    struct FileSysResource *fsr = OpenResource(FSRNAME);
+    struct FileSysEntry *fse;
+
+    if (fsr == NULL) return false;
+
+    for (fse = (struct FileSysEntry *)fsr->fsr_FileSysEntries.lh_Head; fse->fse_Node.ln_Succ != NULL; fse = (struct FileSysEntry *)fse->fse_Node.ln_Succ) {
+        if (fse->fse_DosType == 'CD01') return true;
+    }
+
+    return false;
+}
+#endif
 
 /**
  * Cleanup
@@ -624,8 +646,8 @@ static const ULONG device_vectors[] =
 */
 static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
-    Info("Init driver.\n");
     SysBase = *(struct ExecBase **)4UL;
+    Info("Init driver.\n");
     struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                                 NULL,                      // InitStruct data
@@ -646,9 +668,15 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         ms->SysBase     = SysBase;
 
         UWORD *idx = &ms->numUnits;
-
+#if CDBOOT
+        BOOL CDBoot = FindCDFS();
+#endif
         for (int i=0; i<MAX_UNITS; i++) {
-            if (mydev->units[i].present == true && mydev->units[i].device_type != DG_CDROM) {
+            if (mydev->units[i].present == true) {
+#if CDBOOT
+                // If CDFS not resident don't bother adding the CDROM to the mountlist
+                if (mydev->units[i].device_type == DG_CDROM && !CDBoot) continue;
+#endif
                 ms->Units[*idx].unitNum    = i;
                 ms->Units[*idx].deviceType = mydev->units[i].device_type;
                 ms->Units[*idx].configDev  = mydev->units[i].cd;

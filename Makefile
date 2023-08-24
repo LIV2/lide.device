@@ -3,7 +3,7 @@ BUILDDIR=build
 DISK=lide-update.adf
 ROM=lide.rom
 CC=m68k-amigaos-gcc
-CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer
+CFLAGS=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1
 LDFLAGS=-lamiga -lgcc -lc
 AS=m68k-amigaos-as
 

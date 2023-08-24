@@ -6,7 +6,9 @@
                 "${workspaceFolder}/**",
                 "/opt/amiga/m68k-amigaos/ndk-include"
             ],
-            "defines": [],
+            "defines": [
+                "CDBOOT=1"
+            ],
             "compilerPath": "/opt/amiga/bin/m68k-amigaos-gcc",
             "cStandard": "gnu99",
             "cppStandard": "gnu++14",

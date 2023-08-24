@@ -1,4 +1,3 @@
-
 // Generic autoboot/automount RDB parser and mounter.
 // - KS 1.3 support, including autoboot mode.
 // - 68000 compatible.
@@ -42,6 +41,7 @@
 #include <dos/doshunks.h>
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #include <proto/exec.h>
 #include <proto/expansion.h>
@@ -129,6 +129,56 @@ int GetBlockSize(struct IOStdReq *req) {
 
 	return ret;
 }
+
+#if CDBOOT
+// CheckPVD
+// Check for "CDTV" or "AMIGA BOOT" as the System ID in the PVD
+bool CheckPVD(struct IOStdReq *ior) {
+	const char sys_id_1[] = "CDTV";
+	const char sys_id_2[] = "AMIGA BOOT";
+	const char iso_id[]   = "CD001";
+
+	BYTE err = 0;
+	BOOL ret = false;
+	char *buf = NULL;
+
+	if (!(buf = AllocMem(2048,MEMF_ANY|MEMF_CLEAR))) goto done;
+
+	ior->io_Command = TD_CHANGESTATE; // Check if there's a disc in the drive
+
+	if (err = DoIO((struct IORequest *)ior) || ior->io_Actual != 0) goto done;
+
+	char *id_string = buf + 1;
+	char *system_id = buf + 8;
+
+	ior->io_Command = CMD_READ;
+	ior->io_Data    = buf;
+	ior->io_Length  = 2048;
+
+	for (int i=0; i < 32; i++) {
+
+		ior->io_Offset = (i + 16) << 11;
+
+		if ((err = DoIO((struct IORequest*)ior)) != 0 || (ior->io_Actual < 2048)) break;
+
+		// Check ISO ID String & for PVD Version & Type code
+		if ((strncmp(iso_id,id_string,5) == 0) && buf[0] == 1 && buf[6] == 1) { 
+			if (strncmp(sys_id_1,system_id,strlen(sys_id_1)) == 0 || strncmp(sys_id_2,system_id,strlen(sys_id_2) == 0)) {
+				ret = true; // CDTV or AMIGA BOOT
+			} else {
+				ret = false;
+			}
+			break;
+		} else {
+			continue;
+		}
+
+	}
+done:
+	if (buf)  FreeMem(buf,2048);
+	return ret;
+}
+#endif
 
 // KS 1.3 compatibility functions
 APTR W_CreateIORequest(struct MsgPort *ioReplyPort, ULONG size, struct ExecBase *SysBase)
@@ -504,7 +554,7 @@ static APTR fsrelocate(struct MountData *md)
 			goto end;
 		}
 	}
-        ret = 1;
+		ret = 1;
 
 end:
 	if (!ret) {
@@ -942,6 +992,79 @@ static struct FileSysEntry *scan_filesystems(void)
 	}
 	return cdfs;
 }
+
+// Search for Bootable CDROM
+static LONG ScanCDROM(struct MountData *md)
+{
+	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
+	struct FileSysEntry *fse=NULL;
+	char dosName[] = "CD0";
+	static unsigned int cnt = 0;
+	LONG bootPri;
+
+	// "CDTV" or "AMIGA BOOT"?
+	if (CheckPVD((struct IOStdReq *)md->request)) {
+		bootPri = 2;  // Yes, give priority
+	} else {
+		bootPri = -1; // May not be a boot disk, lower priority than HDD
+	}
+
+	struct ParameterPacket pp;
+
+	memset(&pp,0,sizeof(struct ParameterPacket));
+
+	pp.dosname              = dosName;
+	pp.execname             = md->devicename;
+	pp.unitnum              = md->unitnum;
+	pp.de.de_TableSize      = sizeof(struct DosEnvec);
+	pp.de.de_SizeBlock      = 2048 >> 2;
+	pp.de.de_Surfaces       = 1;
+	pp.de.de_SectorPerBlock = 1;
+	pp.de.de_BlocksPerTrack = 1;
+	pp.de.de_NumBuffers     = 5;
+	pp.de.de_BufMemType     = MEMF_ANY|MEMF_CLEAR;
+	pp.de.de_MaxTransfer    = 0x100000;
+	pp.de.de_Mask           = 0x7FFFFFFE;
+	pp.de.de_DosType        = 0x43443031; // CD01
+	pp.de.de_BootPri        = bootPri;
+
+	fse=scan_filesystems();
+	if (!fse) {
+		// printf("Could not load filesystem\n");
+		return -1;
+	}
+
+	dosName[2]='0' + cnt;
+	struct DeviceNode *node = MakeDosNode(&pp);
+	if (!node) {
+		// printf("Could not create DosNode\n");
+		return -1;
+	}
+
+	// TODO some consistency check that this is actually
+	// a bootable Amiga CDROM
+	// - iso toc
+	// - CDTV or CD32 disk
+
+	// Process PatchFlags.
+	ULONG *dstPatch = &node->dn_Type;
+	ULONG *srcPatch = &fse->fse_Type;
+	ULONG patchFlags = fse->fse_PatchFlags;
+	while (patchFlags) {
+		if (patchFlags & 1) {
+			*dstPatch = *srcPatch;
+		}
+		patchFlags >>= 1;
+		srcPatch++;
+		dstPatch++;
+	}
+
+	AddBootNode(bootPri, ADNF_STARTPROC, node, md->configDev);
+	cnt++;
+
+	return 1;
+}
+
 #endif
 
 // Mount drives
@@ -983,14 +1106,22 @@ LONG MountDrive(struct MountStruct *ms)
 								md->unitnum    = unit->unitNum;
 								md->blocksize  = blockSize;
 								md->configDev  = unit->configDev;
+#if CDBOOT
+								if (unit->deviceType == DG_CDROM) {
+									ret = ScanCDROM(md);
+								} else {
+									ret = ScanRDSK(md);
+								}
+#else
 								ret = ScanRDSK(md);
+#endif
 								CloseDevice((struct IORequest*)request);
 
 #ifndef NO_RDBLAST
-								if (md->wasLastDev) {
-									dbg("RDBFF_LAST exit\n");
-									break;
-								}
+								// if (md->wasLastDev) {
+								// 	dbg("RDBFF_LAST exit\n");
+								// 	break;
+								// }
 							} else {
 								dbg("Couldn't get block size\n");
 							}
