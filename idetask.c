@@ -350,7 +350,7 @@ void __attribute__((noreturn)) diskchange_task () {
 
         for (int i=-0; i < MAX_UNITS; i++) {
             unit = &dev->units[i];
-            if (unit->present && unit->atapi && unit->unitOpened) {
+            if (unit->present && unit->atapi && (unit->open_count > 0)) {
                 Trace("Testing unit %ld\n",i);
                 previous = unit->mediumPresent;  // Get old state
                 ioreq->io_Unit = (struct Unit *)unit;

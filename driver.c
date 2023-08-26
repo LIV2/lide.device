@@ -288,9 +288,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->units[i].cd             = cd;
         dev->units[i].primary        = ((i%2) == 1) ? false : true;
         dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
+        dev->units[i].open_count     = 0;
         dev->units[i].change_count   = 1;
         dev->units[i].device_type    = DG_DIRECT_ACCESS;
-        dev->units[i].unitOpened     = false;
         dev->units[i].mediumPresent  = false;
         dev->units[i].present        = false;
         dev->units[i].atapi          = false;
@@ -446,9 +446,9 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
     // This will update the media presence & geometry
-    if (unit->atapi && unit->unitOpened == false) direct_changestate(unit,dev);
+    if (unit->atapi && unit->open_count == 0) direct_changestate(unit,dev);
 
-    unit->unitOpened = true;
+    unit->open_count++;
 
     if (!dev->is_open)
     {
@@ -490,9 +490,11 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Close at a time. */
 static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
+    struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
     Trace((CONST_STRPTR) "running close()\n");
     dev->lib.lib_OpenCnt--;
 
+    if (unit->open_count > 0) unit->open_count--;
     if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
         return expunge(dev);
 
