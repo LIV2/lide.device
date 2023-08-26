@@ -1118,14 +1118,14 @@ LONG MountDrive(struct MountStruct *ms)
 								CloseDevice((struct IORequest*)request);
 
 #ifndef NO_RDBLAST
-								// if (md->wasLastDev) {
-								// 	dbg("RDBFF_LAST exit\n");
-								// 	break;
-								// }
+								if (md->wasLastDev) {
+									dbg("RDBFF_LAST exit\n");
+									break;
+								}
+#endif
 							} else {
 								dbg("Couldn't get block size\n");
 							}
-#endif
 						} else {
 							dbg("OpenDevice(%s,%"PRId32") failed: %"PRId32"\n", ms->deviceName, unit->unitNum, (BYTE)err);
 						}
