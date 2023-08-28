@@ -694,7 +694,6 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 */
 BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
     BYTE ret;
-    Alert(0xBADC0DE);
     struct SCSI_CDB_10 *cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR);
     if (!cdb) return TDERR_NoMem;
 

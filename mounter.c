@@ -97,6 +97,7 @@ struct MountData
 int GetBlockSize(struct IOStdReq *req) {
 	struct SCSICmd *cmd = MakeSCSICmd();
 	struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)cmd->scsi_Command;
+	BYTE err;
 	int ret = -1;
 
 	struct SCSI_CAPACITY_10 *result = AllocMem(sizeof(struct SCSI_CAPACITY_10),MEMF_CLEAR|MEMF_ANY);
@@ -116,9 +117,11 @@ int GetBlockSize(struct IOStdReq *req) {
 	req->io_Data    = cmd;
 	req->io_Length  = sizeof(struct SCSICmd);
 
-	DoIO((struct IORequest *)req);
+	for (int retry = 0; retry < 3; retry++) {
+		if ((err = DoIO((struct IORequest *)req)) == 0) break;
+	}
 
-	if (req->io_Error == 0 && req->io_Length > 0) {
+	if (err == 0 && req->io_Length > 0) {
 		ret = result->block_size;
 	} else {
 		ret = -1;
@@ -159,7 +162,11 @@ bool CheckPVD(struct IOStdReq *ior) {
 
 		ior->io_Offset = (i + 16) << 11;
 
-		if ((err = DoIO((struct IORequest*)ior)) != 0 || (ior->io_Actual < 2048)) break;
+		for (int retry = 0; retry < 3; retry++) {
+			if ((err = DoIO((struct IORequest*)ior)) == 0) break;
+		}
+
+		if (ior->io_Actual < 2048) break;
 
 		// Check ISO ID String & for PVD Version & Type code
 		if ((strncmp(iso_id,id_string,5) == 0) && buf[0] == 1 && buf[6] == 1) { 
