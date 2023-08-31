@@ -99,23 +99,28 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
 */
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 {
-    bool ret = false;
-    if (*unit->shadowDevHead == select) {
+    bool changed = false;
+    volatile UBYTE *shadowDevHead = unit->shadowDevHead;
+
+    if (*shadowDevHead == select) {
         return false;
     }
 
+    if ((*shadowDevHead & 0xF0) != (select & 0xF0)) changed = true;
+
+    // Wait for BSY to clear before changing drive unless there's no drive selected
+    if (*shadowDevHead != 0 && changed) ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT); 
+
     *unit->drive->devHead = select;
 
-    if ((*unit->shadowDevHead & 0xF0) != (select & 0xF0)) {
-        if (wait) {
-            ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
-        }
-        ret = true;
+    if (changed && wait) {
+        wait_us(unit->TimeReq,5);
+        ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
     }
 
-    *unit->shadowDevHead = select;
+    *shadowDevHead = select;
 
-    return ret;
+    return changed;
 }
 
 /**
@@ -201,11 +206,15 @@ bool ata_init_unit(struct IDEUnit *unit) {
         }
     }
     
-    if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
+    if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) {
+        *unit->shadowDevHead = 0;
         return false;
+    }
 
-    if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) // Allocate buffer for IDENTIFY result
+    if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) { // Allocate buffer for IDENTIFY result
+        *unit->shadowDevHead = 0;
         return false;
+    }
 
     Trace("INIT: IDENTIFY\n");
     if (ata_identify(unit,buf) == true) {
@@ -257,6 +266,7 @@ ident_failed:
             Warn("INIT: IDENTIFY failed\n");
             // Command failed with a timeout or error
             FreeMem(buf,512);
+            *unit->shadowDevHead = 0;
             return false;
         }
     }
@@ -264,6 +274,7 @@ ident_failed:
     if (unit->atapi == false && unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
+        *unit->shadowDevHead = 0;
         return false;
     }
 
