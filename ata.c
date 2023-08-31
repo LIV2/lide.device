@@ -147,7 +147,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit,10)) {
+    if (!ata_wait_drq(unit,5000)) {
         if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
             Warn("ATA: IDENTIFY Status: Error\n");
             Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
