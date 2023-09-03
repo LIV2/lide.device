@@ -27,6 +27,12 @@
 #define ATAPI_BSY_WAIT_S 5
 #define ATAPI_BSY_WAIT_COUNT (ATAPI_BSY_WAIT_S * 1000 * (1000 / ATAPI_BSY_WAIT_LOOP_US))
 
+#define IR_PIO_W   0x0
+#define IR_COMMAND 0x1
+#define IR_PIO_R   0x2
+#define IR_STATUS  0x3
+#define IR_PIOF    0x2
+
 void atapi_dev_reset(struct IDEUnit *unit);
 bool atapi_check_signature(struct IDEUnit *unit);
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer);
