@@ -308,6 +308,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
         if (ata_init_unit(&dev->units[i])) {
             dev->num_units++;
+        } else {
+            // Clear this to skip the pre-select BSY wait later
+            *dev->units[i].shadowDevHead = 0;
         }
     }
 

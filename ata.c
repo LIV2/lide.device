@@ -207,12 +207,10 @@ bool ata_init_unit(struct IDEUnit *unit) {
     }
     
     if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) {
-        *unit->shadowDevHead = 0;
         return false;
     }
 
     if ((buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR)) == NULL) { // Allocate buffer for IDENTIFY result
-        *unit->shadowDevHead = 0;
         return false;
     }
 
@@ -266,7 +264,6 @@ ident_failed:
             Warn("INIT: IDENTIFY failed\n");
             // Command failed with a timeout or error
             FreeMem(buf,512);
-            *unit->shadowDevHead = 0;
             return false;
         }
     }
@@ -274,7 +271,6 @@ ident_failed:
     if (unit->atapi == false && unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
-        *unit->shadowDevHead = 0;
         return false;
     }
 
