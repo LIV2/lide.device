@@ -139,7 +139,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     //if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
     //        return HFERR_SelTimeout;
     ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
-
+ 
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
     *unit->drive->lbaMid         = 0;
@@ -147,17 +147,15 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (!ata_wait_drq(unit,5000)) {
-        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
-            Warn("ATA: IDENTIFY Status: Error\n");
-            Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
-            // Save error information
-            unit->last_error[0] = *unit->drive->error_features;
-            unit->last_error[1] = *unit->drive->lbaHigh;
-            unit->last_error[2] = *unit->drive->lbaMid;
-            unit->last_error[3] = *unit->drive->lbaLow;
-            unit->last_error[4] = *unit->drive->status_command;
-        }
+    if (*unit->drive->status_command & (ata_flag_error | ata_flag_df) || !ata_wait_drq(unit,500)) {
+        Warn("ATA: IDENTIFY Status: Error\n");
+        Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
+        // Save error information
+        unit->last_error[0] = *unit->drive->error_features;
+        unit->last_error[1] = *unit->drive->lbaHigh;
+        unit->last_error[2] = *unit->drive->lbaMid;
+        unit->last_error[3] = *unit->drive->lbaLow;
+        unit->last_error[4] = *unit->drive->status_command;
         return false;
     }
 
