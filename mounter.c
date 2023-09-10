@@ -633,6 +633,10 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 			}
 			fse = (struct FileSysEntry*)fse->fse_Node.ln_Succ;
 		}
+
+		// If the FS wasn't found fse would have been pointing at the last FS in FileSystem.resource
+		if (fse->fse_DosType != dostype) fse = NULL;
+
 		if (fshb && newOnly) {
 			fse = AllocMem(sizeof(struct FileSysEntry) + strlen(creator) + 1, MEMF_PUBLIC | MEMF_CLEAR);
 			if (fse) {
@@ -900,14 +904,14 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 						srcPatch++;
 						dstPatch++;
 					}
-				}
-				dbg("Mounting partition\n");
+					dbg("Mounting partition\n");
 #if NO_CONFIGDEV
-				if (!md->configDev && !md->DOSBase) {
-					CreateFakeConfigDev(md);
-				}
+					if (!md->configDev && !md->DOSBase) {
+						CreateFakeConfigDev(md);
+					}
 #endif
-				AddNode(part, pp, dn, part->pb_DriveName + 1, md);
+					AddNode(part, pp, dn, part->pb_DriveName + 1, md);
+				}
 				md->ret++;
 			} else {
 				dbg("Device node creation failed\n");
