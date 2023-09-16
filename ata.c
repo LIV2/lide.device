@@ -356,6 +356,9 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
     ata_select(unit,drvSel,true);
 
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return HFERR_SelTimeout;
+
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
      * 
@@ -451,6 +454,9 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return HFERR_SelTimeout;
 
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
