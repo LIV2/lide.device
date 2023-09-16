@@ -25,7 +25,7 @@ endif
 
 LDFLAGS+= -lnix13
 
-.PHONY:	clean all lideflash disk
+.PHONY:	clean all lideflash disk lha
 all:	$(ROM) lideflash
 
 OBJ = driver.o \
@@ -46,10 +46,12 @@ $(PROJECT): $(SRCS)
 $(ROM): $(PROJECT)
 	make -C bootrom
 
-lideflash:
+lideflash/lideflash:
 	make -C lideflash
 
-disk: $(ROM) lideflash
+lideflash: lideflash/lideflash
+
+disk: $(ROM) lideflash/lideflash
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
@@ -59,6 +61,13 @@ disk: $(ROM) lideflash
 	                            write lideflash/lideflash lideflash + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
+
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM)
+	@mkdir -p $(BUILDDIR)
+	cp $^ $(BUILDDIR)
+	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
+
+lha: $(BUILDDIR)/lide-update.lha
 
 clean:
 	-rm $(PROJECT)
