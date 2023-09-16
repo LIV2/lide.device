@@ -23,5 +23,8 @@
         "ndkcompat.h": "c",
         "device.h": "c"
     },
-    "C_Cpp.errorSquiggles": "enabled"
+    "C_Cpp.errorSquiggles": "enabled",
+    "m68k.includePaths": [
+        "/opt/amiga/m68k-amigaos/ndk-include"
+    ]
 }
