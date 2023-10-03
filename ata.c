@@ -24,6 +24,9 @@
 static void ata_read_fast (void *, void *);
 static void ata_write_fast (void *, void *);
 
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
+
 /**
  * ata_wait_drq
  * 
@@ -101,6 +104,8 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 {
     bool changed = false;
     volatile UBYTE *shadowDevHead = unit->shadowDevHead;
+ 
+    if (!unit->lba) select &= ~(0x40);
 
     if (*shadowDevHead == select) {
         return false;
@@ -135,10 +140,9 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
     
-    ata_select(unit,drvSel,true);
-    //if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-    //        return HFERR_SelTimeout;
-    ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
+    ata_select(unit,drvSel,false);
+
+    if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) return false;
  
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
@@ -216,28 +220,34 @@ bool ata_init_unit(struct IDEUnit *unit) {
     if (ata_identify(unit,buf) == true) {
         Info("INIT: ATA Drive found!\n");
 
-        if ((*((UWORD *)buf + ata_identify_capabilities) & ata_capability_lba) == 0) {
-            Info("Rejecting drive due to lack of LBA support.\n");
-            goto ident_failed;
-        }
-
+        unit->lba             = ((*((UWORD *)buf + ata_identify_capabilities) & ata_capability_lba) != 0);
         unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
         unit->heads           = *((UWORD *)buf + ata_identify_heads);
         unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
-        unit->blockSize       = 512;//*((UWORD *)buf + ata_identify_sectorsize);
+        unit->blockSize       = 512;
         unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
         unit->blockShift      = 0;
         unit->mediumPresent   = true;
+        unit->xfer_multiple   = (*((UWORD *)buf + ata_identify_multiple) & ataf_multiple) ? true : false;
         unit->multiple_count  = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
 
-        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->multiple_count) == 0)) {
-            unit->xfer_multiple = true;
-        } else {
+        if (unit->multiple_count == 0 || (ata_set_multiple(unit,unit->multiple_count) != 0)) {
             unit->xfer_multiple = false;
+        }
+
+        if (unit->xfer_multiple == false) {
             unit->multiple_count = 1;
         }
 
+        if (unit->lba == false) {
+            Warn("INIT: Drive doesn't support LBA mode\n");
+            unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
+        }
+
         Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
+
+        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
+
         if (unit->logicalSectors >= 16514064) {
             // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
             // In this case generate a new Cylinders value
@@ -336,7 +346,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     Trace("ATA: Request sector count: %ld\n",count);
 
     *actual = 0;
-
+    UBYTE error = 0;
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
@@ -373,20 +383,16 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             txn_count = count;               // Get any remainders
         }
         count -= txn_count;
-
-        BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
-
-        ata_select(unit,drvSelHead,false);
-        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-            return HFERR_SelTimeout;
         
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        *unit->drive->sectorCount    = txn_count; // Count value of 0 indicates to transfer 256 sectors
-        *unit->drive->lbaLow         = (UBYTE)(lba);
-        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-        *unit->drive->status_command = command;
+        if (unit->lba) {
+            error = write_taskfile_lba(unit,command,lba,txn_count);
+        } else {
+            error = write_taskfile_chs(unit,command,lba,txn_count);
+        }
+
+        if (error != 0) return error;
 
         while (txn_count) {
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
@@ -435,6 +441,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
     Trace("ATA: Request sector count: %ld\n",count);
 
     *actual = 0;
+    UBYTE error = 0;
 
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
@@ -473,21 +480,15 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
         }
         count -= txn_count;
 
-        BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
-
-        ata_select(unit,drvSelHead,false);
-        if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-            return HFERR_SelTimeout;
-        
-
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        *unit->drive->sectorCount    = txn_count; // Count value of 0 indicates to transfer 256 sectors
-        *unit->drive->lbaLow         = (UBYTE)(lba);
-        *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-        *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-        *unit->drive->status_command = command;
+        if (unit->lba) {
+            error = write_taskfile_lba(unit,command,lba,txn_count);
+        } else {
+            error = write_taskfile_chs(unit,command,lba,txn_count);
+        }
 
+        if (error != 0) return error;
 
         while (txn_count) {
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
@@ -555,4 +556,53 @@ void ata_write_unaligned(void *source, void *destination) {
         *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
         src += 4;
     }
+}
+
+/**
+ * write_taskfile_chs
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param lba  Pointer to the LBA variable
+*/
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+    UWORD cylinder = (lba / (unit->heads * unit->sectorsPerTrack));
+    UBYTE head     = ((lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
+    UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
+
+    BYTE drvSelHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
+
+    ata_select(unit,drvSelHead,false);
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return HFERR_SelTimeout;
+
+    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive->lbaLow         = (UBYTE)(sector);
+    *unit->drive->lbaMid         = (UBYTE)(cylinder);
+    *unit->drive->lbaHigh        = (UBYTE)(cylinder >> 8);
+    *unit->drive->status_command = command;
+
+    return 0;
+}
+
+/**
+ * write_taskfile_lba
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param lba  Pointer to the LBA variable
+*/
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+    BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+
+    ata_select(unit,drvSelHead,false);
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return HFERR_SelTimeout;
+
+    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive->lbaLow         = (UBYTE)(lba);
+    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
+    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive->status_command = command;
+
+    return 0;
 }
