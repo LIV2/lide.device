@@ -61,8 +61,7 @@
 #define ata_identify_logical_sectors 60
 #define ata_identify_pio_modes       64
 
-#define ata_identify_lls_bit (1<<13)
-
+#define ataf_multiple (1<<8)
 
 #define ata_capability_lba (1<<9)
 #define ata_capability_dma (1<<8)
@@ -73,7 +72,7 @@ enum xfer_dir {
 };
 
 #define ATA_DRQ_WAIT_LOOP_US 1000
-#define ATA_DRQ_WAIT_S 1
+#define ATA_DRQ_WAIT_S 5
 #define ATA_DRQ_WAIT_COUNT (ATA_DRQ_WAIT_S * 1000 * (1000 / ATA_DRQ_WAIT_LOOP_US))
 
 #define ATA_BSY_WAIT_LOOP_US 1000
@@ -89,8 +88,10 @@ bool ata_init_unit(struct IDEUnit *);
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait);
 bool ata_identify(struct IDEUnit *, UWORD *);
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
+
 BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
+
 void ata_read_unaligned(void *source, void *destination);
 void ata_write_unaligned(void *source, void *destination);
 #endif
