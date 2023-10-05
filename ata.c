@@ -228,14 +228,12 @@ bool ata_init_unit(struct IDEUnit *unit) {
         unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
         unit->blockShift      = 0;
         unit->mediumPresent   = true;
-        unit->xfer_multiple   = (*((UWORD *)buf + ata_identify_multiple) & ataf_multiple) ? true : false;
         unit->multiple_count  = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
 
-        if (unit->multiple_count == 0 || (ata_set_multiple(unit,unit->multiple_count) != 0)) {
+        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->multiple_count) == 0)) {
+            unit->xfer_multiple = true;
+        } else {
             unit->xfer_multiple = false;
-        }
-
-        if (unit->xfer_multiple == false) {
             unit->multiple_count = 1;
         }
 
