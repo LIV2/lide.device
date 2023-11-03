@@ -7,6 +7,7 @@
 VERSION      = 1
 REVISION     = 1
 DRIVEROFFSET = $2000
+
 *******  DiagStart  **************************************************
 DiagStart
         ; This is the DiagArea structure whose relative offset from
@@ -107,16 +108,48 @@ MyConfigDev: dc.l 0
 Init:   movem.l d2-d7/a2-a6,-(sp)
 
         move.l  MyConfigDev(PC),a1
-        move.l  #DRIVEROFFSET,d0
         move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
+        moveq   #0,d2
         cmp.l   #8,d1                         ; LIV2 board with even rom addrss?
         beq     .even
-.odd    add.l   #1,d0                         ; No, AT-Bus style board with odd address
-.even  
+.odd    add.l   #1,d2                         ; No, AT-Bus style board with odd address
+.even 
+        cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
+        bne     .skipcdfs
+.loadcdfs
         move.l  BoardBase(PC),a0
+        move.l  a0,a1
+        add.l   d2,a1
+        add.l   #$1FFF8,a1                    ; Point to the end of the second bank
+        move.b  (a1),d1
+        lsl.w   #8,d1                         ; Look for the ROM trailer which should not be on the second bank
+        move.b  2(a1),d1
+        swap    d1
+        move.b  4(a1),d1
+        lsl.w   #8,d1
+        move.b  6(a1),d1
+        cmp.l   #'LIDE',d1                    ; If bank switched this will not match
+        beq     .skipcdfs
+
+        move.l  #$10000,d0                    ; Reloc offset to second bank
+        add.l   d2,d0                         ; Add the odd offset if needed
+
+        bsr     _relocate                     ; BoardBase already in A0
+        tst.l   d0
+        beq.s   .skipcdfs
+        bsr     InitRT
+
+.skipcdfs:
+        move.l  BoardBase(PC),a0
+        move.l  #DRIVEROFFSET,d0
+        add.l   d2,d0                         ; Add offset if AT-Bus with odd address
         bsr     _relocate
         tst.l   d0
-        bne.s   .ok
+        beq.s   .err
+        bsr     InitRT
+        tst.l   d0
+        beq.s   .ok
+
 .err
         *******  Show checkered purple failure screen **************************
         movem.l d2-d3,-(sp)
@@ -131,14 +164,13 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         movem.l (sp)+,d2-d3
         *******  End checkered purple failure screen **************************
 
-        moveq.l #0,d0
+ .ok:   moveq.l #0,d0
         movem.l (sp)+,d2-d7/a2-a6
         rts
 
 * Search for the driver Romtag
-* 
-* Some drivers (Like OktaPus.device) have extra code in front of the Romtag structure so we will search a bit until we find it
-.ok     
+InitRT
+        movem.l d2/d3/a1,-(sp)
         move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
         move.l  d0,a1
 .findrt cmpi.w  #$4AFC,(a1)
@@ -147,15 +179,17 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         beq.s   .found
 .not_rt addq.l  #2,a1
         dbra    d3,.findrt
-        bra.s   .err
+        movem.l (sp)+,d2/d3/a1
+        moveq.l #-1,d0
+        rts
 
 * Found the driver, initialize it
 .found  
         moveq.l  #0,d1
         jsr      _LVOInitResident(A6)
 .done
-        moveq.l #0,d0             ; Report "failure" as the chainloader romtag is no longer needed
-        movem.l (sp)+,d2-d7/a2-a6
+        movem.l (sp)+,d2/d3/a1
+        moveq.l #0,d0
         rts
 
 *******  Strings referenced in Diag Copy area  **************************
