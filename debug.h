@@ -4,23 +4,33 @@
  */
 #define DBG_INFO  1
 #define DBG_WARN  2
-#define DBG_TRACE 3
+#define DBG_TRACE 4
+#define DBG_CMD   8
 
 #if DEBUG
 #include <clib/debug_protos.h>
+#endif
+
+#if DEBUG & DBG_INFO
 #define Info KPrintF
 #else
 #define Info
 #endif
 
-#if DEBUG >= DBG_WARN
+#if DEBUG & DBG_WARN
 #define Warn KPrintF
 #else
 #define Warn
 #endif
 
-#if DEBUG >= DBG_TRACE
+#if DEBUG & DBG_TRACE
 #define Trace KPrintF
 #else
 #define Trace
+#endif
+
+#if DEBUG & DBG_CMD
+void traceCommand(struct IOStdReq *req);
+#else
+#define traceCommand
 #endif

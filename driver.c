@@ -621,6 +621,11 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             Warn("Unknown command %d\n", ioreq->io_Command);
             ioreq->io_Error = IOERR_NOCMD;
     }
+
+#if DEBUG & DBG_CMD
+    traceCommand(ioreq);
+#endif
+
     if (ioreq && !(ioreq->io_Flags & IOF_QUICK)) {
         ReplyMsg(&ioreq->io_Message);
     }

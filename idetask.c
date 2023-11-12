@@ -564,6 +564,10 @@ void __attribute__((noreturn)) ide_task () {
                     break;
             }
 
+#if DEBUG & DBG_CMD
+            traceCommand(ioreq);
+#endif
+
             ReplyMsg(&ioreq->io_Message);
         }
     }

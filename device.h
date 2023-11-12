@@ -4,7 +4,8 @@
  */
 #ifndef _DEVICE_H
 #define _DEVICE_H
-
+#include <dos/filehandler.h>
+#include <stdbool.h>
 #define OAHR_MANUF_ID 5194
 #define BSC_MANUF_ID  2092
 

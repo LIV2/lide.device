@@ -39,7 +39,8 @@ OBJ = driver.o \
 	  atapi.o \
 	  scsi.o \
 	  idetask.o \
-	  mounter.o
+	  mounter.o \
+	  debug.o
 
 ASMOBJ = endskip.o
 
