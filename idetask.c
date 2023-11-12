@@ -348,7 +348,7 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Data   = NULL;
         ioreq->io_Length = 0;
 
-        for (int i=-0; i < MAX_UNITS; i++) {
+        for (int i=0; i < MAX_UNITS; i++) {
             unit = &dev->units[i];
             if (unit->present && unit->atapi && (unit->open_count > 0)) {
                 Trace("Testing unit %ld\n",i);
