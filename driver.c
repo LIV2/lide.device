@@ -283,6 +283,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     for (BYTE i=0; i < (2 * channels); i++) {
         // Setup each unit structure
+        dev->units[i].unitNum        = i;
         dev->units[i].SysBase        = SysBase;
         dev->units[i].TimeReq        = dev->TimeReq;
         dev->units[i].cd             = cd;
@@ -467,10 +468,10 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
-    if (unit->atapi && unit->mediumPresent == false) {
-        ioreq->io_Error = TDERR_DiskChanged;
-        return;
-    }
+    // if (unit->atapi && unit->mediumPresent == false) {
+    //     ioreq->io_Error = TDERR_DiskChanged;
+    //     return;
+    // }
 
     geometry->dg_SectorSize   = unit->blockSize;
     geometry->dg_TotalSectors = unit->logicalSectors;
