@@ -327,7 +327,8 @@ void __attribute__((noreturn)) diskchange_task () {
     struct Task volatile *task = FindTask(NULL);
     struct MsgPort *TimerMP, *iomp = NULL;
     struct timerequest *TimerReq = NULL;
-    struct IOStdReq *ioreq = NULL, *intreq = NULL;
+    struct IOStdReq *ioreq = NULL;
+    struct ChangeInt *intreq = NULL;
     struct IDEUnit *unit = NULL;
     bool previous;
     bool present;
@@ -364,9 +365,12 @@ void __attribute__((noreturn)) diskchange_task () {
                 if (present != previous) {
                     // Forbid while accessing the list;
                     Forbid();
-                    for (intreq = (struct IOStdReq *)unit->changeints.mlh_Head; intreq->io_Message.mn_Node.ln_Succ != NULL; intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
-                        if (intreq->io_Data) {
-                            Cause(intreq->io_Data);
+                    for (intreq = (struct ChangeInt *)unit->changeInts.mlh_Head; 
+                         intreq->node.mln_Succ != NULL;
+                         intreq = (struct ChangeInt *)intreq->node.mln_Succ) {
+
+                        if (intreq->interrupt) {
+                            Cause(intreq->interrupt);
                         }
                     }
                     Permit();
@@ -470,20 +474,27 @@ void __attribute__((noreturn)) ide_task () {
 
                 case TD_ADDCHANGEINT:
                     Info("Addchangeint\n");
+                    struct ChangeInt *add_req = AllocMem(sizeof(struct ChangeInt),MEMF_ANY|MEMF_CLEAR);
+                    add_req->interrupt = ioreq->io_Data;
+
                     ioreq->io_Error = 0;
                     Forbid();
-                    AddHead((struct List *)&unit->changeints,(struct Node *)&ioreq->io_Message.mn_Node);
+                    AddHead((struct List *)&unit->changeInts,(struct Node *)&add_req->node);
                     Permit();
                     // Don't reply to this request
                     continue;
 
                 case TD_REMCHANGEINT:
                     ioreq->io_Error = 0;
-                    struct MinNode *changeint;
+                    struct ChangeInt *rm_req;
                     Forbid();
-                    for (changeint = unit->changeints.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
-                        if (ioreq == (struct IOStdReq *)changeint) {
-                            Remove(&ioreq->io_Message.mn_Node);
+                    for (rm_req = (struct ChangeInt *)unit->changeInts.mlh_Head;
+                         rm_req->node.mln_Succ != NULL;
+                         rm_req = (struct ChangeInt *)rm_req->node.mln_Succ) {
+
+                        if (ioreq->io_Data == rm_req->interrupt) {
+                            Remove((struct Node *)&rm_req->node);
+                            FreeMem(rm_req,sizeof(struct ChangeInt));
                         }
                     }
                     Permit();
