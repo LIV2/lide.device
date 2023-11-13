@@ -54,7 +54,7 @@ struct IDEUnit {
     UWORD blockShift;
     ULONG logicalSectors;
     volatile UBYTE *shadowDevHead;
-    struct MinList changeInts;
+    struct MinList changeints;
     struct Interrupt *changeInt;
 };
 
@@ -77,10 +77,6 @@ struct DeviceBase {
     UBYTE           shadowDevHeads[MAX_UNITS/2];
 };
 
-struct ChangeInt {
-    struct MinNode   node;
-    struct Interrupt *interrupt;
-};
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
                           if invoked from a macro, macro arguments are expanded). */

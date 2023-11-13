@@ -301,9 +301,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         *dev->units[i].shadowDevHead = 0;
 
         // Initialize the change int list
-        dev->units[i].changeInts.mlh_Tail     = NULL;
-        dev->units[i].changeInts.mlh_Head     = (struct MinNode *)&dev->units[i].changeInts.mlh_Tail;
-        dev->units[i].changeInts.mlh_TailPred = (struct MinNode *)&dev->units[i].changeInts;
+        dev->units[i].changeints.mlh_Tail     = NULL;
+        dev->units[i].changeints.mlh_Head     = (struct MinNode *)&dev->units[i].changeints.mlh_Tail;
+        dev->units[i].changeints.mlh_TailPred = (struct MinNode *)&dev->units[i].changeints;
 
         Warn("testing unit %08lx\n",i);
 
