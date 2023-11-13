@@ -529,6 +529,12 @@ static UWORD supported_commands[] =
     TD_READ64,
     TD_WRITE64,
     TD_FORMAT64,
+    ETD_READ,
+    ETD_WRITE,
+    ETD_FORMAT,
+    NSCMD_ETD_READ64,
+    NSCMD_ETD_WRITE64,
+    NSCMD_ETD_FORMAT64,
     NSCMD_DEVICEQUERY,
     NSCMD_TD_READ64,
     NSCMD_TD_WRITE64,
@@ -609,7 +615,9 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 
         case TD_CHANGESTATE:
         case CMD_READ:
+        case ETD_READ:
         case CMD_WRITE:
+        case ETD_WRITE:
             ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
         case TD_PROTSTATUS:
         case TD_EJECT:
@@ -620,6 +628,9 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case NSCMD_TD_READ64:
         case NSCMD_TD_WRITE64:
         case NSCMD_TD_FORMAT64:
+        case NSCMD_ETD_READ64:
+        case NSCMD_ETD_WRITE64:
+        case NSCMD_ETD_FORMAT64:
         case HD_SCSICMD:
             // Send all of these to ide_task
             ioreq->io_Flags &= ~IOF_QUICK;

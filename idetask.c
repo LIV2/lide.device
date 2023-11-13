@@ -406,6 +406,7 @@ void __attribute__((noreturn)) ide_task () {
     struct Task volatile *task = FindTask(NULL);
     struct MsgPort *mp;
     struct IOStdReq *ioreq;
+    struct IOExtTD *iotd;
     struct IDEUnit *unit;
     UWORD blockShift;
     ULONG lba;
@@ -438,6 +439,8 @@ void __attribute__((noreturn)) ide_task () {
 
         while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
             unit = (struct IDEUnit *)ioreq->io_Unit;
+            iotd = (struct IOExtTD *)ioreq;
+
             direction = WRITE;
 
             switch (ioreq->io_Command) {
@@ -472,10 +475,28 @@ void __attribute__((noreturn)) ide_task () {
                     ioreq->io_Actual = 0; // Not protected
                     break;
 
+                case ETD_READ:
+                case NSCMD_ETD_READ64:
+                    direction = READ;
+                    goto validate_etd;
+
+                case ETD_WRITE:
+                case ETD_FORMAT:
+                case NSCMD_ETD_WRITE64:
+                case NSCMD_ETD_FORMAT64:
+                    direction = WRITE;
+validate_etd:
+                    if (iotd->iotd_Count < unit->change_count) {
+                        ioreq->io_Error = TDERR_DiskChanged;
+                        break;
+                    } else {
+                        goto transfer;
+                    }
                 case CMD_READ:
                 case TD_READ64:
                 case NSCMD_TD_READ64:
                     direction = READ;
+                    goto transfer;
 
                 case CMD_WRITE:
                 case TD_WRITE64:
@@ -483,6 +504,8 @@ void __attribute__((noreturn)) ide_task () {
                 case TD_FORMAT64:
                 case NSCMD_TD_WRITE64:
                 case NSCMD_TD_FORMAT64:
+                    direction = WRITE;
+transfer:
                     if (unit->atapi == true && unit->mediumPresent == false) {
                         Trace("Access attempt without media\n");
                         ioreq->io_Error = TDERR_DiskChanged;
