@@ -301,9 +301,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         *dev->units[i].shadowDevHead = 0;
 
         // Initialize the change int list
-        dev->units[i].changeints.mlh_Tail     = NULL;
-        dev->units[i].changeints.mlh_Head     = (struct MinNode *)&dev->units[i].changeints.mlh_Tail;
-        dev->units[i].changeints.mlh_TailPred = (struct MinNode *)&dev->units[i].changeints;
+        dev->units[i].changeInts.mlh_Tail     = NULL;
+        dev->units[i].changeInts.mlh_Head     = (struct MinNode *)&dev->units[i].changeInts.mlh_Tail;
+        dev->units[i].changeInts.mlh_TailPred = (struct MinNode *)&dev->units[i].changeInts;
 
         Warn("testing unit %08lx\n",i);
 
@@ -582,13 +582,36 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             ioreq->io_Error = 0;
             break;
 
+
+        case TD_ADDCHANGEINT:
+            Info("Addchangeint\n");
+
+            ioreq->io_Flags &= IOF_QUICK; // Must not Reply to this request
+            ioreq->io_Error = 0;
+
+            Forbid();
+            AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
+            Permit();
+            break;
+
+        case TD_REMCHANGEINT:
+            ioreq->io_Error = 0;
+            struct MinNode *changeint;
+            for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
+                if (ioreq == (struct IOStdReq *)changeint) {
+                    Forbid();
+                    Remove(&ioreq->io_Message.mn_Node);
+                    Permit();
+                }
+            }
+            break;
+
+
         case TD_CHANGESTATE:
         case CMD_READ:
         case CMD_WRITE:
             ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
         case TD_PROTSTATUS:
-        case TD_ADDCHANGEINT:
-        case TD_REMCHANGEINT:
         case TD_EJECT:
         case TD_FORMAT:
         case TD_READ64:

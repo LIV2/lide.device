@@ -54,7 +54,7 @@ struct IDEUnit {
     UWORD blockShift;
     ULONG logicalSectors;
     volatile UBYTE *shadowDevHead;
-    struct MinList changeints;
+    struct MinList changeInts;
     struct Interrupt *changeInt;
 };
 

@@ -368,7 +368,7 @@ void __attribute__((noreturn)) diskchange_task () {
 
                     // Forbid while accessing the list;
                     Forbid();
-                    for (intreq = (struct IOStdReq *)unit->changeints.mlh_Head; intreq->io_Message.mn_Node.ln_Succ != NULL; intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
+                    for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head; intreq->io_Message.mn_Node.ln_Succ != NULL; intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
                         if (intreq->io_Data) {
                             Cause(intreq->io_Data);
                         }
@@ -470,27 +470,6 @@ void __attribute__((noreturn)) ide_task () {
                         }
                     }
                     ioreq->io_Actual = 0; // Not protected
-                    break;
-
-                case TD_ADDCHANGEINT:
-                    Info("Addchangeint\n");
-                    ioreq->io_Error = 0;
-                    Forbid();
-                    AddHead((struct List *)&unit->changeints,(struct Node *)&ioreq->io_Message.mn_Node);
-                    Permit();
-                    // Don't reply to this request
-                    continue;
-
-                case TD_REMCHANGEINT:
-                    ioreq->io_Error = 0;
-                    struct MinNode *changeint;
-                    Forbid();
-                    for (changeint = unit->changeints.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
-                        if (ioreq == (struct IOStdReq *)changeint) {
-                            Remove(&ioreq->io_Message.mn_Node);
-                        }
-                    }
-                    Permit();
                     break;
 
                 case CMD_READ:
