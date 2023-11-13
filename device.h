@@ -55,6 +55,7 @@ struct IDEUnit {
     ULONG logicalSectors;
     volatile UBYTE *shadowDevHead;
     struct MinList changeInts;
+    struct Interrupt *changeInt;
 };
 
 struct DeviceBase {

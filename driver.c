@@ -517,6 +517,7 @@ static UWORD supported_commands[] =
     CMD_WRITE,
     TD_ADDCHANGEINT,
     TD_REMCHANGEINT,
+    TD_REMOVE,
     TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
@@ -574,6 +575,11 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 
         case TD_GETGEOMETRY:
             td_get_geometry(ioreq);
+            break;
+
+        case TD_REMOVE:
+            unit->changeInt = ioreq->io_Data;
+            ioreq->io_Error = 0;
             break;
 
         case TD_CHANGESTATE:

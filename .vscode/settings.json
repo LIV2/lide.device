@@ -26,5 +26,8 @@
     "C_Cpp.errorSquiggles": "enabled",
     "m68k.includePaths": [
         "/opt/amiga/m68k-amigaos/ndk-include"
-    ]
+    ],
+    "[m68k]": {
+        "editor.rulers": []
+    }
 }

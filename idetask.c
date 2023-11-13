@@ -363,6 +363,10 @@ void __attribute__((noreturn)) diskchange_task () {
                 present = (ioreq->io_Actual == 0); // Get current state
 
                 if (present != previous) {
+
+                    if (unit->changeInt != NULL)
+                        Cause(unit->changeInt); // TD_REMOVE
+
                     // Forbid while accessing the list;
                     Forbid();
                     for (intreq = (struct ChangeInt *)unit->changeInts.mlh_Head; 
