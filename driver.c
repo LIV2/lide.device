@@ -603,13 +603,13 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case TD_REMCHANGEINT:
             ioreq->io_Error = 0;
             struct MinNode *changeint;
+            Forbid();
             for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
                 if (ioreq == (struct IOStdReq *)changeint) {
-                    Forbid();
                     Remove(&ioreq->io_Message.mn_Node);
-                    Permit();
                 }
             }
+            Permit();
             break;
 
 

@@ -363,12 +363,14 @@ void __attribute__((noreturn)) diskchange_task () {
 
                 if (present != previous) {
 
-                    if (unit->changeInt != NULL)
-                        Cause(unit->changeInt); // TD_REMOVE
-
-                    // Forbid while accessing the list;
                     Forbid();
-                    for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head; intreq->io_Message.mn_Node.ln_Succ != NULL; intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
+                    if (unit->changeInt != NULL)
+                        Cause((struct Interrupt *)unit->changeInt); // TD_REMOVE
+
+                    for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head;
+                         intreq->io_Message.mn_Node.ln_Succ != NULL;
+                         intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
+                        
                         if (intreq->io_Data) {
                             Cause(intreq->io_Data);
                         }
