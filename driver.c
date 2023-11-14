@@ -484,7 +484,6 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_DeviceType   = unit->device_type;
     geometry->dg_Flags        = (unit->atapi) ? DGF_REMOVABLE : 0;
 
-    ioreq->io_Error = 0;
     ioreq->io_Actual = sizeof(struct DriveGeometry);
 }
 
@@ -554,10 +553,10 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
     Trace((CONST_STRPTR) "running begin_io()\n");
-    ioreq->io_Error = TDERR_NotSpecified;
+    BYTE error = TDERR_NotSpecified;
 
     if (dev->IDETask == NULL || dev->IDETaskActive == false) {
-        ioreq->io_Error = IOERR_OPENFAIL;
+        error = IOERR_OPENFAIL;
     }
 
     if (ioreq == NULL || ioreq->io_Unit == 0) return;
@@ -567,26 +566,27 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case CMD_CLEAR:
         case CMD_UPDATE:
             ioreq->io_Actual = 0;
-            ioreq->io_Error  = 0;
+            error            = 0;
             break;
 
         case TD_CHANGENUM:
             ioreq->io_Actual = unit->change_count;
-            ioreq->io_Error  = 0;
+            error            = 0;
             break;
 
         case TD_GETDRIVETYPE:
             ioreq->io_Actual = unit->device_type;
-            ioreq->io_Error  = 0;
+            error            = 0;
             break;
 
         case TD_GETGEOMETRY:
             td_get_geometry(ioreq);
+            error = 0;
             break;
 
         case TD_REMOVE:
             unit->changeInt = ioreq->io_Data;
-            ioreq->io_Error = 0;
+            error           = 0;
             break;
 
 
@@ -594,7 +594,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             Info("Addchangeint\n");
 
             ioreq->io_Flags &= IOF_QUICK; // Must not Reply to this request
-            ioreq->io_Error = 0;
+            error = 0;
 
             Forbid();
             AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
@@ -602,7 +602,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             break;
 
         case TD_REMCHANGEINT:
-            ioreq->io_Error = 0;
+            error = 0;
             struct MinNode *changeint;
             Forbid();
             for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
@@ -651,21 +651,22 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 result->SupportedCommands = supported_commands;
 
                 ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
-                ioreq->io_Error = 0;
+                error = 0;
             }
             else {
-                ioreq->io_Error = IOERR_BADLENGTH;
+                error = IOERR_BADLENGTH;
             }
             break;
 
         default:
             Warn("Unknown command %d\n", ioreq->io_Command);
-            ioreq->io_Error = IOERR_NOCMD;
+            error = IOERR_NOCMD;
     }
 
 #if DEBUG & DBG_CMD
     traceCommand(ioreq);
 #endif
+    ioreq->io_Error = error;
 
     if (ioreq && !(ioreq->io_Flags & IOF_QUICK)) {
         ReplyMsg(&ioreq->io_Message);

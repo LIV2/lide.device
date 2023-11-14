@@ -168,7 +168,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
  * Handle SCSI Direct commands
  * @param ioreq IO Request
 */
-static void handle_scsi_command(struct IOStdReq *ioreq) {
+static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
@@ -177,7 +177,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     ULONG lba;
     ULONG count;
-    UBYTE error = 0;
+    BYTE error = 0;
     scsi_command->scsi_SenseActual = 0;
 
 
@@ -305,7 +305,6 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
 
     Trace("SCSI: return: %02lx\n",error);
     
-    ioreq->io_Error = error;
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
     if (error != 0) {
@@ -315,6 +314,7 @@ static void handle_scsi_command(struct IOStdReq *ioreq) {
     } else {
         scsi_command->scsi_Status = 0;
     }
+    return error;
 }
 
 /**
@@ -413,6 +413,7 @@ void __attribute__((noreturn)) ide_task () {
     UWORD blockShift;
     ULONG lba;
     ULONG count;
+    BYTE  error = 0;
     enum xfer_dir direction = WRITE;
 
     Info("IDE Task: waiting for init\n");
@@ -448,15 +449,20 @@ void __attribute__((noreturn)) ide_task () {
             switch (ioreq->io_Command) {
                 case TD_EJECT:
                     if (!unit->atapi) {
-                        ioreq->io_Error = IOERR_NOCMD;
+                        error  = IOERR_NOCMD;
                         break;
                     }
+                    ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
+
                     bool insert = (ioreq->io_Length == 0) ? true : false;
-                    ioreq->io_Error = atapi_start_stop_unit(unit,insert,1);
+
+                    if (insert == false) atapi_update_presence(unit,false); // Immediately update medium presence on Eject
+
+                    error = atapi_start_stop_unit(unit,insert,1);
                     break;
 
                 case TD_CHANGESTATE:
-                    ioreq->io_Error  = 0;
+                    error   = 0;
                     ioreq->io_Actual = 0;
                     if (unit->atapi) {
                         ioreq->io_Actual = (atapi_test_unit_ready(unit) != 0);
@@ -466,10 +472,10 @@ void __attribute__((noreturn)) ide_task () {
                     break;
 
                 case TD_PROTSTATUS:
-                    ioreq->io_Error = 0;
+                    error  = 0;
                     if (unit->atapi) {
-                        if ((ioreq->io_Error = atapi_check_wp(unit)) == TDERR_WriteProt) {
-                            ioreq->io_Error = 0;
+                        if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
+                            error  = 0;
                             ioreq->io_Actual = 1;
                             break;
                         }
@@ -489,7 +495,7 @@ void __attribute__((noreturn)) ide_task () {
                     direction = WRITE;
 validate_etd:
                     if (iotd->iotd_Count < unit->change_count) {
-                        ioreq->io_Error = TDERR_DiskChanged;
+                        error  = TDERR_DiskChanged;
                         break;
                     } else {
                         goto transfer;
@@ -510,7 +516,7 @@ validate_etd:
 transfer:
                     if (unit->atapi == true && unit->mediumPresent == false) {
                         Trace("Access attempt without media\n");
-                        ioreq->io_Error = TDERR_DiskChanged;
+                        error  = TDERR_DiskChanged;
                         break;
                     }
                     
@@ -520,24 +526,24 @@ transfer:
 
                     if ((lba + count) > (unit->logicalSectors)) {
                         Trace("Read past end of device\n");
-                        ioreq->io_Error = TDERR_SeekError;
+                        error  = TDERR_SeekError;
                         break;
                     }
 
                     if (unit->atapi == true) {
-                        ioreq->io_Error = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                        error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     } else {
                         if (direction == READ) {
-                            ioreq->io_Error = ata_read(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                            error  = ata_read(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
                         } else {
-                            ioreq->io_Error = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                            error  = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
                         }
                     }
                     break;
 
                 /* SCSI Direct */
                 case HD_SCSICMD:
-                    handle_scsi_command(ioreq);
+                    error = handle_scsi_command(ioreq);
                     break;
 
                 /* CMD_DIE: Shut down this task and clean up */
@@ -556,7 +562,7 @@ transfer:
                     break;
                 default:
                     // Unknown commands.
-                    ioreq->io_Error  = IOERR_NOCMD;
+                    error = IOERR_NOCMD;
                     ioreq->io_Actual = 0;
                     break;
             }
@@ -564,7 +570,7 @@ transfer:
 #if DEBUG & DBG_CMD
             traceCommand(ioreq);
 #endif
-
+            ioreq->io_Error = error;
             ReplyMsg(&ioreq->io_Message);
         }
     }
