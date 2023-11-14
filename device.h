@@ -42,6 +42,7 @@ struct IDEUnit {
     BOOL  present;
     BOOL  atapi;
     BOOL  mediumPresent;
+    BOOL  mediumPresentPrev;
     BOOL  xfer_multiple;
     BOOL  lba;
     UBYTE multiple_count;

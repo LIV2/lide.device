@@ -329,7 +329,6 @@ void __attribute__((noreturn)) diskchange_task () {
     struct timerequest *TimerReq = NULL;
     struct IOStdReq *ioreq = NULL, *intreq = NULL;
     struct IDEUnit *unit = NULL;
-    bool previous;
     bool present;
 
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
@@ -352,7 +351,6 @@ void __attribute__((noreturn)) diskchange_task () {
             unit = &dev->units[i];
             if (unit->present && unit->atapi && (unit->open_count > 0)) {
                 Trace("Testing unit %ld\n",i);
-                previous = unit->mediumPresent;  // Get old state
                 ioreq->io_Unit = (struct Unit *)unit;
 
                 PutMsg(dev->IDETaskMP,(struct Message *)ioreq); // Send request directly to the ide task
@@ -361,7 +359,7 @@ void __attribute__((noreturn)) diskchange_task () {
                 
                 present = (ioreq->io_Actual == 0); // Get current state
 
-                if (present != previous) {
+                if (present != unit->mediumPresentPrev) {
 
                     Forbid();
                     if (unit->changeInt != NULL)
@@ -377,6 +375,8 @@ void __attribute__((noreturn)) diskchange_task () {
                     }
                     Permit();
                 }
+
+                unit->mediumPresentPrev = present;
             }
         }
         Trace("Wait...\n");

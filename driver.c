@@ -283,22 +283,23 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     for (BYTE i=0; i < (2 * channels); i++) {
         // Setup each unit structure
-        dev->units[i].unitNum        = i;
-        dev->units[i].SysBase        = SysBase;
-        dev->units[i].TimeReq        = dev->TimeReq;
-        dev->units[i].cd             = cd;
-        dev->units[i].primary        = ((i%2) == 1) ? false : true;
-        dev->units[i].channel        = ((i%4) < 2) ? 0 : 1;
-        dev->units[i].open_count     = 0;
-        dev->units[i].change_count   = 1;
-        dev->units[i].device_type    = DG_DIRECT_ACCESS;
-        dev->units[i].mediumPresent  = false;
-        dev->units[i].present        = false;
-        dev->units[i].atapi          = false;
-        dev->units[i].xfer_multiple  = false;
-        dev->units[i].multiple_count = 0;
-        dev->units[i].shadowDevHead  = &dev->shadowDevHeads[i>>1];
-        *dev->units[i].shadowDevHead = 0;
+        dev->units[i].unitNum           = i;
+        dev->units[i].SysBase           = SysBase;
+        dev->units[i].TimeReq           = dev->TimeReq;
+        dev->units[i].cd                = cd;
+        dev->units[i].primary           = ((i%2) == 1) ? false : true;
+        dev->units[i].channel           = ((i%4) < 2) ? 0 : 1;
+        dev->units[i].open_count        = 0;
+        dev->units[i].change_count      = 1;
+        dev->units[i].device_type       = DG_DIRECT_ACCESS;
+        dev->units[i].mediumPresent     = false;
+        dev->units[i].mediumPresentPrev = false;
+        dev->units[i].present           = false;
+        dev->units[i].atapi             = false;
+        dev->units[i].xfer_multiple     = false;
+        dev->units[i].multiple_count    = 0;
+        dev->units[i].shadowDevHead     = &dev->shadowDevHeads[i>>1];
+        *dev->units[i].shadowDevHead    = 0;
 
         // Initialize the change int list
         dev->units[i].changeInts.mlh_Tail     = NULL;
