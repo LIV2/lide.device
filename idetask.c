@@ -440,7 +440,7 @@ void __attribute__((noreturn)) ide_task () {
         Trace("IDE Task: WaitPort()\n");
         Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
 
-        while ((ioreq = (struct IOStdReq *)GetMsg(mp))) {
+        while ((ioreq = (struct IOStdReq *)GetMsg(mp)) != NULL) {
             unit = (struct IDEUnit *)ioreq->io_Unit;
             iotd = (struct IOExtTD *)ioreq;
 
