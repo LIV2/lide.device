@@ -6,6 +6,7 @@
 * Supports up to 127GB drives
 * Supports ATAPI Devices (CD/DVD-ROM, Zip disk etc)
 * Boot from ZIP/LS-120 etc
+* [Boot from CD-ROM*](#boot-from-cdrom)
 * SCSI Direct, NSD, TD64 support
 
 # Downloads
@@ -14,6 +15,14 @@ ROM downloads are available under [releases](https://github.com/LIV2/lide.device
 Currently there are two builds
 * lide.rom - Used for boards designed by me that feature an IDE interface (such as CIDER)
 * lide-atbus.rom - For AT-Bus style devices i.e AT-Bus 2008 + clone, Matze accelerators etc
+
+## Boot from CDROM
+Booting from CDROM requires Kickstart 2 or higher and one of the following:  
+
+1. CDFileSystem from AmigaOS 3.2.2 loaded with LoadModule
+2. BootCDFileSystem from OS 4 either:
+    * Added to a custom Kickstart ROM **OR**
+    * Loaded by LoadModule
 
 ## Hardware implementation
 * IDECS1 is asserted when A12 is low and the IDE device's base address is decoded
