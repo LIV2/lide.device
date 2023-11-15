@@ -593,7 +593,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case TD_ADDCHANGEINT:
             Info("Addchangeint\n");
 
-            ioreq->io_Flags &= IOF_QUICK; // Must not Reply to this request
+            ioreq->io_Flags |= IOF_QUICK; // Must not Reply to this request
             error = 0;
 
             Forbid();
