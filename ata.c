@@ -237,8 +237,11 @@ bool ata_init_unit(struct IDEUnit *unit) {
             unit->multiple_count = 1;
         }
 
-        if (unit->lba == false) {
+        if (unit->lba == true) {
+            unit->write_taskfile = &write_taskfile_lba;
+        } else {
             Warn("INIT: Drive doesn't support LBA mode\n");
+            unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
         }
 
@@ -384,13 +387,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if (unit->lba) {
-            error = write_taskfile_lba(unit,command,lba,txn_count);
-        } else {
-            error = write_taskfile_chs(unit,command,lba,txn_count);
-        }
-
-        if (error != 0) return error;
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0)
+            return error;
 
         while (txn_count) {
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
@@ -480,13 +478,8 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if (unit->lba) {
-            error = write_taskfile_lba(unit,command,lba,txn_count);
-        } else {
-            error = write_taskfile_chs(unit,command,lba,txn_count);
-        }
-
-        if (error != 0) return error;
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0)
+            return error;
 
         while (txn_count) {
             if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))

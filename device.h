@@ -34,6 +34,7 @@ struct IDEUnit {
     struct ExecBase *SysBase;
     struct timerequest *TimeReq;
     volatile struct Drive *drive;
+    BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
     UBYTE unitNum;
     UBYTE channel;
     UBYTE device_type;
