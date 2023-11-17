@@ -88,7 +88,7 @@ struct DeviceBase {
 #define DEVICE_DATE "(" __DATE__ ")"
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 3
+#define DEVICE_REVISION 4
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
 
 #endif
