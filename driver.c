@@ -251,7 +251,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
 
-    if (cd->cd_Rom.er_Manufacturer != 5194 && cd->cd_Rom.er_Manufacturer != 2092) {
+    if (!(cd->cd_Flags & CDF_CONFIGME)) {
         Cleanup(dev);
         return 0;
     }
