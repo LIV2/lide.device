@@ -84,7 +84,11 @@ struct DeviceBase {
                           if invoked from a macro, macro arguments are expanded). */
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
-#define DEVICE_NAME "2nd.lide.device"
+#ifdef CALL_ME_SCSI
+#define DEVICE_NAME "    scsi.device"
+#else
+#define DEVICE_NAME "    lide.device"
+#endif
 #define DEVICE_DATE "(" __DATE__ ")"
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " " DEVICE_DATE /* format is: 'name version.revision (d.m.yy)' */
 #define DEVICE_VERSION 40
