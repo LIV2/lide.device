@@ -31,8 +31,8 @@ endif
 
 LDFLAGS+= -lnix13
 
-.PHONY:	clean all lideflash disk lha
-all:	$(ROM) lideflash
+.PHONY:	clean all lideflash disk lha rename/renamelide
+all:	$(ROM) lideflash rename/renamelide
 
 OBJ = driver.o \
       ata.o \
@@ -58,7 +58,10 @@ lideflash/lideflash:
 
 lideflash: lideflash/lideflash
 
-disk: $(ROM) lideflash/lideflash
+rename/renamelide:
+	make -C rename
+
+disk: $(ROM) lideflash/lideflash rename/renamelide
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
@@ -66,18 +69,20 @@ disk: $(ROM) lideflash/lideflash
 	                            boot install boot1x + \
 	                            write $(ROM) + \
 	                            write lideflash/lideflash lideflash + \
+								write rename/renamelide renamelide + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM)
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide
 	@mkdir -p $(BUILDDIR)
 	cp $^ $(BUILDDIR)
 	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
 
-lha: $(BUILDDIR)/lide-update.lha
+lha: $(BUILDDIR)/lide-update.lha 
 
 clean:
 	-rm $(PROJECT)
 	make -C bootrom clean
 	make -C lideflash clean
+	make -C rename clean
 	-rm -rf $(BUILDDIR)
