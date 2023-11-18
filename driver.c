@@ -190,6 +190,55 @@ static void Cleanup(struct DeviceBase *dev) {
 }
 
 /**
+ * detectChannels
+ * 
+ * Detect how many IDE Channels this board has
+ * @param cd Pointer to the ConfigDev struct for this board
+ * @returns number of channels
+*/
+static BYTE detectChannels(struct ConfigDev *cd) {
+
+    if (cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID || cd->cd_Rom.er_Manufacturer == A1K_MANUF_ID) {
+        // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
+        // Not a problem in single channel mode - the drive registers there only use the upper byte
+        // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
+        //
+        // Check for the ROM Footer
+        // On the AT-Bus 2008 clone it will still be there
+        // On a Matze TK the ROM goes away and the board can do 2 channels
+        ULONG signature = 0;
+        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8 + 
+                                    ((cd->cd_Rom.er_InitDiagVec >> 8) & 1); // If the board has an odd offset then add it;
+
+        for (int i=0; i<4; i++) {
+            signature <<= 8;
+            signature |= *romFooter;
+            romFooter += 2;
+        }
+
+        if (signature == 'LIDE') {
+            Info("Channel detection: Saw ROM footer - assuming AT-Bus single channel mode\n");
+            return 1;
+        }
+    }
+
+    // Detect if there are 1 or 2 IDE channels on this board 
+    // 2 channel boards use the CS2 decode for the second channel 
+    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
+    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
+
+    UBYTE *drvsel     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
+
+    *drvsel = 0xE0;
+
+    if (*status == *alt_status) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+/**
  * init_device
  *
  * Scan for drives and initialize the driver if any are found
@@ -261,25 +310,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     dev->num_boards++;
 
-    // Detect if there are 1 or 2 IDE channels on this board
-    // 2 channel boards use the CS2 decode for the second channel
-    UBYTE channels = 2;
-
-    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
-
-    UBYTE *drvsel     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
-
-    *drvsel = 0xE0;
-
-    // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
-    // Not a problem in single channel mode - the drive registers there only use the upper byte
-    // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
-    if (*status == *alt_status || cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID) {
-        channels = 1;
-    }
-
+    UBYTE channels = detectChannels(cd);
     Info("Channels: %ld\n",channels);
+
 
     for (BYTE i=0; i < (2 * channels); i++) {
         // Setup each unit structure
