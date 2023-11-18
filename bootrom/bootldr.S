@@ -54,8 +54,8 @@ DiagEntry
         movem.l d2-d7/a2-a6,-(sp)
 
         ; Patch up Romtag Resident Structure in memory
-        lea.l   Romtag(pc),a4                ; find Romtag in memory
-        move.l  a4,RT_MATCHTAG(a4)           ; pointer to itself
+        lea.l   Romtag(pc),a4                       ; find Romtag in memory
+        move.l  a4,RT_MATCHTAG(a4)                  ; pointer to itself
         lea.l   EndCopy(pc),a1
         move.l  a1,RT_ENDSKIP(a4)
         lea.l   DevName(pc),a1
@@ -63,10 +63,14 @@ DiagEntry
         move.l  a1,RT_IDSTRING(a4)
         lea.l   Init(pc),a1
         move.l  a1,RT_INIT(a4)
-        move.l  a0,BoardBase-Romtag(a4)       ; Save board base for later
-        move.l  a3,MyConfigDev-Romtag(a4)     ; Save ConfigDev for later
-
-        movem.l (sp)+,d2-d7/a2-a6
+        move.l  a0,BoardBase-Romtag(a4)             ; Save board base for later
+        move.l  a3,MyConfigDev-Romtag(a4)           ; Save ConfigDev for later
+        cmp.w   #$082c,cd_Rom+er_Manufacturer(a3)
+        bne     .skip
+        ; For AT-Bus devices change the manufacturer/prod id to prevent Oktapussy meddling with us
+        move.w  #$0A1C,cd_Rom+er_Manufacturer(a3)   ; Manufacturer: A1K.org
+        move.b  #$7D,cd_Rom+er_Product(a3)          ; Product: Matzes IDE-Controller
+.skip   movem.l (sp)+,d2-d7/a2-a6
         moveq.l #1,d0
         rts
 
