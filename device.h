@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #define OAHR_MANUF_ID 5194
 #define BSC_MANUF_ID  2092
+#define A1K_MANUF_ID  2588
 
 #define MAX_UNITS 4
 
