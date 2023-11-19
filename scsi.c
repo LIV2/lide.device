@@ -66,10 +66,12 @@ void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
             sense->senseKey = 0x0B; // Unit communication failure
             sense->asc      = 0x08;
             sense->asq      = 0x00;
+            break;
         default:
             sense->senseKey = 0x00; // No sense
             sense->asc      = 0x00;
             sense->asq      = 0x00;
+            break;
     }
 }
 
@@ -106,8 +108,9 @@ struct SCSICmd * MakeSCSICmd() {
  * Delete a SCSICmd and its CDB
 */
 void DeleteSCSICmd(struct SCSICmd *cmd) {
-    UBYTE *cdb = cmd->scsi_Command;
-
-    if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
-    if (cmd) FreeMem(cmd,sizeof(struct SCSICmd));
+    if (cmd) {
+        UBYTE *cdb = cmd->scsi_Command;
+        if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        FreeMem(cmd,sizeof(struct SCSICmd));
+    }
 }
