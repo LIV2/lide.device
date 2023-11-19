@@ -285,16 +285,18 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
                         struct SCSICmd *cmd = MakeSCSICmd();
 
-                        cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-                        cmd->scsi_Command[4] = 18;
-                        cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
-                        cmd->scsi_Length     = scsi_command->scsi_SenseLength;
-                        cmd->scsi_Flags      = SCSIF_READ;
-                        cmd->scsi_CmdLength  = 1;
+                        if (cmd != NULL) {
+                            cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+                            cmd->scsi_Command[4] = 18;
+                            cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
+                            cmd->scsi_Length     = scsi_command->scsi_SenseLength;
+                            cmd->scsi_Flags      = SCSIF_READ;
+                            cmd->scsi_CmdLength  = 1;
 
-                        atapi_packet(cmd,unit);
-                        scsi_command->scsi_SenseActual = cmd->scsi_Actual;
-                        DeleteSCSICmd(cmd);
+                            atapi_packet(cmd,unit);
+                            scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+                            DeleteSCSICmd(cmd);
+                        }
                     }
                 }
                 break;
@@ -550,8 +552,12 @@ transfer:
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");
                     DeletePort(mp);
-                    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
-                    if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
+                    if (dev->TimeReq) {
+                        if (dev->TimeReq->tr_node.io_Device)
+                            CloseDevice((struct IORequest *)dev->TimeReq);
+
+                        DeleteExtIO((struct IORequest *)dev->TimeReq);
+                    }
                     if (dev->IDETimerMP) DeletePort(dev->IDETimerMP);
                     dev->IDETaskMP     = NULL;
                     dev->IDETask       = NULL;

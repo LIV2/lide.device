@@ -96,6 +96,9 @@ struct MountData
 // Get Block size of unit by sending a SCSI READ CAPACITY 10 command
 int GetBlockSize(struct IOStdReq *req) {
 	struct SCSICmd *cmd = MakeSCSICmd();
+
+	if (cmd == NULL) return 0;
+
 	struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)cmd->scsi_Command;
 	BYTE err;
 	int ret = -1;

@@ -177,12 +177,17 @@ static void Cleanup(struct DeviceBase *dev) {
         }
     }
 
-    if (dev->TimeReq->tr_node.io_Device) CloseDevice((struct IORequest *)dev->TimeReq);
-    if (dev->TimeReq) DeleteExtIO((struct IORequest *)dev->TimeReq);
+    if (dev->TimeReq) {
+        if (dev->TimeReq->tr_node.io_Device)
+            CloseDevice((struct IORequest *)dev->TimeReq);
+
+        DeleteExtIO((struct IORequest *)dev->TimeReq);
+    }
 
     // If we still own the timer reply port we need to delete it now
-    if (dev->IDETimerMP->mp_SigTask == FindTask(NULL)) {
-        if (dev->IDETimerMP)  DeletePort(dev->IDETimerMP);
+    if (dev->IDETimerMP) {
+        if (dev->IDETimerMP->mp_SigTask == FindTask(NULL))
+            DeletePort(dev->IDETimerMP);
     }
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
