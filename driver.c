@@ -212,8 +212,12 @@ static BYTE detectChannels(struct ConfigDev *cd) {
         // On the AT-Bus 2008 clone it will still be there
         // On a Matze TK the ROM goes away and the board can do 2 channels
         ULONG signature = 0;
-        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8 + 
-                                    ((cd->cd_Rom.er_InitDiagVec >> 8) & 1); // If the board has an odd offset then add it;
+        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8;
+        
+        if (cd->cd_Rom.er_InitDiagVec & 1 ||      // If the board has an odd offset then add it
+            cd->cd_Rom.er_InitDiagVec == 0x100) { // WinUAE AT-Bus 2008 has DiagVec @ 0x100 but Driver is on odd offset
+                romFooter++;
+            }
 
         for (int i=0; i<4; i++) {
             signature <<= 8;
