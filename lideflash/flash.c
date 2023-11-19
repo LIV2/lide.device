@@ -80,6 +80,18 @@ void flash_erase_chip() {
   flash_poll(0);
 }
 
+
+/** flash_erase_bank
+ *
+ * Erase the currently selected 32KB bank
+ *
+*/
+void flash_erase_bank() {
+  for (int i=0; i < 8; i++) {
+    flash_erase_sector(i<<12);
+  }
+}
+
 /** flash_erase_sector
  * 
  * @brief Erase a sector
@@ -92,7 +104,7 @@ void flash_erase_sector(ULONG address) {
   flash_unlock_sdp();
   flash_command(CMD_ERASE);
   flash_unlock_sdp();
-  *(volatile UBYTE *)(ide_flashBase + address) = 0x30;
+  *(volatile UBYTE *)(ide_flashBase + address) = CMD_ERASE_SECTOR;
   flash_poll(address);
 }
 

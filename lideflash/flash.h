@@ -26,7 +26,7 @@ void flash_unlock_sdp();
 void flash_erase_chip();
 void flash_writeByte(ULONG, UBYTE);
 bool flash_init(UBYTE *, UBYTE *, ULONG *);
-void flash_erase_block(ULONG);
 void flash_erase_sector(ULONG);
+void flash_erase_bank();
 
 #endif

@@ -40,21 +40,34 @@ struct Config* configure(int argc, char *argv[]) {
   if (config == NULL) return NULL;
 
   config->ide_rom_filename = NULL;
+  config->cdfs_filename    = NULL;
+  config->eraseFlash       = false;
 
   for (int i=1; i<argc; i++) {
     if (argv[i][0] == '-') {
       switch(argv[i][1]) {
-          case 'I':
+        case 'I':
           if (i+1 < argc) {
-              config->ide_rom_filename = argv[i+1];
-              i++;
+            config->ide_rom_filename = argv[i+1];
+            i++;
           }
+          break;
+
+        case 'C':
+          if (i+1 < argc) {
+            config->cdfs_filename = argv[i+1];
+            i++;
+          }
+          break;
+
+        case 'E':
+          config->eraseFlash = true;
           break;
       }
     }
   }
 
-  if (config->ide_rom_filename == NULL) {
+  if (config->ide_rom_filename == NULL && config->cdfs_filename == NULL && config->eraseFlash == false) {
       error = true;
   }
 
@@ -72,5 +85,7 @@ struct Config* configure(int argc, char *argv[]) {
 void usage() {
     printf("\nUsage: lideflash [-I <ide rom>]\n\n");
     printf("       -I <ide rom> - Flash IDE ROM.\n");
+    printf("       -C <CDFileSystem> - Flash CDFilesystem to ROM.\n");
+    printf("       -E Erase flash.\n");
 
 }

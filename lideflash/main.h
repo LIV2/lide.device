@@ -19,10 +19,15 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+// Bank Sel register of RIPPLE
+#define BANK_SEL_REG 0x8000
+
 #undef FindConfigDev
 // NDK 1.3 definition of FindConfigDev is incorrect which causes "makes pointer from integer without a cast" warning
 struct ConfigDev* FindConfigDev(struct ConfigDev*, LONG, LONG);
 
 ULONG getFileSize(char *);
 BOOL readFileToBuf(char *, void *);
+BOOL writeBufToFlash(UBYTE *source, UBYTE *dest, ULONG size);
+
 #endif

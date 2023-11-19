@@ -20,6 +20,8 @@
 
 struct Config {
   char *ide_rom_filename;
+  char *cdfs_filename;
+  bool eraseFlash;
 };
 
 struct Config* configure(int, char* []);
