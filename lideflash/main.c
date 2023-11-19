@@ -37,6 +37,9 @@
 struct Library *DosBase;
 struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;
+struct Config *config;
+
+static void bankSelect(UBYTE bank, UBYTE *boardBase);
 
 int main(int argc, char *argv[])
 {
@@ -46,8 +49,11 @@ int main(int argc, char *argv[])
   int rc = 0;
   int boards_found = 0;
 
-  void *buffer = NULL;
+  void *driver_buffer = NULL;
+  void *cdfs_buffer   = NULL;
+
   ULONG romSize    = 0;
+  ULONG cdfsSize   = 0;
 
   if (DosBase == NULL) {
     return(rc);
@@ -55,33 +61,63 @@ int main(int argc, char *argv[])
 
   printf("LIV2 IDE Updater\n");
 
-  struct Config *config;
   struct Task *task = FindTask(0);
   SetTaskPri(task,20);
   if ((config = configure(argc,argv)) != NULL) {
 
-    romSize = getFileSize(config->ide_rom_filename);
-    if (romSize == 0) {
-      rc = 5;
-      goto exit;
-    }
-
-    if (romSize > 32768) {
-      printf("ROM file too large.\n");
-      rc = 5;
-      goto exit;
-    }
-
-    buffer = AllocMem(romSize,MEMF_ANY|MEMF_CLEAR);
-    if (buffer) {
-      if (readFileToBuf(config->ide_rom_filename,buffer) == false) {
+    if (config->ide_rom_filename) {
+      romSize = getFileSize(config->ide_rom_filename);
+      if (romSize == 0) {
         rc = 5;
         goto exit;
       }
-    } else {
-      printf("Couldn't allocate memory.\n");
-      rc = 5;
-      goto exit;
+
+      if (romSize > 32768) {
+        printf("ROM file too large.\n");
+        rc = 5;
+        goto exit;
+      }
+
+
+      driver_buffer = AllocMem(romSize,MEMF_ANY|MEMF_CLEAR);
+      if (driver_buffer) {
+        if (readFileToBuf(config->ide_rom_filename,driver_buffer) == false) {
+          rc = 5;
+          goto exit;
+        }
+      } else {
+        printf("Couldn't allocate memory.\n");
+        rc = 5;
+        goto exit;
+      }
+    }
+
+    if (config->cdfs_filename) {
+
+      cdfsSize = getFileSize(config->cdfs_filename);
+
+      if (cdfsSize == 0) {
+        rc = 5;
+        goto exit;
+      }
+
+      if (cdfsSize > 32768) {
+        printf("CDFS too large!\n");
+        rc = 5;
+        goto exit;
+      }
+
+      cdfs_buffer = AllocMem(cdfsSize,MEMF_ANY|MEMF_CLEAR);
+      if (cdfs_buffer) {
+        if (readFileToBuf(config->cdfs_filename,cdfs_buffer) == false) {
+          rc = 5;
+          goto exit;
+        }
+      } else {
+        printf("Couldn't allocate memory.\n");
+        rc = 5;
+        goto exit;
+      }
     }
 
     if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
@@ -129,57 +165,34 @@ int main(int argc, char *argv[])
         UBYTE manufId,devId;
         if (flash_init(&manufId,&devId,(ULONG *)flashbase)) {
 
-          UBYTE *sourcePtr = NULL;
-          UBYTE *destPtr = cd->cd_BoardAddr;
-
-          printf("Erasing IDE Flash...\n");
-          flash_erase_chip();
-          
-          int progress = 0;
-          int lastProgress = 1;
-
-          fprintf(stdout,"Writing IDE ROM:     ");
-          fflush(stdout);
-
-          for (int i=0; i<romSize; i++) {
-
-            progress = (i*100)/(romSize-1);
-
-            if (lastProgress != progress) {
-              fprintf(stdout,"\b\b\b\b%3d%%",progress);
-              fflush(stdout);
-              lastProgress = progress;
-            }
-            sourcePtr = ((void *)buffer + i);
-            flash_writeByte(i,*sourcePtr);
-
+          if (config->eraseFlash) {
+            printf("Erasing flash.\n");
+            flash_erase_chip();
           }
 
-          fprintf(stdout,"\n");
-          fflush(stdout);
-
-          fprintf(stdout,"Verifying IDE ROM:     ");
-          for (int i=0; i<romSize; i++) {
-
-            progress = (i*100)/(romSize-1);
-
-            if (lastProgress != progress) {
-              fprintf(stdout,"\b\b\b\b%3d%%",progress);
-              fflush(stdout);
-              lastProgress = progress;
+          if (config->ide_rom_filename) {
+            bankSelect(0,cd->cd_BoardAddr);
+            if (config->eraseFlash == false) {
+              printf("Erasing IDE bank...\n");
+              flash_erase_bank();
             }
-            sourcePtr = ((void *)buffer + i);
-            destPtr = ((void *)flashbase + (i << 1));
-            if (*sourcePtr != *destPtr) {
-                  printf("\nVerification failed at %06x - Expected %02X but read %02X\n",(int)destPtr,*sourcePtr,*destPtr);
-                  rc = 5;
-                  goto exit;
-                }
-
+            printf("Writing IDE ROM.\n");
+            writeBufToFlash(driver_buffer,flashbase,romSize);
           }
 
-          fprintf(stdout,"\n");
-          fflush(stdout);
+          if (config->cdfs_filename) {
+            bankSelect(1,cd->cd_BoardAddr);
+            if (cd->cd_Rom.er_Product == 7) {
+              if (config->eraseFlash == false) {
+                printf("Erasing CDFS bank...\n");
+                flash_erase_bank();
+              }
+              printf("Writing CDFS.\n");
+              writeBufToFlash(cdfs_buffer,flashbase,cdfsSize);
+            } else {
+              printf("This board does not support flashing CDFS.\n");
+            }
+          }
 
         } else {
           printf("Error: IDE - Unknown Flash device Manufacturer: %02X Device: %02X\n", manufId, devId);
@@ -204,7 +217,8 @@ int main(int argc, char *argv[])
 
 exit:
 
-  if (buffer)        FreeMem(buffer,romSize);
+  if (driver_buffer) FreeMem(driver_buffer,romSize);
+  if (cdfs_buffer)   FreeMem(cdfs_buffer,cdfsSize);
   if (config)        FreeMem(config,sizeof(struct Config));
   if (ExpansionBase) CloseLibrary((struct Library *)ExpansionBase);
   if (DosBase)       CloseLibrary((struct Library *)DosBase);
@@ -273,4 +287,76 @@ BOOL readFileToBuf(char *filename, void *buffer) {
   }
 
   return ret;
+}
+
+/**
+ * bankSelect
+ *
+ * Select a bank in the flash
+ *
+ * @param bank the bank number to select
+ * @param boardBase base address of the IDE board
+*/
+static void bankSelect(UBYTE bank, UBYTE *boardBase) {
+  *(boardBase + BANK_SEL_REG) = (bank << 6);
+}
+
+
+/**
+ * writeBufToFlash()
+ *
+ * Write the buffer to the currently selected flash bank
+ *
+ * @param source pointer to the source data
+ * @param dest pointer to the flash base
+ * @param size number of bytes to write
+ * @returns true on success
+*/
+BOOL writeBufToFlash(UBYTE *source, UBYTE *dest, ULONG size) {
+  UBYTE *sourcePtr = NULL;
+  UBYTE *destPtr   = NULL;
+
+  int progress = 0;
+  int lastProgress = 1;
+
+  fprintf(stdout,"Writing:     ");
+  fflush(stdout);
+
+  for (int i=0; i<size; i++) {
+
+    progress = (i*100)/(size-1);
+
+    if (lastProgress != progress) {
+      fprintf(stdout,"\b\b\b\b%3d%%",progress);
+      fflush(stdout);
+      lastProgress = progress;
+    }
+    sourcePtr = ((void *)source + i);
+    flash_writeByte(i,*sourcePtr);
+
+  }
+
+  fprintf(stdout,"\n");
+  fflush(stdout);
+
+  fprintf(stdout,"Verifying:     ");
+  for (int i=0; i<size; i++) {
+
+    progress = (i*100)/(size-1);
+
+    if (lastProgress != progress) {
+      fprintf(stdout,"\b\b\b\b%3d%%",progress);
+      fflush(stdout);
+      lastProgress = progress;
+    }
+    sourcePtr = ((void *)source + i);
+    destPtr = ((void *)dest + (i << 1));
+    if (*sourcePtr != *destPtr) {
+          printf("\nVerification failed at %06x - Expected %02X but read %02X\n",(int)destPtr,*sourcePtr,*destPtr);
+          return false;
+    }
+  }
+  fprintf(stdout,"\n");
+  fflush(stdout);
+  return true;
 }
