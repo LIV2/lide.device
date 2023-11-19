@@ -17,6 +17,7 @@
  */
 
 #include <proto/exec.h>
+#include <exec/execbase.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
