@@ -202,6 +202,9 @@ static void Cleanup(struct DeviceBase *dev) {
  * @returns number of channels
 */
 static BYTE detectChannels(struct ConfigDev *cd) {
+    UBYTE *drvsel = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
+
+    *drvsel = 0xE0; // Select the primary drive + poke IDE to turn off ROM
 
     if (cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID || cd->cd_Rom.er_Manufacturer == A1K_MANUF_ID) {
         // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
@@ -235,10 +238,6 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     // 2 channel boards use the CS2 decode for the second channel 
     UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
     UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
-
-    UBYTE *drvsel     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
-
-    *drvsel = 0xE0;
 
     if (*status == *alt_status) {
         return 1;
