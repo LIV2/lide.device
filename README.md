@@ -1,5 +1,15 @@
 # Open source Amiga IDE device driver
 
+## Table of Contents
+* [Features](#features)
+* [Downloads](#downloads)
+* [Boot from CDROM](#boot-from-cdrom)
+* [Hardware Implementation](#hardware-implementation)
+* [Building / Development](#building--development)
+* [Acknowledgements](#acknowlegements)
+* [Third-party notice](#third-party-notice)
+* [License](#license)
+
 ## Features
 * Autoboot
 * Works with Kickstart 1.3 and up
@@ -34,6 +44,20 @@ Booting from CDROM requires Kickstart 2 or higher and one of the following:
 * IDE A0/1/2 connected to CPU A9/10/11 providing 512 Byte separation of registers to allow for MOVEM trick
 
 A reference design for this is the [CIDER](https://github.com/LIV2/CIDER) project
+
+## Building / Development
+Building this code will require the following
+* [Bebbo GCC](https://github.com/bebbo/amiga-gcc)
+* [Amitools](https://github.com/cnvogelg/amitools)
+* [VBCC m68k-amigaos target](http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha)
+
+The easiest way to get a working build environment is to use Docker
+You can build inside docker as follows:
+```  
+docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} stefanreinauer/amiga-gcc:latest make clean all
+```
+
+If you are using VS Code you can install the "Dev containers" extension which will allow you to develop with the environment ready to go.
 
 ## Acknowlegements
 This driver uses the movem based fast read / write routines from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
