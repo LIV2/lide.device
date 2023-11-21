@@ -406,7 +406,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_read((void *)(unit->drive->error_features - 48),buffer + *actual);
+                ata_read((void *)unit->drive->data,buffer + *actual);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
@@ -497,7 +497,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_write((buffer + *actual),(void *)(unit->drive->error_features - 48));
+                ata_write((buffer + *actual),(void *)unit->drive->data);
 
                 lba++;
                 txn_count--;
