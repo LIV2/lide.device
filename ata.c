@@ -21,8 +21,8 @@
 #include "blockcopy.h"
 #include "wait.h"
 
-static void ata_read_fast (void *, void *);
-static void ata_write_fast (void *, void *);
+static void ata_read_fast_long (void *, void *);
+static void ata_write_fast_long (void *, void *);
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
@@ -189,6 +189,16 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->blockSize       = 0;
     unit->present         = false;
     unit->mediumPresent   = false;
+
+    if (unit->xfer_method == longword) {
+        unit->read_fast       = &ata_read_fast_long;
+        unit->read_unaligned  = &ata_read_unaligned_long;
+        unit->write_fast      = &ata_write_fast_long;
+        unit->write_unaligned = &ata_write_unaligned_long;
+    } else {
+        // Only LONG implemented currently
+        Alert(0xBADC0DE);
+    }
 
     ULONG offset;
     UWORD *buf;
@@ -358,9 +368,9 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if (((ULONG)buffer) & 0x01) {
-        ata_read = &ata_read_unaligned;
+        ata_read = unit->read_unaligned;
     } else {
-        ata_read = &ata_read_fast;
+        ata_read = unit->read_fast;
     }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
@@ -449,9 +459,9 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if ((ULONG)buffer & 0x01) {
-        ata_write = &ata_write_unaligned;
+        ata_write = unit->write_unaligned;
     } else {
-        ata_write = &ata_write_fast;
+        ata_write = unit->write_fast;
     }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
@@ -514,13 +524,13 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 }
 
 /**
- * ata_read_unaligned
+ * ata_read_unaligned_long
  * 
  * Read data to an unaligned buffer
  * @param source Pointer to the drive data port
  * @param destination Pointer to the data buffer
 */
-void ata_read_unaligned(void *source, void *destination) {
+void ata_read_unaligned_long(void *source, void *destination) {
     ULONG readLong;
     UBYTE *dest = (UBYTE *)destination;
 
@@ -535,13 +545,13 @@ void ata_read_unaligned(void *source, void *destination) {
 }
 
 /**
- * ata_write_unaligned
+ * ata_write_unaligned_long
  * 
  * Write data from an unaligned buffer
  * @param source Pointer to the data buffer
  * @param destination Pointer to the drive data port
 */
-void ata_write_unaligned(void *source, void *destination) {
+void ata_write_unaligned_long(void *source, void *destination) {
     UBYTE *src = (UBYTE *)source;
     for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
         *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);

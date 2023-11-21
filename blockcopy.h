@@ -1,6 +1,6 @@
 #pragma GCC optimize ("-fomit-frame-pointer")
 /**
- * ata_read_fast
+ * ata_read_fast_long
  * 
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
@@ -15,7 +15,7 @@
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-static inline void ata_read_fast (void *source, void *destinaton) {
+static inline void ata_read_fast_long (void *source, void *destinaton) {
     asm volatile ("moveq  #48,d7\n\t"
 
     "movem.l (%0),d0-d6/a1-a4/a6\n\t"
@@ -67,7 +67,7 @@ static inline void ata_read_fast (void *source, void *destinaton) {
 }
 
 /**
- * ata_write_fast
+ * ata_write_fast_long
  * 
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
@@ -76,7 +76,7 @@ static inline void ata_read_fast (void *source, void *destinaton) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-static inline void ata_write_fast (void *source, void *destinaton) {
+static inline void ata_write_fast_long (void *source, void *destinaton) {
     asm volatile (
     "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
     "movem.l d0-d6/a1-a4/a6,(%1)\n\t"

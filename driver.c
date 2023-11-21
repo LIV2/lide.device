@@ -342,6 +342,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->units[i].shadowDevHead     = &dev->shadowDevHeads[i>>1];
         *dev->units[i].shadowDevHead    = 0;
 
+        // This controls which transfer routine is selected for the device by ata_init_unit
+        //
+        // See ata_init_unit and device.h for more info
+        dev->units[i].xfer_method       = longword;
+
         // Initialize the change int list
         dev->units[i].changeInts.mlh_Tail     = NULL;
         dev->units[i].changeInts.mlh_Head     = (struct MinNode *)&dev->units[i].changeInts.mlh_Tail;
