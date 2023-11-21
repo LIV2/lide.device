@@ -6,7 +6,11 @@
 
 VERSION      = 1
 REVISION     = 1
+        IFND WORDWIDE
 DRIVEROFFSET = $2000
+        ELSE
+DRIVEROFFSET = $1000
+        ENDIF
 
 *******  DiagStart  **************************************************
 DiagStart
@@ -14,7 +18,11 @@ DiagStart
         ; your board base appears as the Init Diag vector in your
         ; autoconfig ID information.  This structure is designed
         ; to use all relative pointers (no patching needed).
+        IFND WORDWIDE
         dc.b    DAC_NIBBLEWIDE+DAC_CONFIGTIME  ; da_Config
+        ELSE
+        dc.b    DAC_WORDWIDE+DAC_CONFIGTIME    ; da_Config
+        ENDIF
         dc.b    0                              ; da_Flags
         dc.w    EndCopy-DiagStart              ; da_Size
         dc.w    DiagEntry-DiagStart            ; da_DiagPoint
@@ -114,9 +122,11 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         move.l  MyConfigDev(PC),a1
         move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
         moveq   #0,d2
-        cmp.l   #8,d1                         ; LIV2 board with even rom addrss?
-        beq     .even
-.odd    add.l   #1,d2                         ; No, AT-Bus style board with odd address
+        cmp.l   #1,d1                         ; AT-Bus with odd address?
+        beq     .odd
+        cmp.l   #$100,d1                      ; WinUAE AT-Bus with ROM at odd address (despite DiagVec...)
+        bne     .even
+.odd    add.l   #1,d2
 .even 
         cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
         bne     .skipcdfs
@@ -135,9 +145,17 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         cmp.l   #'LIDE',d1                    ; If bank switched this will not match
         beq     .skipcdfs
 
+        IFND WORDWIDE
+
         move.l  #$10000,d0                    ; Reloc offset to second bank
         add.l   d2,d0                         ; Add the odd offset if needed
 
+        ELSE
+
+        moveq.l #0,d0
+        add.l   #$8000,a0      
+
+        ENDIF
         bsr     _relocate                     ; BoardBase already in A0
         tst.l   d0
         beq.s   .skipcdfs
@@ -145,8 +163,18 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
 
 .skipcdfs:
         move.l  BoardBase(PC),a0
+
+        IFND WORDWIDE
+
         move.l  #DRIVEROFFSET,d0
         add.l   d2,d0                         ; Add offset if AT-Bus with odd address
+
+        ELSE
+
+        move.l  #0,d0
+        add.l   #DRIVEROFFSET,a0
+
+        ENDIF
         bsr     _relocate
         tst.l   d0
         beq.s   .err
