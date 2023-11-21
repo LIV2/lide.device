@@ -15,7 +15,9 @@
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-static inline void ata_read_fast_long (void *source, void *destinaton) {
+static inline void ata_read_fast_long (void *source, void *destination) {
+    source += (512 - 48);
+
     asm volatile ("moveq  #48,d7\n\t"
 
     "movem.l (%0),d0-d6/a1-a4/a6\n\t"
@@ -61,7 +63,7 @@ static inline void ata_read_fast_long (void *source, void *destinaton) {
     "movem.l 16(%0),d0-d6/a1\n\t"
     "movem.l d0-d6/a1,(%1)\n\t"
     :
-    :"a" (source),"a" (destinaton)
+    :"a" (source),"a" (destination)
     :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
     );
 }
@@ -76,7 +78,9 @@ static inline void ata_read_fast_long (void *source, void *destinaton) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-static inline void ata_write_fast_long (void *source, void *destinaton) {
+static inline void ata_write_fast_long (void *source, void *destination) {
+    destination += (512 - 48);
+
     asm volatile (
     "movem.l (%0)+,d0-d6/a1-a4/a6\n\t"
     "movem.l d0-d6/a1-a4/a6,(%1)\n\t"
@@ -111,7 +115,7 @@ static inline void ata_write_fast_long (void *source, void *destinaton) {
     "movem.l (%0)+,d0-d6/a1\n\t"
     "movem.l d0-d6/a1,(%1)\n\t"
     :
-    :"a" (source),"a" (destinaton)
+    :"a" (source),"a" (destination)
     :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
     );
 }
