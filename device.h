@@ -12,6 +12,11 @@
 
 #define MAX_UNITS 4
 
+enum xfer {
+    longword,
+    shortword,
+};
+
 /**
  * Drive struct
  * 
@@ -36,6 +41,11 @@ struct IDEUnit {
     struct timerequest *TimeReq;
     volatile struct Drive *drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
+    enum  xfer xfer_method;
+    void  (*read_fast)(void *, void *);
+    void  (*write_fast)(void *, void *);
+    void  (*read_unaligned)(void *, void *);
+    void  (*write_unaligned)(void *, void *);
     UBYTE unitNum;
     UBYTE channel;
     UBYTE device_type;

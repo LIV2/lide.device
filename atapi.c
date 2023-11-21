@@ -392,9 +392,9 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
             if ((byte_count >= 512 && remaining >= 512)) {
               // 512 or more bytes to transfer, use the fast ATA transfer routines
               if (cmd->scsi_Flags & SCSIF_READ) {
-                  ata_read_fast((void *)unit->drive->error_features - 48, cmd->scsi_Data + index);
+                  unit->read_fast((void *)unit->drive->error_features - 48, cmd->scsi_Data + index);
               } else {
-                  ata_write_fast(cmd->scsi_Data + index, (void *)unit->drive->error_features - 48);
+                  unit->write_fast(cmd->scsi_Data + index, (void *)unit->drive->error_features - 48);
               }
               index += 256;
               cmd->scsi_Actual += 512;
