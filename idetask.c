@@ -548,6 +548,15 @@ transfer:
                     error = handle_scsi_command(ioreq);
                     break;
 
+                case CMD_XFER:
+                    if (ioreq->io_Length < 3) {
+                        ata_set_xfer(unit,ioreq->io_Length);
+                        error = 0;
+                    } else {
+                        error = IOERR_ABORTED;
+                    }
+                    break;
+
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");

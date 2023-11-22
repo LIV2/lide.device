@@ -19,6 +19,7 @@
 #include "scsi.h"
 #include "string.h"
 #include "blockcopy.h"
+#include "move16.h"
 #include "wait.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
@@ -213,6 +214,30 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     return true;
 }
 
+void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
+    switch (method) {
+        default:
+        case longword_movem:
+            unit->read_fast       = &ata_read_long_movem;
+            unit->read_unaligned  = &ata_read_unaligned_long;
+            unit->write_fast      = &ata_write_long_movem;
+            unit->write_unaligned = &ata_write_unaligned_long;
+            break;
+        case longword_move:
+            unit->read_fast       = &ata_read_long_move;
+            unit->read_unaligned  = &ata_read_unaligned_long;
+            unit->write_fast      = &ata_write_long_move;
+            unit->write_unaligned = &ata_write_unaligned_long;
+            break;
+        case longword_move16:
+            unit->read_fast       = &ata_xfer_long_move16;
+            unit->read_unaligned  = &ata_read_unaligned_long;
+            unit->write_fast      = &ata_xfer_long_move16;
+            unit->write_unaligned = &ata_write_unaligned_long;
+            break;
+        }
+}
+
 /**
  * ata_init_unit
  * 
@@ -228,15 +253,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->present         = false;
     unit->mediumPresent   = false;
 
-    if (unit->xfer_method == longword) {
-        unit->read_fast       = &ata_read_fast_long;
-        unit->read_unaligned  = &ata_read_unaligned_long;
-        unit->write_fast      = &ata_write_fast_long;
-        unit->write_unaligned = &ata_write_unaligned_long;
-    } else {
-        // Only LONG implemented currently
-        Alert(0xBADC0DE);
-    }
+    ata_set_xfer(unit,unit->xfer_method);
 
     ULONG offset;
     UWORD *buf;
