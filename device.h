@@ -13,8 +13,9 @@
 #define MAX_UNITS 4
 
 enum xfer {
-    longword,
-    shortword,
+    longword_movem,
+    longword_move,
+    longword_move16
 };
 
 /**

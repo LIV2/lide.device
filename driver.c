@@ -345,7 +345,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         // This controls which transfer routine is selected for the device by ata_init_unit
         //
         // See ata_init_unit and device.h for more info
-        dev->units[i].xfer_method       = longword;
+        dev->units[i].xfer_method       = longword_movem;
 
         // Initialize the change int list
         dev->units[i].changeInts.mlh_Tail     = NULL;
@@ -678,6 +678,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         case NSCMD_ETD_READ64:
         case NSCMD_ETD_WRITE64:
         case NSCMD_ETD_FORMAT64:
+        case CMD_XFER:
         case HD_SCSICMD:
             // Send all of these to ide_task
             ioreq->io_Flags &= ~IOF_QUICK;

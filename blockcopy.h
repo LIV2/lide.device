@@ -1,6 +1,8 @@
+#ifndef _BLOCK_COPY_H
+#define _BLOCK_COPY_H
 #pragma GCC optimize ("-fomit-frame-pointer")
 /**
- * ata_read_fast_long
+ * ata_read_long_movem
  * 
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
@@ -15,7 +17,7 @@
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-static inline void ata_read_fast_long (void *source, void *destination) {
+static inline void ata_read_long_movem (void *source, void *destination) {
     source += (512 - 48);
 
     asm volatile ("moveq  #48,d7\n\t"
@@ -69,7 +71,7 @@ static inline void ata_read_fast_long (void *source, void *destination) {
 }
 
 /**
- * ata_write_fast_long
+ * ata_write_long_movem
  * 
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
@@ -78,7 +80,7 @@ static inline void ata_read_fast_long (void *source, void *destination) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-static inline void ata_write_fast_long (void *source, void *destination) {
+static inline void ata_write_long_movem (void *source, void *destination) {
     destination += (512 - 48);
 
     asm volatile (
@@ -120,4 +122,45 @@ static inline void ata_write_fast_long (void *source, void *destination) {
     );
 }
 
+/**
+ * ata_read_long_move
+ * 
+ * Read a sector using move - faster than movem on 68030+
+ * 
+*/
+static inline void ata_read_long_move (void *source, void *destination) {
+    asm volatile (
+        "move.l #3,d0          \n\t"
+        ".l1:                   \n\t"
+        ".rept  32              \n\t"
+        "move.l (%0),(%1)+      \n\t"
+        ".endr                  \n\t"
+        "dbra   d0,.l1"
+    :
+    :"a" (source), "a" (destination)
+    :"d0"
+    );
+}
+
+/**
+ * ata_write_long_move
+ * 
+ * Write a sector using move - faster than movem on 68030+
+ * 
+*/
+static inline void ata_write_long_move (void *source, void *destination) {
+    asm volatile (
+        "moveq.l #3,d0          \n\t"
+        ".l2:                   \n\t"
+        ".rept  32              \n\t"
+        "move.l (%0)+,(%1)      \n\t"
+        ".endr                  \n\t"
+        "dbra   d0,.l2"
+    :
+    :"a" (source), "a" (destination)
+    :"d0"
+    );
+}
+
 #pragma GCC reset_options
+#endif

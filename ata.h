@@ -88,6 +88,7 @@ bool ata_init_unit(struct IDEUnit *);
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait);
 bool ata_identify(struct IDEUnit *, UWORD *);
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
+void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
 BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
