@@ -23,6 +23,26 @@
 #include "blockcopy.h"
 
 /**
+ * atapi_status_reg_delay
+ * 
+ * We need a short delay before actually checking the status register to let the drive update the status
+ * To get the right delay we read the status register 4 times but just throw away the result
+ * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
+ * 
+ * @param unit Pointer to an IDEUnit struct
+*/
+static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUnit *unit) {
+    BYTE status;
+    asm volatile (
+        ".rep 4         \n\t"
+        "move.b (%1),%0 \n\t"
+        ".endr          \n\t"
+        : "=&d" (status)
+        : "a" (unit->drive->status_command)
+        : "d0"
+    );
+}
+/**
  * atapi_wait_drq
  * 
  * Poll DRQ in the status register until set or timeout
@@ -32,7 +52,7 @@
 static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
     Trace("atapi_wait_drq enter\n");
     struct timerequest *tr = unit->TimeReq;
-
+    atapi_status_reg_delay(unit);
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
         wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
@@ -50,6 +70,7 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
 */
 static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
+    atapi_status_reg_delay(unit);
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive->status_command & (ata_flag_busy | ata_flag_drq)) == ata_flag_drq) return true;
@@ -87,6 +108,7 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
     Trace("atapi_wait_not_drqbsy enter\n");
     struct timerequest *tr = unit->TimeReq;
+    atapi_status_reg_delay(unit);
 
     for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive->status_command & (ata_flag_busy | ata_flag_drq)) == 0) return true;

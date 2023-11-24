@@ -21,11 +21,42 @@
 #include "blockcopy.h"
 #include "wait.h"
 
-static void ata_read_fast_long (void *, void *);
-static void ata_write_fast_long (void *, void *);
-
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
+
+/**
+ * ata_status_reg_delay
+ * 
+ * We need a short delay before actually checking the status register to let the drive update the status
+ * To get the right delay we read the status register 4 times but just throw away the result
+ * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
+ * 
+ * @param unit Pointer to an IDEUnit struct
+*/
+static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
+    BYTE status;
+    asm volatile (
+        ".rep 4         \n\t"
+        "move.b (%1),%0 \n\t"
+        ".endr          \n\t"
+        : "=&d" (status)
+        : "a" (unit->drive->status_command)
+        : "d0"
+    );
+}
+
+/**
+ * ata_check_error
+ * 
+ * Check for ATA error / fault
+ * 
+ * @param unit Pointer to an IDEUnit struct 
+ * @returns True if error is indicated
+*/
+static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit) {
+    ata_status_reg_delay(unit);
+    return (*unit->drive->status_command & (ata_flag_error | ata_flag_df));
+}
 
 /**
  * ata_wait_drq
@@ -37,6 +68,9 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
     Info("wait_drq enter\n");
+
+    ata_status_reg_delay(unit);
+
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<100; j++) {
@@ -59,6 +93,8 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
 static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
 
+    ata_status_reg_delay(unit);
+
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<100; j++) {
@@ -78,6 +114,8 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
 */
 static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->TimeReq;
+
+    ata_status_reg_delay(unit);
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -151,7 +189,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (*unit->drive->status_command & (ata_flag_error | ata_flag_df) || !ata_wait_drq(unit,500)) {
+    if (ata_check_error(unit) || !ata_wait_drq(unit,500)) {
         Warn("ATA: IDENTIFY Status: Error\n");
         Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
         // Save error information
@@ -328,7 +366,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
         return IOERR_UNITBUSY;
     
-    if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+    if (ata_check_error(unit)) {
         if (*unit->drive->error_features & ata_err_flag_aborted) {
             return IOERR_ABORTED;
         } else {
@@ -413,7 +451,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             }
         }
 
-        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+        if (ata_check_error(unit)) {
             unit->last_error[0] = unit->drive->error_features[0];
             unit->last_error[1] = unit->drive->lbaHigh[0];
             unit->last_error[2] = unit->drive->lbaMid[0];
@@ -505,7 +543,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             }
         }
 
-        if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) {
+        if (ata_check_error(unit)) {
             unit->last_error[0] = unit->drive->error_features[0];
             unit->last_error[1] = unit->drive->lbaHigh[0];
             unit->last_error[2] = unit->drive->lbaMid[0];
