@@ -128,6 +128,8 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         bne     .even
 .odd    add.l   #1,d2
 .even 
+        and.l   #$F000,d1                     ; Add any other offset
+        add.l   d1,d2
         cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
         bne     .skipcdfs
 .loadcdfs
@@ -153,6 +155,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         ELSE
 
         moveq.l #0,d0
+        add.l   d2,a0
         add.l   #$8000,a0      
 
         ENDIF
@@ -172,6 +175,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         ELSE
 
         move.l  #0,d0
+        add.l   d2,a0
         add.l   #DRIVEROFFSET,a0
 
         ENDIF
