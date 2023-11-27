@@ -456,8 +456,23 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             return error;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
+                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                 return IOERR_UNITBUSY;
+
+            if (ata_check_error(unit)) {
+                unit->last_error[0] = unit->drive->error_features[0];
+                unit->last_error[1] = unit->drive->lbaHigh[0];
+                unit->last_error[2] = unit->drive->lbaMid[0];
+                unit->last_error[3] = unit->drive->lbaLow[0];
+                unit->last_error[4] = unit->drive->status_command[0];
+                unit->last_error[5] = unit->drive->devHead[0];
+
+                Warn("ATA ERROR!!!\n");
+                Warn("last_error: %08lx\n",unit->last_error);
+                Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
+                return TDERR_NotSpecified;
+            }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
@@ -469,19 +484,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             }
         }
 
-        if (ata_check_error(unit)) {
-            unit->last_error[0] = unit->drive->error_features[0];
-            unit->last_error[1] = unit->drive->lbaHigh[0];
-            unit->last_error[2] = unit->drive->lbaMid[0];
-            unit->last_error[3] = unit->drive->lbaLow[0];
-            unit->last_error[4] = unit->drive->status_command[0];
-            unit->last_error[5] = unit->drive->devHead[0];
-
-            Warn("ATA ERROR!!!\n");
-            Warn("last_error: %08lx\n",unit->last_error);
-            Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
-            return TDERR_NotSpecified;
-        }
     }
 
     return 0;
@@ -548,8 +550,23 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             return error;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
+                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
                 return IOERR_UNITBUSY;
+ 
+            if (ata_check_error(unit)) {
+                unit->last_error[0] = unit->drive->error_features[0];
+                unit->last_error[1] = unit->drive->lbaHigh[0];
+                unit->last_error[2] = unit->drive->lbaMid[0];
+                unit->last_error[3] = unit->drive->lbaLow[0];
+                unit->last_error[4] = unit->drive->status_command[0];
+                unit->last_error[5] = unit->drive->devHead[0];
+
+                Warn("ATA ERROR!!!\n");
+                Warn("last_error: %08lx\n",unit->last_error);
+                Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
+                return TDERR_NotSpecified;
+            }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
@@ -561,19 +578,6 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             }
         }
 
-        if (ata_check_error(unit)) {
-            unit->last_error[0] = unit->drive->error_features[0];
-            unit->last_error[1] = unit->drive->lbaHigh[0];
-            unit->last_error[2] = unit->drive->lbaMid[0];
-            unit->last_error[3] = unit->drive->lbaLow[0];
-            unit->last_error[4] = unit->drive->status_command[0];
-            unit->last_error[5] = unit->drive->devHead[0];
-
-            Warn("ATA ERROR!!!\n");
-            Warn("last_error: %08lx\n",unit->last_error);
-            Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
-            return TDERR_NotSpecified;
-        }
     }
 
     return 0;
