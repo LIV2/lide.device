@@ -74,7 +74,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
-        for (int j=0; j<100; j++) {
+        for (int j=0; j<1000; j++) {
             if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
             if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
         }
@@ -461,10 +461,11 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_read((void *)unit->drive->data,buffer + *actual);
+                ata_read((void *)unit->drive->data,buffer);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
+                buffer += unit->blockSize;
             }
         }
 
@@ -552,11 +553,11 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multiple_count && txn_count; i++) {
-                ata_write((buffer + *actual),(void *)unit->drive->data);
-
+                ata_write(buffer,(void *)unit->drive->data);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
+                buffer += unit->blockSize;
             }
         }
 
