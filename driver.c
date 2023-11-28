@@ -192,6 +192,7 @@ static void Cleanup(struct DeviceBase *dev) {
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
     if (dev->units) FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
+    FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
 /**
@@ -373,9 +374,18 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     if (dev->num_units > 0) {
         Trace("Start the Task\n");
 
-        // The IDE Task will take over the Timer reply port when it starts
-        dev->IDETimerMP->mp_Flags = PA_IGNORE;
-        FreeSignal(dev->IDETimerMP->mp_SigBit);
+        // The IDE Task will open the timer when it starts
+        if (dev->TimeReq) {
+            if (dev->TimeReq->tr_node.io_Device)
+                CloseDevice((struct IORequest *)dev->TimeReq);
+
+            DeleteExtIO((struct IORequest *)dev->TimeReq);
+        }
+
+        // The IDE Task will open the timer when it starts
+        if (dev->IDETimerMP) {
+            DeletePort(dev->IDETimerMP);
+        }
 
         // Start the IDE Task
         dev->IDETask = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev);
@@ -470,34 +480,31 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     UBYTE lun = unitnum / 10;
     unitnum = (unitnum % 10);
     struct IDEUnit *unit = NULL;
+    BYTE error = 0;
+    Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
     if (lun != 0) {
         // No LUNs for IDE drives
-        ioreq->io_Error = TDERR_BadUnitNum;
-        return;
+        error = TDERR_BadUnitNum;
+        goto exit;
     }
 
     if (unitnum >= MAX_UNITS) {
-        ioreq->io_Error = IOERR_OPENFAIL;
-        return;
+        error = IOERR_OPENFAIL;
+        goto exit;
     }
 
     unit = &dev->units[unitnum];
 
     if (unit->present == false) {
-        ioreq->io_Error = TDERR_BadUnitNum;
-        return;
+        error = TDERR_BadUnitNum;
+        goto exit;
     }
     
-
-    Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
-    ioreq->io_Error = IOERR_OPENFAIL;
-
     if (dev->IDETask == NULL || dev->IDETaskActive == false) {
-        ioreq->io_Error = IOERR_OPENFAIL;
-        return;
+        error = IOERR_OPENFAIL;
+        goto exit;
     }
-
 
     ioreq->io_Unit = (struct Unit *)unit;
 
@@ -511,9 +518,13 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     {
         dev->is_open = TRUE;
     }
-
+exit:
+    if (error != 0) {
+		/* IMPORTANT: Invalidate io_Device on open failure. */ 
+		ioreq->io_Device = NULL;
+    }
     dev->lib.lib_OpenCnt++;
-    ioreq->io_Error = 0; //Success
+    ioreq->io_Error = error;
 }
 
 
@@ -602,16 +613,33 @@ static UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+	/* This makes sure that WaitIO() is guaranteed to work and
+	 * will not hang.
+     *
+     * Source: Olaf Barthel's Trackfile.device
+     * https://github.com/obarthel/trackfile-device
+	 */
+    ioreq->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
     Trace((CONST_STRPTR) "running begin_io()\n");
     BYTE error = TDERR_NotSpecified;
+    if (ioreq == NULL || ioreq->io_Unit == 0) return;
 
     if (dev->IDETask == NULL || dev->IDETaskActive == false) {
-        error = IOERR_OPENFAIL;
+
+        // If the IDE task is dead then we can only throw an error and reply now.
+        ioreq->io_Error = IOERR_OPENFAIL;
+
+        if (!(ioreq->io_Flags & IOF_QUICK)) {
+            ReplyMsg(&ioreq->io_Message);
+        }
+
+        return;
+
     }
 
-    if (ioreq == NULL || ioreq->io_Unit == 0) return;
     Trace("Command %lx\n",ioreq->io_Command);
     switch (ioreq->io_Command) {
         case TD_MOTOR:
