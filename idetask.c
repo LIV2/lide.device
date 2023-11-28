@@ -409,6 +409,8 @@ void __attribute__((noreturn)) ide_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct Task volatile *task = FindTask(NULL);
     struct MsgPort *mp;
+    struct MsgPort *timerMp;
+    struct timerequest *timeReq;
     struct IOStdReq *ioreq;
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
@@ -430,9 +432,22 @@ void __attribute__((noreturn)) ide_task () {
         Wait(0);
     }
 
-    dev->IDETimerMP->mp_SigTask = FindTask(NULL);
-    dev->IDETimerMP->mp_SigBit  = AllocSignal(-1);
-    dev->IDETimerMP->mp_Flags   = PA_SIGNAL;
+    if ((timerMp = CreatePort(NULL,0)) != NULL && (timeReq = (struct timerequest *)CreateExtIO(timerMp, sizeof(struct timerequest))) != NULL) {
+        if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)timeReq,0)) {
+            dev->IDETask = NULL; // Failed to open timer, let the device know
+            RemTask(NULL);
+            Wait(0);
+        }
+    } else {
+        Info("Failed to create Timer MP or Request.\n");
+        dev->IDETask = NULL; // Failed to create MP, let the device know
+        RemTask(NULL);
+        Wait(0);
+    }
+
+    for (int i=0; i<MAX_UNITS; i++) {
+        dev->units[i].TimeReq = timeReq;
+    }
 
     dev->IDETaskMP = mp;
     dev->IDETaskActive = true;
