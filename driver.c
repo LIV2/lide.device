@@ -345,7 +345,13 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         // This controls which transfer routine is selected for the device by ata_init_unit
         //
         // See ata_init_unit and device.h for more info
-        dev->units[i].xfer_method       = longword_movem;
+        if (SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) {
+            dev->units[i].xfer_method       = longword_move;
+            Trace("Detected 68020 or higher, transfer mode set to move.l\n");
+        } else {
+            dev->units[i].xfer_method       = longword_movem;
+            Trace("Detected 68000/68010, transfer mode set to movem.l\n");
+        }
 
         // Initialize the change int list
         dev->units[i].changeInts.mlh_Tail     = NULL;
