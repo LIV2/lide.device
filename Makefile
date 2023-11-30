@@ -76,7 +76,7 @@ disk: $(ROM) lideflash/lideflash rename/renamelide
 	                            boot install boot1x + \
 	                            write $(ROM) + \
 	                            write lideflash/lideflash lideflash + \
-								write rename/renamelide renamelide + \
+	                            write rename/renamelide renamelide + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
 
