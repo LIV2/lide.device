@@ -162,6 +162,22 @@ static BOOL FindCDFS() {
 }
 #endif
 
+static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
+    bool found = false;
+
+    for (int i=0; i<MAX_UNITS; i++) {
+        if (&dev->units[i] == (struct IDEUnit *)ior->io_Unit) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) return false;
+
+    if ((struct Device *)dev != ior->io_Device) return false;
+
+    return true;
+}
+
 /**
  * Cleanup
  *
@@ -508,11 +524,16 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     ioreq->io_Unit = (struct Unit *)unit;
 
+    // Set io_Message type to NT_MESSAGE to make sure CheckIO() functions correctly
+    ioreq->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+
     // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
     // This will update the media presence & geometry
     if (unit->atapi && unit->open_count == 0) direct_changestate(unit,dev);
 
     unit->open_count++;
+
+    dev->lib.lib_Flags &= ~LIBF_DELEXP;
 
     if (!dev->is_open)
     {
@@ -520,8 +541,9 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     }
 exit:
     if (error != 0) {
-		/* IMPORTANT: Invalidate io_Device on open failure. */ 
-		ioreq->io_Device = NULL;
+        /* IMPORTANT: Invalidate io_Device and io_Unit on open failure. */
+        ioreq->io_Unit   = NULL;
+        ioreq->io_Device = NULL;
     }
     dev->lib.lib_OpenCnt++;
     ioreq->io_Error = error;
@@ -536,6 +558,9 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     //     ioreq->io_Error = TDERR_DiskChanged;
     //     return;
     // }
+    
+    // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
+    memset(geometry,0,sizeof(struct DriveGeometry));
 
     geometry->dg_SectorSize   = unit->blockSize;
     geometry->dg_TotalSectors = unit->logicalSectors;
@@ -557,18 +582,24 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Close at a time. */
 static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
-    struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
-    Trace((CONST_STRPTR) "running close()\n");
-    dev->lib.lib_OpenCnt--;
+    if (ioreq_is_valid(dev,ioreq)) {
+        struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
+        Trace((CONST_STRPTR) "running close()\n");
 
-    if (unit->open_count > 0) unit->open_count--;
+        if (dev->lib.lib_OpenCnt) dev->lib.lib_OpenCnt--;
 
-    if (unit->open_count == 0 && unit->atapi) {
-        atapi_update_presence(unit,false);
+        if (unit->open_count > 0) unit->open_count--;
+
+        if (unit->open_count == 0 && unit->atapi) {
+            atapi_update_presence(unit,false);
+        }
+        if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
+            return expunge(dev);
+
     }
-    if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
-        return expunge(dev);
 
+    ioreq->io_Unit   = NULL;
+    ioreq->io_Device = NULL;
     return 0;
 }
 
@@ -613,135 +644,141 @@ static UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
-	/* This makes sure that WaitIO() is guaranteed to work and
-	 * will not hang.
-     *
-     * Source: Olaf Barthel's Trackfile.device
-     * https://github.com/obarthel/trackfile-device
-	 */
-    ioreq->io_Message.mn_Node.ln_Type = NT_MESSAGE;
-
-    struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
-
-    Trace((CONST_STRPTR) "running begin_io()\n");
     BYTE error = TDERR_NotSpecified;
-    if (ioreq == NULL || ioreq->io_Unit == 0) return;
+    
+    // Check that the IOReq has a sane Device / Unit pointer first
+    if (ioreq_is_valid(dev,(struct IORequest *)ioreq)) {
+        /* This makes sure that WaitIO() is guaranteed to work and
+        * will not hang.
+        *
+        * Source: Olaf Barthel's Trackfile.device
+        * https://github.com/obarthel/trackfile-device
+        */
+        ioreq->io_Message.mn_Node.ln_Type = NT_MESSAGE;
 
-    if (dev->IDETask == NULL || dev->IDETaskActive == false) {
+        struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
-        // If the IDE task is dead then we can only throw an error and reply now.
-        ioreq->io_Error = IOERR_OPENFAIL;
+        Trace((CONST_STRPTR) "running begin_io()\n");
+        if (ioreq == NULL || ioreq->io_Unit == 0) return;
 
-        if (!(ioreq->io_Flags & IOF_QUICK)) {
-            ReplyMsg(&ioreq->io_Message);
-        }
+        if (dev->IDETask == NULL || dev->IDETaskActive == false) {
 
-        return;
+            // If the IDE task is dead then we can only throw an error and reply now.
+            ioreq->io_Error = IOERR_OPENFAIL;
 
-    }
-
-    Trace("Command %lx\n",ioreq->io_Command);
-    switch (ioreq->io_Command) {
-        case TD_MOTOR:
-        case CMD_CLEAR:
-        case CMD_UPDATE:
-            ioreq->io_Actual = 0;
-            error            = 0;
-            break;
-
-        case TD_CHANGENUM:
-            ioreq->io_Actual = unit->change_count;
-            error            = 0;
-            break;
-
-        case TD_GETDRIVETYPE:
-            ioreq->io_Actual = unit->device_type;
-            error            = 0;
-            break;
-
-        case TD_GETGEOMETRY:
-            td_get_geometry(ioreq);
-            error = 0;
-            break;
-
-        case TD_REMOVE:
-            unit->changeInt = ioreq->io_Data;
-            error           = 0;
-            break;
-
-
-        case TD_ADDCHANGEINT:
-            Info("Addchangeint\n");
-
-            ioreq->io_Flags |= IOF_QUICK; // Must not Reply to this request
-            error = 0;
-
-            Forbid();
-            AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
-            Permit();
-            break;
-
-        case TD_REMCHANGEINT:
-            error = 0;
-            struct MinNode *changeint;
-            Forbid();
-            for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
-                if (ioreq == (struct IOStdReq *)changeint) {
-                    Remove(&ioreq->io_Message.mn_Node);
-                }
+            if (!(ioreq->io_Flags & IOF_QUICK)) {
+                ReplyMsg(&ioreq->io_Message);
             }
-            Permit();
-            break;
 
-
-        case TD_CHANGESTATE:
-        case CMD_READ:
-        case ETD_READ:
-        case CMD_WRITE:
-        case ETD_WRITE:
-            ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
-        case TD_PROTSTATUS:
-        case TD_EJECT:
-        case TD_FORMAT:
-        case TD_READ64:
-        case TD_WRITE64:
-        case TD_FORMAT64:
-        case NSCMD_TD_READ64:
-        case NSCMD_TD_WRITE64:
-        case NSCMD_TD_FORMAT64:
-        case NSCMD_ETD_READ64:
-        case NSCMD_ETD_WRITE64:
-        case NSCMD_ETD_FORMAT64:
-        case CMD_XFER:
-        case HD_SCSICMD:
-            // Send all of these to ide_task
-            ioreq->io_Flags &= ~IOF_QUICK;
-            PutMsg(dev->IDETaskMP,&ioreq->io_Message);
-            Trace((CONST_STRPTR) "IO queued\n");
             return;
 
-        case NSCMD_DEVICEQUERY:
-            if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
-            {
-                struct NSDeviceQueryResult *result = ioreq->io_Data;
+        }
 
-                result->DevQueryFormat    = 0;
-                result->SizeAvailable     = sizeof(struct NSDeviceQueryResult);
-                result->DeviceType        = NSDEVTYPE_TRACKDISK;
-                result->DeviceSubType     = 0;
-                result->SupportedCommands = supported_commands;
+        Trace("Command %lx\n",ioreq->io_Command);
+        switch (ioreq->io_Command) {
+            case TD_MOTOR:
+            case CMD_CLEAR:
+            case CMD_UPDATE:
+                ioreq->io_Actual = 0;
+                error            = 0;
+                break;
 
-                ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
+            case TD_CHANGENUM:
+                ioreq->io_Actual = unit->change_count;
+                error            = 0;
+                break;
+
+            case TD_GETDRIVETYPE:
+                ioreq->io_Actual = unit->device_type;
+                error            = 0;
+                break;
+
+            case TD_GETGEOMETRY:
+                td_get_geometry(ioreq);
                 error = 0;
-            }
-            else {
-                error = IOERR_BADLENGTH;
-            }
-            break;
+                break;
 
-        default:
-            Warn("Unknown command %d\n", ioreq->io_Command);
-            error = IOERR_NOCMD;
+            case TD_REMOVE:
+                unit->changeInt = ioreq->io_Data;
+                error           = 0;
+                break;
+
+
+            case TD_ADDCHANGEINT:
+                Info("Addchangeint\n");
+
+                ioreq->io_Flags |= IOF_QUICK; // Must not Reply to this request
+                error = 0;
+
+                Disable();
+                AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
+                Enable();
+                break;
+
+            case TD_REMCHANGEINT:
+                error = 0;
+                struct MinNode *changeint;
+                // Must Disable() rather than Forbid()!
+                Disable();
+                for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
+                    if (ioreq == (struct IOStdReq *)changeint) {
+                        Remove(&ioreq->io_Message.mn_Node);
+                        break;
+                    }
+                }
+                Enable();
+                break;
+
+
+            case TD_CHANGESTATE:
+            case CMD_READ:
+            case ETD_READ:
+            case CMD_WRITE:
+            case ETD_WRITE:
+                ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+            case TD_PROTSTATUS:
+            case TD_EJECT:
+            case TD_FORMAT:
+            case TD_READ64:
+            case TD_WRITE64:
+            case TD_FORMAT64:
+            case NSCMD_TD_READ64:
+            case NSCMD_TD_WRITE64:
+            case NSCMD_TD_FORMAT64:
+            case NSCMD_ETD_READ64:
+            case NSCMD_ETD_WRITE64:
+            case NSCMD_ETD_FORMAT64:
+            case CMD_XFER:
+            case HD_SCSICMD:
+                // Send all of these to ide_task
+                ioreq->io_Flags &= ~IOF_QUICK;
+                PutMsg(dev->IDETaskMP,&ioreq->io_Message);
+                Trace((CONST_STRPTR) "IO queued\n");
+                return;
+
+            case NSCMD_DEVICEQUERY:
+                if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
+                {
+                    struct NSDeviceQueryResult *result = ioreq->io_Data;
+
+                    result->DevQueryFormat    = 0;
+                    result->SizeAvailable     = sizeof(struct NSDeviceQueryResult);
+                    result->DeviceType        = NSDEVTYPE_TRACKDISK;
+                    result->DeviceSubType     = 0;
+                    result->SupportedCommands = supported_commands;
+
+                    ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
+                    error = 0;
+                }
+                else {
+                    error = IOERR_BADLENGTH;
+                }
+                break;
+
+            default:
+                Warn("Unknown command %d\n", ioreq->io_Command);
+                error = IOERR_NOCMD;
+        }
     }
 
 #if DEBUG & DBG_CMD
@@ -762,7 +799,8 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 static ULONG __attribute__((used, saveds)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     Trace((CONST_STRPTR) "running abort_io()\n");
-    return IOERR_NOCMD;
+    // abort_io must return 0 on failure, IOERR_ABORTED on success
+    return 0;
 }
 
 
