@@ -796,11 +796,36 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
  *
  * Abort io request
 */
-static ULONG __attribute__((used, saveds)) abort_io(struct Library *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     Trace((CONST_STRPTR) "running abort_io()\n");
-    // abort_io must return 0 on failure, IOERR_ABORTED on success
-    return 0;
+
+    struct IORequest *io;
+
+    BYTE error = 0; // 0 indicates that the IO was *NOT* aborted
+
+    /* If the IO is still in queue then we can remove it
+     * MUST be done inside a Disable()!
+     *
+     * Copied from Olaf Barthels Trackfile.device
+     * https://github.com/obarthel/trackfile-device
+     */
+    if (ioreq_is_valid(dev,(struct IORequest *)ioreq)) {
+        Disable();
+        for (io = (struct IORequest *)dev->IDETaskMP->mp_MsgList.lh_Head;
+             io->io_Message.mn_Node.ln_Succ != NULL;
+             io = (struct IORequest *)io->io_Message.mn_Node.ln_Succ)
+        {
+            if (io == (struct IORequest *)ioreq) {
+                Remove(&io->io_Message.mn_Node);
+                error = io->io_Error = IOERR_ABORTED;
+                ReplyMsg(&io->io_Message);
+                break;
+            }
+        }
+        Enable();
+    }
+    return error;
 }
 
 
