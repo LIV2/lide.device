@@ -22,9 +22,10 @@
 # Downloads
 ROM downloads are available under [releases](https://github.com/LIV2/lide.device/releases)
 
-Currently there are two builds
+Currently there are three builds
 * lide.rom - Used for boards designed by me that feature an IDE interface (such as CIDER)
 * lide-atbus.rom - For AT-Bus style devices i.e AT-Bus 2008 + clone, Matze accelerators etc
+* lide-word.rom - For devices with word width bootroms
 
 ## Boot from CDROM
 Booting from CDROM requires Kickstart 2 or higher and one of the following:  
