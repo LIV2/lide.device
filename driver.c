@@ -321,13 +321,21 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     struct CurrentBinding cb;
 
-    GetCurrentBinding(&cb,sizeof(struct CurrentBinding));
+    if (GetCurrentBinding(&cb,sizeof(struct CurrentBinding)) == 0) {
+        Cleanup(dev);
+        return NULL;
+    }
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
 
+    if (!cd) {
+        Cleanup(dev);
+        return NULL;
+    }
+
     if (!(cd->cd_Flags & CDF_CONFIGME)) {
         Cleanup(dev);
-        return 0;
+        return NULL;
     }
 
     Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
