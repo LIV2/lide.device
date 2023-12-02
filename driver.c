@@ -392,9 +392,10 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
          unit->mn_Node.mln_Succ != NULL;
          unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
         {
-            if (unit->unitNum == unitnum);
-            found = true;
-            break;
+            if (unit->unitNum == unitnum) {
+                found = true;
+                break;
+            }
         }
 
     if (found == false || unit->present == false) {
