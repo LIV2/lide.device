@@ -67,7 +67,7 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
  * @param tries Tries, sets the timeout
 */
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
-    struct timerequest *tr = unit->TimeReq;
+    struct timerequest *tr = unit->itask->tr;
     Info("wait_drq enter\n");
 
     ata_status_reg_delay(unit);
@@ -92,7 +92,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
  * @param tries Tries, sets the timeout
 */
 static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
-    struct timerequest *tr = unit->TimeReq;
+    struct timerequest *tr = unit->itask->tr;
 
     ata_status_reg_delay(unit);
 
@@ -114,7 +114,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
  * @param tries Tries, sets the timeout
 */
 static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
-    struct timerequest *tr = unit->TimeReq;
+    struct timerequest *tr = unit->itask->tr;
 
     ata_status_reg_delay(unit);
 
@@ -158,7 +158,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     *unit->drive->devHead = select;
 
     if (changed && wait) {
-        wait_us(unit->TimeReq,5);
+        wait_us(unit->itask->tr,5);
         ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
     }
 
