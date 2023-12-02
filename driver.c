@@ -192,21 +192,9 @@ static void Cleanup(struct DeviceBase *dev) {
             dev->units[i].cd->cd_Flags |= CDF_CONFIGME;
         }
     }
-
-    if (dev->TimeReq) {
-        if (dev->TimeReq->tr_node.io_Device)
-            CloseDevice((struct IORequest *)dev->TimeReq);
-
-        DeleteExtIO((struct IORequest *)dev->TimeReq);
-    }
-
-    // If we still own the timer reply port we need to delete it now
-    if (dev->IDETimerMP) {
-        if (dev->IDETimerMP->mp_SigTask == FindTask(NULL))
-            DeletePort(dev->IDETimerMP);
-    }
-
+    
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
+    if (dev->itask) FreeMem(dev->itask,sizeof(struct IDETask));
     if (dev->units) FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
@@ -235,13 +223,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->lib.lib_Revision     = DEVICE_REVISION;
     dev->lib.lib_IdString     = (APTR)device_id_string;
 
-    dev->is_open    = FALSE;
-    dev->num_boards = 0;
-    dev->num_units  = 0;
-    dev->IDETaskMP     = NULL;
-    dev->IDETask       = NULL;
-    dev->IDETaskActive = false;
-
+    dev->is_open       = FALSE;
+    dev->num_boards    = 0;
+    dev->num_units     = 0;
 
     if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
         return NULL;
@@ -253,18 +237,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     } else {
         dev->ExpansionBase = ExpansionBase;
-    }
-
-    if ((dev->IDETimerMP = CreatePort(NULL,0)) != NULL && (dev->TimeReq = (struct timerequest *)CreateExtIO(dev->IDETimerMP, sizeof(struct timerequest))) != NULL) {
-        if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)dev->TimeReq,0)) {
-            Info("Failed to open timer.device\n");
-            Cleanup(dev);
-            return NULL;
-        }
-    } else {
-        Info("Failed to create Timer MP or Request.\n");
-        Cleanup(dev);
-        return NULL;
     }
 
     struct CurrentBinding cb;
@@ -291,12 +263,22 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
     cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
 
-    dev->num_boards++;
     Trace("Start the Task\n");
 
+    dev->itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+
+    if (dev->itask == NULL) {
+        Info("Couldn't allocate memory\n");
+        Cleanup(dev);
+        return NULL;
+    }
+
+    dev->itask->dev = dev;
+    dev->itask->cd  = cd;
+
     // Start the IDE Task
-    dev->IDETask = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev);
-    if (!dev->IDETask) {
+    dev->itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev->itask);
+    if (!dev->itask->task) {
         Info("IDE Task failed\n");
         Cleanup(dev);
         return NULL;
@@ -305,9 +287,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     }
 
     // Wait for task to init
-    while (dev->IDETaskActive == false) {
-        // If dev->IDETask has been set to NULL it means the task failed to start
-            if (dev->IDETask == NULL) {
+    while (dev->itask->active == false) {
+            // If dev->itask->task has been set to NULL it means the task failed to start
+            if (dev->itask->task == NULL) {
             Info("IDE Task failed.\n");
             Cleanup(dev);
             return NULL;
@@ -405,7 +387,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         goto exit;
     }
     
-    if (dev->IDETask == NULL || dev->IDETaskActive == false) {
+    if (unit->itask->task == NULL || unit->itask->active == false) {
         error = IOERR_OPENFAIL;
         goto exit;
     }
@@ -549,7 +531,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
         Trace((CONST_STRPTR) "running begin_io()\n");
         if (ioreq == NULL || ioreq->io_Unit == 0) return;
 
-        if (dev->IDETask == NULL || dev->IDETaskActive == false) {
+        if (unit->itask == NULL || unit->itask->active == false) {
 
             // If the IDE task is dead then we can only throw an error and reply now.
             ioreq->io_Error = IOERR_OPENFAIL;
@@ -640,7 +622,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             case HD_SCSICMD:
                 // Send all of these to ide_task
                 ioreq->io_Flags &= ~IOF_QUICK;
-                PutMsg(dev->IDETaskMP,&ioreq->io_Message);
+                PutMsg(unit->itask->iomp,&ioreq->io_Message);
                 Trace((CONST_STRPTR) "IO queued\n");
                 return;
 
@@ -699,8 +681,9 @@ static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("
      * https://github.com/obarthel/trackfile-device
      */
     if (ioreq_is_valid(dev,(struct IORequest *)ioreq)) {
+        struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
         Disable();
-        for (io = (struct IORequest *)dev->IDETaskMP->mp_MsgList.lh_Head;
+        for (io = (struct IORequest *)unit->itask->iomp->mp_MsgList.lh_Head;
              io->io_Message.mn_Node.ln_Succ != NULL;
              io = (struct IORequest *)io->io_Message.mn_Node.ln_Succ)
         {
