@@ -5,6 +5,7 @@
 #ifndef _DEVICE_H
 #define _DEVICE_H
 #include <dos/filehandler.h>
+#include <exec/semaphores.h>
 #include <stdbool.h>
 #define OAHR_MANUF_ID 5194
 #define BSC_MANUF_ID  2092
@@ -84,6 +85,7 @@ struct DeviceBase {
     UBYTE            num_boards;
     UBYTE            num_units;
     struct MinList   units;
+    struct SignalSemaphore ul_semaphore;
 };
 
 struct IDETask {
