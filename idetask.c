@@ -350,6 +350,12 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Data   = NULL;
         ioreq->io_Length = 0;
 
+        if (SysBase->SoftVer >= 36) {
+            ObtainSemaphoreShared(&dev->ul_semaphore);
+        } else {
+            ObtainSemaphore(&dev->ul_semaphore);
+        }
+
         for (unit = (struct IDEUnit *)dev->units.mlh_Head;
              unit->mn_Node.mln_Succ != NULL;
              unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
@@ -358,7 +364,7 @@ void __attribute__((noreturn)) diskchange_task () {
                 Trace("Testing unit %ld\n",unit->unitNum);
                 ioreq->io_Unit = (struct Unit *)unit;
 
-                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
+                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request dirßsectly to the ide task
                 WaitPort(iomp);
                 GetMsg(iomp);
                 
@@ -384,6 +390,9 @@ void __attribute__((noreturn)) diskchange_task () {
                 unit->mediumPresentPrev = present;
             }
         }
+
+        ReleaseSemaphore(&dev->ul_semaphore);
+
         Trace("Wait...\n");
         wait(TimerReq,CHANGEINT_INTERVAL);
     }
@@ -503,10 +512,12 @@ static BYTE init_units(struct IDETask *itask) {
 
             if (ata_init_unit(unit)) {
                 num_units++;
-                Forbid();
                 itask->dev->num_units++;
+
+                ObtainSemaphore(&dev->ul_semaphore);
                 AddTail((struct List *)&dev->units,(struct Node *)unit);
-                Permit();
+                ReleaseSemaphore(&dev->ul_semaphore);
+
             } else {
                 // Clear this to skip the pre-select BSY wait later
                 *unit->shadowDevHead = 0;
@@ -518,7 +529,7 @@ static BYTE init_units(struct IDETask *itask) {
     return num_units;
 }
 
-static void Cleanup(struct IDETask *itask) {
+static void cleanup(struct IDETask *itask) {
     DeletePort(itask->iomp);
     if (itask->tr) {
         if (itask->tr->tr_node.io_Device)
@@ -529,16 +540,20 @@ static void Cleanup(struct IDETask *itask) {
     if (itask->timermp) DeletePort(itask->timermp);
 
     struct IDEUnit *unit;
+
+
     for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
          unit->mn_Node.mln_Succ != NULL;
          unit =  (struct IDEUnit *)unit->mn_Node.mln_Succ) {
             if (unit->itask == itask) {
-                Forbid();
+                ObtainSemaphore(&itask->dev->ul_semaphore);
                 Remove((struct Node *)unit);
+                ReleaseSemaphore(&itask->dev->ul_semaphore);
                 FreeMem(unit,sizeof(struct IDEUnit));
-                Permit();
             }
          }
+
+
     itask->active = false;
     itask->task   = NULL;
 }
@@ -567,26 +582,26 @@ void __attribute__((noreturn)) ide_task () {
     Trace("IDE Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
     if ((itask->iomp = CreatePort(NULL,0)) == NULL) {
-        Cleanup(itask);
+        cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
 
     if ((itask->timermp = CreatePort(NULL,0)) != NULL && (itask->tr = (struct timerequest *)CreateExtIO(itask->timermp, sizeof(struct timerequest))) != NULL) {
         if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)itask->tr,0)) {
-            Cleanup(itask);
+            cleanup(itask);
             RemTask(NULL);
             Wait(0);
         }
     } else {
         Info("Failed to create Timer MP or Request.\n");
-        Cleanup(itask);
+        cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
 
     if (init_units(itask) == 0) {
-        Cleanup(itask);
+        cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
@@ -716,7 +731,7 @@ transfer:
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");
-                    Cleanup(itask);
+                    cleanup(itask);
                     ReplyMsg(&ioreq->io_Message);
                     RemTask(NULL);
                     Wait(0);
