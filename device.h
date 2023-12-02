@@ -36,6 +36,7 @@ struct Drive {
 };
 
 struct IDEUnit {
+    struct MinNode mn_Node;
     struct Unit io_unit;
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
@@ -77,15 +78,12 @@ struct DeviceBase {
     struct ExecBase  *SysBase;
     struct Library   *ExpansionBase;
     struct Task      *ChangeTask;
-    struct ConfigDev *cd;
     struct IDETask   *itask;
-    struct           timerequest *TimeReq;
     BPTR             saved_seg_list;
     BOOL             is_open;
     UBYTE            num_boards;
     UBYTE            num_units;
-    struct           IDEUnit *units;
-    UBYTE            shadowDevHeads[MAX_UNITS/2];
+    struct MinList   units;
 };
 
 struct IDETask {
@@ -96,6 +94,8 @@ struct IDETask {
     struct MsgPort     *timermp;
     struct timerequest *tr;
     volatile bool      active;
+    UBYTE              shadowDevHeads[MAX_UNITS/2];
+    UBYTE              taskNum;
 };
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
