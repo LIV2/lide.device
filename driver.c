@@ -167,6 +167,12 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
 
     struct IDEUnit *unit;
 
+    if (SysBase->SoftVer >= 36) {
+        ObtainSemaphoreShared(&dev->ul_semaphore);
+    } else {
+        ObtainSemaphore(&dev->ul_semaphore);
+    }
+
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
          unit->mn_Node.mln_Succ != NULL;
          unit = (struct IDEUnit *)unit->mn_Node.mln_Succ) {
@@ -175,7 +181,9 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
                 break;
             }
          }
-         
+
+    ReleaseSemaphore(&dev->ul_semaphore);
+
     if (!found) return false;
 
     if ((struct Device *)dev != ior->io_Device) return false;
@@ -193,6 +201,12 @@ static void Cleanup(struct DeviceBase *dev) {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 
     struct IDEUnit *unit;
+    
+    if (SysBase->SoftVer >= 36) {
+        ObtainSemaphoreShared(&dev->ul_semaphore);
+    } else {
+        ObtainSemaphore(&dev->ul_semaphore);
+    }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
          unit->mn_Node.mln_Succ != NULL;
@@ -201,6 +215,7 @@ static void Cleanup(struct DeviceBase *dev) {
             unit->cd->cd_Flags |= CDF_CONFIGME;
         }
 
+    ReleaseSemaphore(&dev->ul_semaphore);
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
     if (dev->itask) FreeMem(dev->itask,sizeof(struct IDETask));
@@ -234,6 +249,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->is_open       = FALSE;
     dev->num_boards    = 0;
     dev->num_units     = 0;
+    
+    InitSemaphore(&dev->ul_semaphore);
 
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
@@ -388,6 +405,12 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         goto exit;
     }
 
+    if (SysBase->SoftVer >= 36) {
+        ObtainSemaphoreShared(&dev->ul_semaphore);
+    } else {
+        ObtainSemaphore(&dev->ul_semaphore);
+    }
+
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
          unit->mn_Node.mln_Succ != NULL;
          unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
@@ -397,6 +420,8 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
                 break;
             }
         }
+
+    ReleaseSemaphore(&dev->ul_semaphore);
 
     if (found == false || unit->present == false) {
         error = TDERR_BadUnitNum;
@@ -761,6 +786,12 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 #endif
         struct IDEUnit *unit;
 
+        if (SysBase->SoftVer >= 36) {
+            ObtainSemaphoreShared(&mydev->ul_semaphore);
+        } else {
+            ObtainSemaphore(&mydev->ul_semaphore);
+        }
+
         for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
              unit->mn_Node.mln_Succ != NULL;
              unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
@@ -776,6 +807,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                 *idx += 1;
             }
         }
+        ReleaseSemaphore(&mydev->ul_semaphore);
         if (ms->numUnits > 0) {
             MountDrive(ms);
         }
