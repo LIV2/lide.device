@@ -165,12 +165,17 @@ static BOOL FindCDFS() {
 static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
     bool found = false;
 
-    for (int i=0; i<MAX_UNITS; i++) {
-        if (&dev->units[i] == (struct IDEUnit *)ior->io_Unit) {
-            found = true;
-            break;
-        }
-    }
+    struct IDEUnit *unit;
+
+    for (unit = (struct IDEUnit *)dev->units.mlh_Head;
+         unit->mn_Node.mln_Succ != NULL;
+         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ) {
+            if (unit == (struct IDEUnit *)ior->io_Unit) {
+                found = true;
+                break;
+            }
+         }
+         
     if (!found) return false;
 
     if ((struct Device *)dev != ior->io_Device) return false;
@@ -186,16 +191,19 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
 static void Cleanup(struct DeviceBase *dev) {
     Info("Cleaning up...\n");
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    for (int i=0; i < MAX_UNITS; i++) {
-        // Un-claim the boards
-        if (dev->units[i].cd != NULL) {
-            dev->units[i].cd->cd_Flags |= CDF_CONFIGME;
+
+    struct IDEUnit *unit;
+
+    for (unit = (struct IDEUnit *)dev->units.mlh_Head;
+         unit->mn_Node.mln_Succ != NULL;
+         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
+        {
+            unit->cd->cd_Flags |= CDF_CONFIGME;
         }
-    }
-    
+
+
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
     if (dev->itask) FreeMem(dev->itask,sizeof(struct IDETask));
-    if (dev->units) FreeMem(dev->units,sizeof(struct IDEUnit) * MAX_UNITS);
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
@@ -227,11 +235,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->num_boards    = 0;
     dev->num_units     = 0;
 
-    if ((dev->units = AllocMem(sizeof(struct IDEUnit)*MAX_UNITS, (MEMF_ANY|MEMF_CLEAR))) == NULL)
-        return NULL;
-
-    Trace("Dev->Units: %08lx\n",(ULONG)dev->units);
-
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
         return NULL;
@@ -247,8 +250,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     }
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
-
-    dev->cd = cd;
 
     if (!cd) {
         Cleanup(dev);
@@ -273,8 +274,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    dev->itask->dev = dev;
-    dev->itask->cd  = cd;
+    dev->itask->dev     = dev;
+    dev->itask->cd      = cd;
+    dev->itask->taskNum = 0;
+
+    NewList((struct List *)&dev->units);
 
     // Start the IDE Task
     dev->itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev->itask);
@@ -288,15 +292,17 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     // Wait for task to init
     while (dev->itask->active == false) {
-            // If dev->itask->task has been set to NULL it means the task failed to start
+            // If dev->itask->task has been set to NULL it means the task exited
             if (dev->itask->task == NULL) {
-            Info("IDE Task failed.\n");
+            Info("IDE Task exited.\n");
             Cleanup(dev);
             return NULL;
         }
     }
 
     dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
+
+    Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;
@@ -367,6 +373,8 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     unitnum = (unitnum % 10);
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
+    bool found = false;
+
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
     if (lun != 0) {
@@ -380,9 +388,16 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         goto exit;
     }
 
-    unit = &dev->units[unitnum];
+    for (unit = (struct IDEUnit *)dev->units.mlh_Head;
+         unit->mn_Node.mln_Succ != NULL;
+         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
+        {
+            if (unit->unitNum == unitnum);
+            found = true;
+            break;
+        }
 
-    if (unit->present == false) {
+    if (found == false || unit->present == false) {
         error = TDERR_BadUnitNum;
         goto exit;
     }
@@ -743,15 +758,20 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 #if CDBOOT
         BOOL CDBoot = FindCDFS();
 #endif
-        for (int i=0; i<MAX_UNITS; i++) {
-            if (mydev->units[i].present == true) {
+        struct IDEUnit *unit;
+
+        for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
+             unit->mn_Node.mln_Succ != NULL;
+             unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
+        {
+            if (unit->present == true) {
 #if CDBOOT
                 // If CDFS not resident don't bother adding the CDROM to the mountlist
-                if (mydev->units[i].device_type == DG_CDROM && !CDBoot) continue;
+                if (unit->device_type == DG_CDROM && !CDBoot) continue;
 #endif
-                ms->Units[*idx].unitNum    = i;
-                ms->Units[*idx].deviceType = mydev->units[i].device_type;
-                ms->Units[*idx].configDev  = mydev->units[i].cd;
+                ms->Units[*idx].unitNum    = unit->unitNum;
+                ms->Units[*idx].deviceType = unit->device_type;
+                ms->Units[*idx].configDev  = unit->cd;
                 *idx += 1;
             }
         }

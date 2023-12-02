@@ -350,10 +350,12 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Data   = NULL;
         ioreq->io_Length = 0;
 
-        for (int i=0; i < MAX_UNITS; i++) {
-            unit = &dev->units[i];
+        for (unit = (struct IDEUnit *)dev->units.mlh_Head;
+             unit->mn_Node.mln_Succ != NULL;
+             unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
+        {
             if (unit->present && unit->atapi && (unit->open_count > 0)) {
-                Trace("Testing unit %ld\n",i);
+                Trace("Testing unit %ld\n",unit->unitNum);
                 ioreq->io_Unit = (struct Unit *)unit;
 
                 PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
@@ -460,52 +462,59 @@ static BYTE init_units(struct IDETask *itask) {
 
 
     for (BYTE i=0; i < (2 * channels); i++) {
-        // Setup each unit structure
-        dev->units[i].itask             = itask;
-        dev->units[i].unitNum           = i;
-        dev->units[i].SysBase           = SysBase;
-        dev->units[i].cd                = itask->dev->cd;
-        dev->units[i].primary           = ((i%2) == 1) ? false : true;
-        dev->units[i].channel           = ((i%4) < 2) ? 0 : 1;
-        dev->units[i].open_count        = 0;
-        dev->units[i].change_count      = 1;
-        dev->units[i].device_type       = DG_DIRECT_ACCESS;
-        dev->units[i].mediumPresent     = false;
-        dev->units[i].mediumPresentPrev = false;
-        dev->units[i].present           = false;
-        dev->units[i].atapi             = false;
-        dev->units[i].xfer_multiple     = false;
-        dev->units[i].multiple_count    = 0;
-        dev->units[i].shadowDevHead     = &itask->dev->shadowDevHeads[i>>1];
-        *dev->units[i].shadowDevHead    = 0;
+        struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
+        if (unit != NULL) {
+            // Setup each unit structure
+            unit->itask             = itask;
+            unit->unitNum           = (i + (itask->taskNum << 2));
+            unit->SysBase           = SysBase;
+            unit->cd                = itask->cd;
+            unit->primary           = ((i%2) == 1) ? false : true;
+            unit->channel           = ((i%4) < 2) ? 0 : 1;
+            unit->open_count        = 0;
+            unit->change_count      = 1;
+            unit->device_type       = DG_DIRECT_ACCESS;
+            unit->mediumPresent     = false;
+            unit->mediumPresentPrev = false;
+            unit->present           = false;
+            unit->atapi             = false;
+            unit->xfer_multiple     = false;
+            unit->multiple_count    = 0;
+            unit->shadowDevHead     = &itask->shadowDevHeads[i>>1];
+            *unit->shadowDevHead    = 0;
 
-        // This controls which transfer routine is selected for the device by ata_init_unit
-        //
-        // See ata_init_unit and device.h for more info
-        if (SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) {
-            dev->units[i].xfer_method       = longword_move;
-            Info("Detected 68020 or higher, transfer mode set to move.l\n");
-        } else {
-            dev->units[i].xfer_method       = longword_movem;
-            Info("Detected 68000/68010, transfer mode set to movem.l\n");
-        }
+            // This controls which transfer routine is selected for the device by ata_init_unit
+            //
+            // See ata_init_unit and device.h for more info
+            if (SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) {
+                unit->xfer_method       = longword_move;
+                Info("Detected 68020 or higher, transfer mode set to move.l\n");
+            } else {
+                unit->xfer_method       = longword_movem;
+                Info("Detected 68000/68010, transfer mode set to movem.l\n");
+            }
 
-        // Initialize the change int list
-        dev->units[i].changeInts.mlh_Tail     = NULL;
-        dev->units[i].changeInts.mlh_Head     = (struct MinNode *)&dev->units[i].changeInts.mlh_Tail;
-        dev->units[i].changeInts.mlh_TailPred = (struct MinNode *)&dev->units[i].changeInts;
+            // Initialize the change int list
+            unit->changeInts.mlh_Tail     = NULL;
+            unit->changeInts.mlh_Head     = (struct MinNode *)&unit->changeInts.mlh_Tail;
+            unit->changeInts.mlh_TailPred = (struct MinNode *)&unit->changeInts;
 
-        Warn("testing unit %08lx\n",i);
+            Warn("testing unit %08lx\n",i);
 
-        if (ata_init_unit(&dev->units[i])) {
-            num_units++;
-        } else {
-            // Clear this to skip the pre-select BSY wait later
-            *dev->units[i].shadowDevHead = 0;
+            if (ata_init_unit(unit)) {
+                num_units++;
+                Forbid();
+                itask->dev->num_units++;
+                AddTail((struct List *)&dev->units,(struct Node *)unit);
+                Permit();
+            } else {
+                // Clear this to skip the pre-select BSY wait later
+                *unit->shadowDevHead = 0;
+                FreeMem(unit,sizeof(struct IDEUnit));
+            }
         }
     }
 
-    Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
     return num_units;
 }
 
@@ -518,6 +527,18 @@ static void Cleanup(struct IDETask *itask) {
         DeleteExtIO((struct IORequest *)itask->tr);
     }
     if (itask->timermp) DeletePort(itask->timermp);
+
+    struct IDEUnit *unit;
+    for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
+         unit->mn_Node.mln_Succ != NULL;
+         unit =  (struct IDEUnit *)unit->mn_Node.mln_Succ) {
+            if (unit->itask == itask) {
+                Forbid();
+                Remove((struct Node *)unit);
+                FreeMem(unit,sizeof(struct IDEUnit));
+                Permit();
+            }
+         }
     itask->active = false;
     itask->task   = NULL;
 }
