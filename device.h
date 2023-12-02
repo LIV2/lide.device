@@ -81,6 +81,7 @@ struct DeviceBase {
     struct MsgPort  *IDETaskMP;
     struct MsgPort  *IDETimerMP;
     struct Task     *ChangeTask;
+    struct ConfigDev *cd;
     volatile bool   IDETaskActive;
     struct          timerequest *TimeReq;
     BPTR            saved_seg_list;

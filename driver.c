@@ -212,58 +212,6 @@ static void Cleanup(struct DeviceBase *dev) {
 }
 
 /**
- * detectChannels
- * 
- * Detect how many IDE Channels this board has
- * @param cd Pointer to the ConfigDev struct for this board
- * @returns number of channels
-*/
-static BYTE detectChannels(struct ConfigDev *cd) {
-    UBYTE *drvsel = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
-
-    *drvsel = 0xE0; // Select the primary drive + poke IDE to turn off ROM
-
-    if (cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID || cd->cd_Rom.er_Manufacturer == A1K_MANUF_ID) {
-        // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
-        // Not a problem in single channel mode - the drive registers there only use the upper byte
-        // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
-        //
-        // Check for the ROM Footer
-        // On the AT-Bus 2008 clone it will still be there
-        // On a Matze TK the ROM goes away and the board can do 2 channels
-        ULONG signature = 0;
-        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8;
-        
-        if (cd->cd_Rom.er_InitDiagVec & 1 ||      // If the board has an odd offset then add it
-            cd->cd_Rom.er_InitDiagVec == 0x100) { // WinUAE AT-Bus 2008 has DiagVec @ 0x100 but Driver is on odd offset
-                romFooter++;
-            }
-
-        for (int i=0; i<4; i++) {
-            signature <<= 8;
-            signature |= *romFooter;
-            romFooter += 2;
-        }
-
-        if (signature == 'LIDE') {
-            Info("Channel detection: Saw ROM footer - assuming AT-Bus single channel mode\n");
-            return 1;
-        }
-    }
-
-    // Detect if there are 1 or 2 IDE channels on this board 
-    // 2 channel boards use the CS2 decode for the second channel 
-    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
-
-    if (*status == *alt_status) {
-        return 1;
-    } else {
-        return 2;
-    }
-}
-
-/**
  * init_device
  *
  * Scan for drives and initialize the driver if any are found
@@ -328,6 +276,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
 
+    dev->cd = cd;
+
     if (!cd) {
         Cleanup(dev);
         return NULL;
@@ -342,103 +292,33 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
 
     dev->num_boards++;
+    Trace("Start the Task\n");
 
-    UBYTE channels = detectChannels(cd);
-    Info("Channels: %ld\n",channels);
-
-
-    for (BYTE i=0; i < (2 * channels); i++) {
-        // Setup each unit structure
-        dev->units[i].unitNum           = i;
-        dev->units[i].SysBase           = SysBase;
-        dev->units[i].TimeReq           = dev->TimeReq;
-        dev->units[i].cd                = cd;
-        dev->units[i].primary           = ((i%2) == 1) ? false : true;
-        dev->units[i].channel           = ((i%4) < 2) ? 0 : 1;
-        dev->units[i].open_count        = 0;
-        dev->units[i].change_count      = 1;
-        dev->units[i].device_type       = DG_DIRECT_ACCESS;
-        dev->units[i].mediumPresent     = false;
-        dev->units[i].mediumPresentPrev = false;
-        dev->units[i].present           = false;
-        dev->units[i].atapi             = false;
-        dev->units[i].xfer_multiple     = false;
-        dev->units[i].multiple_count    = 0;
-        dev->units[i].shadowDevHead     = &dev->shadowDevHeads[i>>1];
-        *dev->units[i].shadowDevHead    = 0;
-
-        // This controls which transfer routine is selected for the device by ata_init_unit
-        //
-        // See ata_init_unit and device.h for more info
-        if (SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) {
-            dev->units[i].xfer_method       = longword_move;
-            Info("Detected 68020 or higher, transfer mode set to move.l\n");
-        } else {
-            dev->units[i].xfer_method       = longword_movem;
-            Info("Detected 68000/68010, transfer mode set to movem.l\n");
-        }
-
-        // Initialize the change int list
-        dev->units[i].changeInts.mlh_Tail     = NULL;
-        dev->units[i].changeInts.mlh_Head     = (struct MinNode *)&dev->units[i].changeInts.mlh_Tail;
-        dev->units[i].changeInts.mlh_TailPred = (struct MinNode *)&dev->units[i].changeInts;
-
-        Warn("testing unit %08lx\n",i);
-
-        if (ata_init_unit(&dev->units[i])) {
-            dev->num_units++;
-        } else {
-            // Clear this to skip the pre-select BSY wait later
-            *dev->units[i].shadowDevHead = 0;
-        }
-    }
-
-    Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
-
-    if (dev->num_units > 0) {
-        Trace("Start the Task\n");
-
-        // The IDE Task will open the timer when it starts
-        if (dev->TimeReq) {
-            if (dev->TimeReq->tr_node.io_Device)
-                CloseDevice((struct IORequest *)dev->TimeReq);
-
-            DeleteExtIO((struct IORequest *)dev->TimeReq);
-        }
-
-        // The IDE Task will open the timer when it starts
-        if (dev->IDETimerMP) {
-            DeletePort(dev->IDETimerMP);
-        }
-
-        // Start the IDE Task
-        dev->IDETask = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev);
-        if (!dev->IDETask) {
-            Info("IDE Task failed\n");
-            Cleanup(dev);
-            return NULL;
-        } else {
-            Trace("Task created!, waiting for init\n");
-        }
-
-        // Wait for task to init
-        while (dev->IDETaskActive == false) {
-            // If dev->IDETask has been set to NULL it means the task failed to start
-             if (dev->IDETask == NULL) {
-                Info("IDE Task failed.\n");
-                Cleanup(dev);
-                return NULL;
-            }
-        }
-
-        dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
-
-        Info("Startup finished.\n");
-        return (struct Library *)dev;
-    } else {
+    // Start the IDE Task
+    dev->IDETask = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev);
+    if (!dev->IDETask) {
+        Info("IDE Task failed\n");
         Cleanup(dev);
         return NULL;
+    } else {
+        Trace("Task created!, waiting for init\n");
     }
+
+    // Wait for task to init
+    while (dev->IDETaskActive == false) {
+        // If dev->IDETask has been set to NULL it means the task failed to start
+            if (dev->IDETask == NULL) {
+            Info("IDE Task failed.\n");
+            Cleanup(dev);
+            return NULL;
+        }
+    }
+
+    dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
+
+    Info("Startup finished.\n");
+    return (struct Library *)dev;
+
 }
 
 /* device dependent expunge function
