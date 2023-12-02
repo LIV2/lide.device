@@ -31,7 +31,7 @@ endif
 
 LDFLAGS+= -lnix13
 
-.PHONY:	clean all lideflash disk lha rename/renamelide
+.PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
 .INTERMEDIATE: move16.o
 
 all:	$(ROM) lideflash rename/renamelide
@@ -65,22 +65,26 @@ lideflash/lideflash:
 
 lideflash: lideflash/lideflash
 
+lidetool/lidetool:
+	make -C lidetool
+
 rename/renamelide:
 	make -C rename
 
-disk: $(ROM) lideflash/lideflash rename/renamelide
+disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
 	xdftool $(BUILDDIR)/$(DISK) format lide-update + \
 	                            boot install boot1x + \
 	                            write $(ROM) + \
+	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
 	                            write rename/renamelide renamelide + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool
 	@mkdir -p $(BUILDDIR)
 	cp $^ $(BUILDDIR)
 	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
