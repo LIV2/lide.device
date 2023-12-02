@@ -356,7 +356,7 @@ void __attribute__((noreturn)) diskchange_task () {
                 Trace("Testing unit %ld\n",i);
                 ioreq->io_Unit = (struct Unit *)unit;
 
-                PutMsg(dev->IDETaskMP,(struct Message *)ioreq); // Send request directly to the ide task
+                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
                 WaitPort(iomp);
                 GetMsg(iomp);
                 
@@ -452,19 +452,19 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     }
 }
 
-static BYTE init_units(struct DeviceBase *dev,struct timerequest *tr) {
+static BYTE init_units(struct IDETask *itask) {
     BYTE num_units = 0;
-
-    UBYTE channels = detectChannels(dev->cd);
+    struct DeviceBase *dev = itask->dev;
+    UBYTE channels = detectChannels(itask->cd);
     Info("Channels: %ld\n",channels);
 
 
     for (BYTE i=0; i < (2 * channels); i++) {
         // Setup each unit structure
+        dev->units[i].itask             = itask;
         dev->units[i].unitNum           = i;
-        dev->units[i].TimeReq           = tr;
         dev->units[i].SysBase           = SysBase;
-        dev->units[i].cd                = dev->cd;
+        dev->units[i].cd                = itask->dev->cd;
         dev->units[i].primary           = ((i%2) == 1) ? false : true;
         dev->units[i].channel           = ((i%4) < 2) ? 0 : 1;
         dev->units[i].open_count        = 0;
@@ -476,7 +476,7 @@ static BYTE init_units(struct DeviceBase *dev,struct timerequest *tr) {
         dev->units[i].atapi             = false;
         dev->units[i].xfer_multiple     = false;
         dev->units[i].multiple_count    = 0;
-        dev->units[i].shadowDevHead     = &dev->shadowDevHeads[i>>1];
+        dev->units[i].shadowDevHead     = &itask->dev->shadowDevHeads[i>>1];
         *dev->units[i].shadowDevHead    = 0;
 
         // This controls which transfer routine is selected for the device by ata_init_unit
@@ -509,6 +509,18 @@ static BYTE init_units(struct DeviceBase *dev,struct timerequest *tr) {
     return num_units;
 }
 
+static void Cleanup(struct IDETask *itask) {
+    DeletePort(itask->iomp);
+    if (itask->tr) {
+        if (itask->tr->tr_node.io_Device)
+            CloseDevice((struct IORequest *)itask->tr);
+
+        DeleteExtIO((struct IORequest *)itask->tr);
+    }
+    if (itask->timermp) DeletePort(itask->timermp);
+    itask->active = false;
+    itask->task   = NULL;
+}
 
 /**
  * ide_task
@@ -518,10 +530,8 @@ static BYTE init_units(struct DeviceBase *dev,struct timerequest *tr) {
 */
 void __attribute__((noreturn)) ide_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    struct Task volatile *task = FindTask(NULL);
-    struct MsgPort *mp;
-    struct MsgPort *timerMp;
-    struct timerequest *timeReq;
+    struct Task *task = FindTask(NULL);
+    struct IDETask *itask = (struct IDETask *)task->tc_UserData;
     struct IOStdReq *ioreq;
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
@@ -531,50 +541,43 @@ void __attribute__((noreturn)) ide_task () {
     BYTE  error = 0;
     enum xfer_dir direction = WRITE;
 
-    Info("IDE Task: waiting for init\n");
-    while (task->tc_UserData == NULL); // Wait for Task Data to be populated
-    struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
+    itask->task = task;
 
     Trace("IDE Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
-    if ((mp = CreatePort(NULL,0)) == NULL) {
-        dev->IDETask = NULL; // Failed to create MP, let the device know
+    if ((itask->iomp = CreatePort(NULL,0)) == NULL) {
+        Cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
 
-    if ((timerMp = CreatePort(NULL,0)) != NULL && (timeReq = (struct timerequest *)CreateExtIO(timerMp, sizeof(struct timerequest))) != NULL) {
-        if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)timeReq,0)) {
-            dev->IDETask = NULL; // Failed to open timer, let the device know
+    if ((itask->timermp = CreatePort(NULL,0)) != NULL && (itask->tr = (struct timerequest *)CreateExtIO(itask->timermp, sizeof(struct timerequest))) != NULL) {
+        if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)itask->tr,0)) {
+            Cleanup(itask);
             RemTask(NULL);
             Wait(0);
         }
     } else {
         Info("Failed to create Timer MP or Request.\n");
-        dev->IDETask = NULL; // Failed to create MP, let the device know
+        Cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
 
-    if (init_units(dev,timeReq) == 0) {
-        dev->IDETask = NULL;
+    if (init_units(itask) == 0) {
+        Cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
 
-    for (int i=0; i<MAX_UNITS; i++) {
-        dev->units[i].TimeReq = timeReq;
-    }
-
-    dev->IDETaskMP = mp;
-    dev->IDETaskActive = true;
+    itask->active = true;
 
     while (1) {
         // Main loop, handle IO Requests as they come in.
         Trace("IDE Task: WaitPort()\n");
-        Wait(1 << mp->mp_SigBit); // Wait for an IORequest to show up
+        Wait(1 << itask->iomp->mp_SigBit); // Wait for an IORequest to show up
 
-        while ((ioreq = (struct IOStdReq *)GetMsg(mp)) != NULL) {
+        while ((ioreq = (struct IOStdReq *)GetMsg(itask->iomp)) != NULL) {
             unit = (struct IDEUnit *)ioreq->io_Unit;
             iotd = (struct IOExtTD *)ioreq;
 
@@ -692,17 +695,7 @@ transfer:
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");
-                    DeletePort(mp);
-                    if (dev->TimeReq) {
-                        if (dev->TimeReq->tr_node.io_Device)
-                            CloseDevice((struct IORequest *)dev->TimeReq);
-
-                        DeleteExtIO((struct IORequest *)dev->TimeReq);
-                    }
-                    if (dev->IDETimerMP) DeletePort(dev->IDETimerMP);
-                    dev->IDETaskMP     = NULL;
-                    dev->IDETask       = NULL;
-                    dev->IDETaskActive = false;
+                    Cleanup(itask);
                     ReplyMsg(&ioreq->io_Message);
                     RemTask(NULL);
                     Wait(0);
@@ -746,7 +739,7 @@ BYTE direct_changestate (struct IDEUnit *unit, struct DeviceBase *dev) {
     ioreq->io_Length  = 1;
     ioreq->io_Actual  = 0;
     ioreq->io_Unit    = (struct Unit *)unit;
-    PutMsg(dev->IDETaskMP,(struct Message *)ioreq); // Send request directly to the ide task
+    PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
     WaitPort(iomp);
     GetMsg(iomp);
 

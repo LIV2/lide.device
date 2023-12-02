@@ -39,7 +39,7 @@ struct IDEUnit {
     struct Unit io_unit;
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
-    struct timerequest *TimeReq;
+    struct IDETask *itask;
     volatile struct Drive *drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
     enum  xfer xfer_method;
@@ -47,6 +47,8 @@ struct IDEUnit {
     void  (*write_fast)(void *, void *);
     void  (*read_unaligned)(void *, void *);
     void  (*write_unaligned)(void *, void *);
+    volatile UBYTE *shadowDevHead;
+    volatile void  *changeInt;
     UBYTE unitNum;
     UBYTE channel;
     UBYTE device_type;
@@ -58,7 +60,6 @@ struct IDEUnit {
     BOOL  mediumPresentPrev;
     BOOL  xfer_multiple;
     BOOL  lba;
-    UBYTE multiple_count;
     UWORD open_count;
     UWORD change_count;
     UWORD cylinders;
@@ -67,31 +68,35 @@ struct IDEUnit {
     UWORD blockSize;
     UWORD blockShift;
     ULONG logicalSectors;
-    volatile UBYTE *shadowDevHead;
     struct MinList changeInts;
-    volatile void  *changeInt;
+    UBYTE multiple_count;
 };
 
 struct DeviceBase {
-    struct Library  lib;
-    struct ExecBase *SysBase;
-    struct Library  *ExpansionBase;
-    struct Library  *TimerBase;
-    struct Task     *IDETask;
-    struct MsgPort  *IDETaskMP;
-    struct MsgPort  *IDETimerMP;
-    struct Task     *ChangeTask;
+    struct Library   lib;
+    struct ExecBase  *SysBase;
+    struct Library   *ExpansionBase;
+    struct Task      *ChangeTask;
     struct ConfigDev *cd;
-    volatile bool   IDETaskActive;
-    struct          timerequest *TimeReq;
-    BPTR            saved_seg_list;
-    BOOL            is_open;
-    UBYTE           num_boards;
-    UBYTE           num_units;
-    struct          IDEUnit *units;
-    UBYTE           shadowDevHeads[MAX_UNITS/2];
+    struct IDETask   *itask;
+    struct           timerequest *TimeReq;
+    BPTR             saved_seg_list;
+    BOOL             is_open;
+    UBYTE            num_boards;
+    UBYTE            num_units;
+    struct           IDEUnit *units;
+    UBYTE            shadowDevHeads[MAX_UNITS/2];
 };
 
+struct IDETask {
+    struct Task        *task;
+    struct DeviceBase  *dev;
+    struct ConfigDev   *cd;
+    struct MsgPort     *iomp;
+    struct MsgPort     *timermp;
+    struct timerequest *tr;
+    volatile bool      active;
+};
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
                           if invoked from a macro, macro arguments are expanded). */
