@@ -267,7 +267,13 @@ static void copymem(void *dstp, void *srcp, UWORD size)
 static UWORD checksum(UBYTE *buf, struct MountData *md)
 {
 	ULONG chk = 0;
-	for (UWORD i = 0; i < md->blocksize; i += 4) {
+	ULONG num_longs;
+
+	num_longs = (buf[4] << 24) | (buf[5] << 16) | (buf[6] << 8) | (buf[7]);
+	if (num_longs > 65535)
+		return FALSE;
+
+	for (UWORD i = 0; i < (int)(num_longs * sizeof(LONG)); i += 4) {
 		ULONG v = (buf[i + 0] << 24) | (buf[i + 1] << 16) | (buf[i + 2] << 8) | (buf[i + 3 ] << 0);
 		chk += v;
 	}
