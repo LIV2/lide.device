@@ -351,9 +351,9 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Length = 0;
 
         if (SysBase->SoftVer >= 36) {
-            ObtainSemaphoreShared(&dev->ul_semaphore);
+            ObtainSemaphoreShared(&dev->ul_sem);
         } else {
-            ObtainSemaphore(&dev->ul_semaphore);
+            ObtainSemaphore(&dev->ul_sem);
         }
 
         for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -391,7 +391,7 @@ void __attribute__((noreturn)) diskchange_task () {
             }
         }
 
-        ReleaseSemaphore(&dev->ul_semaphore);
+        ReleaseSemaphore(&dev->ul_sem);
 
         Trace("Wait...\n");
         wait(TimerReq,CHANGEINT_INTERVAL);
@@ -513,10 +513,10 @@ static BYTE init_units(struct IDETask *itask) {
             if (ata_init_unit(unit)) {
                 num_units++;
                 itask->dev->num_units++;
-
-                ObtainSemaphore(&dev->ul_semaphore);
+                dev->highest_unit = unit->unitNum;
+                ObtainSemaphore(&dev->ul_sem);
                 AddTail((struct List *)&dev->units,(struct Node *)unit);
-                ReleaseSemaphore(&dev->ul_semaphore);
+                ReleaseSemaphore(&dev->ul_sem);
 
             } else {
                 // Clear this to skip the pre-select BSY wait later
@@ -546,9 +546,9 @@ static void cleanup(struct IDETask *itask) {
          unit->mn_Node.mln_Succ != NULL;
          unit =  (struct IDEUnit *)unit->mn_Node.mln_Succ) {
             if (unit->itask == itask) {
-                ObtainSemaphore(&itask->dev->ul_semaphore);
+                ObtainSemaphore(&itask->dev->ul_sem);
                 Remove((struct Node *)unit);
-                ReleaseSemaphore(&itask->dev->ul_semaphore);
+                ReleaseSemaphore(&itask->dev->ul_sem);
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }

@@ -75,20 +75,22 @@ struct IDEUnit {
 };
 
 struct DeviceBase {
-    struct Library   lib;
-    struct ExecBase  *SysBase;
-    struct Library   *ExpansionBase;
-    struct Task      *ChangeTask;
-    struct IDETask   *itask;
-    BPTR             saved_seg_list;
-    BOOL             is_open;
-    UBYTE            num_boards;
-    UBYTE            num_units;
-    struct MinList   units;
-    struct SignalSemaphore ul_semaphore;
+    struct Library         lib;
+    struct ExecBase        *SysBase;
+    struct Library         *ExpansionBase;
+    struct Task            *ChangeTask;
+    BPTR                   saved_seg_list;
+    BOOL                   is_open;
+    ULONG                  num_units;
+    ULONG                  highest_unit;
+    UBYTE                  num_tasks;
+    struct MinList         units;
+    struct SignalSemaphore ul_sem;
+    struct MinList         ide_tasks;
 };
 
 struct IDETask {
+    struct MinNode     mn_Node;
     struct Task        *task;
     struct DeviceBase  *dev;
     struct ConfigDev   *cd;
