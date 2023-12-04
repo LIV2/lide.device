@@ -37,13 +37,28 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
     BYTE status;
     asm volatile (
-        ".rep 4         \n\t"
+        ".rep 6         \n\t"
         "move.b (%1),%0 \n\t"
         ".endr          \n\t"
         : "=&d" (status)
         : "a" (unit->drive->status_command)
         : "d0"
     );
+}
+
+/**
+ * ata_save_error
+ * 
+ * Save the contents of the drive registers so that errors can be reported in sense data
+ * 
+*/
+static void ata_save_error(struct IDEUnit *unit) {
+    unit->last_error[0] = unit->drive->error_features[0];
+    unit->last_error[1] = unit->drive->lbaHigh[0];
+    unit->last_error[2] = unit->drive->lbaMid[0];
+    unit->last_error[3] = unit->drive->lbaLow[0];
+    unit->last_error[4] = unit->drive->status_command[0];
+    unit->last_error[5] = unit->drive->devHead[0];
 }
 
 /**
@@ -194,11 +209,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
         Warn("ATA: IDENTIFY Status: Error\n");
         Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
         // Save error information
-        unit->last_error[0] = *unit->drive->error_features;
-        unit->last_error[1] = *unit->drive->lbaHigh;
-        unit->last_error[2] = *unit->drive->lbaMid;
-        unit->last_error[3] = *unit->drive->lbaLow;
-        unit->last_error[4] = *unit->drive->status_command;
+        ata_save_error(unit);
         return false;
     }
 
@@ -432,8 +443,11 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
     ata_select(unit,drvSel,true);
 
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+        ata_save_error(unit);
         return HFERR_SelTimeout;
+
+    }
 
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
@@ -452,22 +466,20 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0)
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0) {
+            ata_save_error(unit);
             return error;
+        }
 
         while (txn_count) {
             if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
-                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+                ata_save_error(unit);
                 return IOERR_UNITBUSY;
+            }
 
             if (ata_check_error(unit)) {
-                unit->last_error[0] = unit->drive->error_features[0];
-                unit->last_error[1] = unit->drive->lbaHigh[0];
-                unit->last_error[2] = unit->drive->lbaMid[0];
-                unit->last_error[3] = unit->drive->lbaLow[0];
-                unit->last_error[4] = unit->drive->status_command[0];
-                unit->last_error[5] = unit->drive->devHead[0];
-
+                ata_save_error(unit);
                 Warn("ATA ERROR!!!\n");
                 Warn("last_error: %08lx\n",unit->last_error);
                 Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
@@ -526,8 +538,10 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
     ata_select(unit,drvSel,true);
 
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+        ata_save_error(unit);
         return HFERR_SelTimeout;
+    }
 
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
@@ -546,22 +560,20 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0)
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0) {
+            ata_save_error(unit);
             return error;
+        }
 
         while (txn_count) {
             if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
-                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT))
+                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+                ata_save_error(unit);
                 return IOERR_UNITBUSY;
+            }
  
             if (ata_check_error(unit)) {
-                unit->last_error[0] = unit->drive->error_features[0];
-                unit->last_error[1] = unit->drive->lbaHigh[0];
-                unit->last_error[2] = unit->drive->lbaMid[0];
-                unit->last_error[3] = unit->drive->lbaLow[0];
-                unit->last_error[4] = unit->drive->status_command[0];
-                unit->last_error[5] = unit->drive->devHead[0];
-
+                ata_save_error(unit);
                 Warn("ATA ERROR!!!\n");
                 Warn("last_error: %08lx\n",unit->last_error);
                 Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
