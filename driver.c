@@ -168,9 +168,9 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
     struct IDEUnit *unit;
 
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_semaphore);
+        ObtainSemaphoreShared(&dev->ul_sem);
     } else {
-        ObtainSemaphore(&dev->ul_semaphore);
+        ObtainSemaphore(&dev->ul_sem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -182,7 +182,7 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
             }
          }
 
-    ReleaseSemaphore(&dev->ul_semaphore);
+    ReleaseSemaphore(&dev->ul_sem);
 
     if (!found) return false;
 
@@ -203,9 +203,9 @@ static void Cleanup(struct DeviceBase *dev) {
     struct IDEUnit *unit;
     
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_semaphore);
+        ObtainSemaphoreShared(&dev->ul_sem);
     } else {
-        ObtainSemaphore(&dev->ul_semaphore);
+        ObtainSemaphore(&dev->ul_sem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -215,10 +215,19 @@ static void Cleanup(struct DeviceBase *dev) {
             unit->cd->cd_Flags |= CDF_CONFIGME;
         }
 
-    ReleaseSemaphore(&dev->ul_semaphore);
+    ReleaseSemaphore(&dev->ul_sem);
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
-    if (dev->itask) FreeMem(dev->itask,sizeof(struct IDETask));
+
+    struct IDETask *itask;
+
+    for (itask = (struct IDETask *)dev->ide_tasks.mlh_Head;
+         itask->mn_Node.mln_Succ != NULL;
+         itask = (struct IDETask *)itask->mn_Node.mln_Succ)
+    {
+        FreeMem(itask,sizeof(struct IDETask));
+    }
+
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
@@ -236,6 +245,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     char *devName;
 
+    UBYTE num_boards = 0;
+
     if (!(devName = set_dev_name(dev))) return NULL;
     /* save pointer to our loaded code (the SegList) */
     dev->saved_seg_list       = seg_list;
@@ -247,10 +258,13 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->lib.lib_IdString     = (APTR)device_id_string;
 
     dev->is_open       = FALSE;
-    dev->num_boards    = 0;
     dev->num_units     = 0;
+    dev->num_tasks     = 0;
     
-    InitSemaphore(&dev->ul_semaphore);
+    NewList((struct List *)&dev->units);
+    InitSemaphore(&dev->ul_sem);
+
+    NewList((struct List *)&dev->ide_tasks);
 
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
@@ -267,59 +281,70 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     }
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
+    struct IDETask *itask;
 
-    if (!cd) {
-        Cleanup(dev);
-        return NULL;
-    }
+    // Add an IDE Task for each board
+    // When loaded from Autoconfig ROM this will still only attach to one board.
+    // If the driver is loaded by BindDrivers though then this should attach to multiple boards.
+    for (cd = cb.cb_ConfigDev; cd != NULL; cd = cd->cd_NextCD) {
 
-    if (!(cd->cd_Flags & CDF_CONFIGME)) {
-        Cleanup(dev);
-        return NULL;
-    }
-
-    Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-    cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
-
-    Trace("Start the Task\n");
-
-    dev->itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
-
-    if (dev->itask == NULL) {
-        Info("Couldn't allocate memory\n");
-        Cleanup(dev);
-        return NULL;
-    }
-
-    dev->itask->dev     = dev;
-    dev->itask->cd      = cd;
-    dev->itask->taskNum = 0;
-
-    NewList((struct List *)&dev->units);
-
-    // Start the IDE Task
-    dev->itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,dev->itask);
-    if (!dev->itask->task) {
-        Info("IDE Task failed\n");
-        Cleanup(dev);
-        return NULL;
-    } else {
-        Trace("Task created!, waiting for init\n");
-    }
-
-    // Wait for task to init
-    while (dev->itask->active == false) {
-            // If dev->itask->task has been set to NULL it means the task exited
-            if (dev->itask->task == NULL) {
-            Info("IDE Task exited.\n");
-            Cleanup(dev);
-            return NULL;
+        if (!cd) {
+            break;
         }
+
+        if (!(cd->cd_Flags & CDF_CONFIGME)) {
+            continue;
+        }
+
+        Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+        cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
+        
+        num_boards++;
+
+        Trace("Starting IDE Task %ld\n",num_boards);
+
+        itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+
+        if (itask == NULL) {
+            Info("Couldn't allocate memory\n");
+            break;
+        }
+
+        itask->dev     = dev;
+        itask->cd      = cd;
+        itask->taskNum = dev->num_tasks;
+
+        // Start the IDE Task
+        itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
+        if (itask->task == NULL) {
+            Info("IDE Task %ld failed\n",itask->taskNum);
+                continue;
+        } else {
+            Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
+        }
+
+        // Wait for task to init
+        while (itask->active == false) {
+                // If dev->itask->task has been set to NULL it means the task exited
+                if (itask->task == NULL) {
+                Info("IDE Task %ld exited.\n",itask->taskNum);
+                continue;
+            }
+        }
+
+        // Add the task to the list
+        AddTail((struct List *)&dev->ide_tasks,(struct Node *)&itask->mn_Node);
+        dev->num_tasks++;
+    }
+
+    Info("Detected %ld drives, %ld boards\n",dev->num_units, num_boards);
+
+    if (num_boards == 0) {
+        Cleanup(dev);
+        return NULL;
     }
 
     dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
-
-    Info("Detected %ld drives, %ld boards\n",dev->num_units, dev->num_boards);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;
@@ -386,29 +411,21 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
-    UBYTE lun = unitnum / 10;
-    unitnum = (unitnum % 10);
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
     bool found = false;
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
-    if (lun != 0) {
-        // No LUNs for IDE drives
-        error = TDERR_BadUnitNum;
-        goto exit;
-    }
-
-    if (unitnum >= MAX_UNITS) {
+    if (unitnum > dev->highest_unit) {
         error = IOERR_OPENFAIL;
         goto exit;
     }
 
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_semaphore);
+        ObtainSemaphoreShared(&dev->ul_sem);
     } else {
-        ObtainSemaphore(&dev->ul_semaphore);
+        ObtainSemaphore(&dev->ul_sem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -421,7 +438,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
             }
         }
 
-    ReleaseSemaphore(&dev->ul_semaphore);
+    ReleaseSemaphore(&dev->ul_sem);
 
     if (found == false || unit->present == false) {
         error = TDERR_BadUnitNum;
@@ -787,9 +804,9 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         struct IDEUnit *unit;
 
         if (SysBase->SoftVer >= 36) {
-            ObtainSemaphoreShared(&mydev->ul_semaphore);
+            ObtainSemaphoreShared(&mydev->ul_sem);
         } else {
-            ObtainSemaphore(&mydev->ul_semaphore);
+            ObtainSemaphore(&mydev->ul_sem);
         }
 
         for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
@@ -807,7 +824,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                 *idx += 1;
             }
         }
-        ReleaseSemaphore(&mydev->ul_semaphore);
+        ReleaseSemaphore(&mydev->ul_sem);
         if (ms->numUnits > 0) {
             MountDrive(ms);
         }

@@ -4,7 +4,7 @@
  */
 #define TASK_NAME "idetask"
 #define TASK_PRIORITY 11
-#define TASK_STACK_SIZE 65535
+#define TASK_STACK_SIZE 16384
 
 #define CHANGEINT_INTERVAL 2 // Poll units every x seconds for disk change
 
