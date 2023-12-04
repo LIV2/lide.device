@@ -463,6 +463,14 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     }
 }
 
+/**
+ * init_units
+ * 
+ * Initialize the IDE Drives and add them to the dev->units list
+ * 
+ * @param itask Pointer to an IDETask struct
+ * @returns number of drives foun
+*/
 static BYTE init_units(struct IDETask *itask) {
     BYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
@@ -529,6 +537,11 @@ static BYTE init_units(struct IDETask *itask) {
     return num_units;
 }
 
+/** 
+ * cleanup
+ * 
+ * Clean up after the task, freeing resources etc back to the system
+*/
 static void cleanup(struct IDETask *itask) {
     DeletePort(itask->iomp);
     if (itask->tr) {
