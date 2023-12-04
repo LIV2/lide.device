@@ -67,7 +67,9 @@ The release of the open source at_apollo_device inspired me to work on this.
 It is based on [jbilander](https://github.com/jbilander)'s [SimpleDevice](https://github.com/jbilander/SimpleDevice) skeleton.  
 
 Thanks to [Stefan Reinauer](https://github.com/reinauer) and [Chris Hooper](https://github.com/cdhooper) for the [Open Source A4091 Driver](https://github.com/a4091/a4091-software/) which has also been a good source of inspiration for this project.  
-Chris' [devtest](https://github.com/cdhooper/amiga_devtest) has also been very helpful for testing the driver.
+Chris' [devtest](https://github.com/cdhooper/amiga_devtest) has also been very helpful for testing the driver.  
+Thanks to [Olaf Barthel](https://github.com/obarthel) for providing code and valuable advice to improve the driver.
+
 
 ## Third-party notice
 reloc.S is adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright Stefan Reinauer  
