@@ -295,7 +295,7 @@ static BOOL readblock(UBYTE *buf, ULONG block, ULONG id, struct MountData *md)
 	UWORD i;
 
 	request->iotd_Req.io_Command = CMD_READ;
-	request->iotd_Req.io_Offset = block << 9;
+	request->iotd_Req.io_Offset = (block * md->blocksize);
 	request->iotd_Req.io_Data = buf;
 	request->iotd_Req.io_Length = md->blocksize;
 	for (i = 0; i < MAX_RETRIES; i++) {
