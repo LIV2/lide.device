@@ -360,7 +360,7 @@ void __attribute__((noreturn)) diskchange_task () {
              unit->mn_Node.mln_Succ != NULL;
              unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
         {
-            if (unit->present && unit->atapi && (unit->open_count > 0)) {
+            if (unit->present && unit->atapi) {
                 Trace("Testing unit %ld\n",unit->unitNum);
                 ioreq->io_Unit = (struct Unit *)unit;
 
