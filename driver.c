@@ -518,9 +518,6 @@ static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6")
 
         if (unit->open_count > 0) unit->open_count--;
 
-        if (unit->open_count == 0 && unit->atapi) {
-            atapi_update_presence(unit,false);
-        }
         if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
             return expunge(dev);
 
