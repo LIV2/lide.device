@@ -35,14 +35,13 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param unit Pointer to an IDEUnit struct
 */
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
-    BYTE status;
     asm volatile (
-        ".rep 6         \n\t"
-        "move.b (%1),%0 \n\t"
-        ".endr          \n\t"
-        : "=&d" (status)
+        ".rep 4     \n\t"
+        "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
+        ".endr      \n\t"
+        :
         : "a" (unit->drive->status_command)
-        : "d0"
+        :
     );
 }
 
@@ -173,7 +172,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     *unit->drive->devHead = select;
 
     if (changed && wait) {
-        wait_us(unit->itask->tr,5);
+        wait_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_status_reg_delay
         ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
     }
 
@@ -642,13 +641,14 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     UBYTE head     = ((lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
     UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
 
-    BYTE drvSelHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
-
-    ata_select(unit,drvSelHead,false);
+    BYTE devHead;
+    
+    *unit->shadowDevHead = devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
+    *unit->drive->devHead        = devHead;
     *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
     *unit->drive->lbaLow         = (UBYTE)(sector);
     *unit->drive->lbaMid         = (UBYTE)(cylinder);
@@ -665,12 +665,13 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param lba  Pointer to the LBA variable
 */
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
-    BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+    BYTE devHead;
+    *unit->shadowDevHead = devHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
-    ata_select(unit,drvSelHead,false);
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
+    *unit->drive->devHead        = devHead;
     *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
     *unit->drive->lbaLow         = (UBYTE)(lba);
     *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
