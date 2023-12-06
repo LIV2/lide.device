@@ -1,3 +1,4 @@
 *.device
 *.rom
 build/**
+**/.DS_Store
