@@ -339,7 +339,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     Info("Detected %ld drives, %ld boards\n",dev->num_units, num_boards);
 
-    if (num_boards == 0) {
+    if (dev->num_tasks == 0) {
         Cleanup(dev);
         return NULL;
     }
