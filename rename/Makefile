@@ -13,4 +13,4 @@ renamelide: $(SRCS)
 	${CC} -o $@ $(CFLAGS) $(SRCS)
 
 clean:
-	-rm $(PROJECT)
+	-rm -rf $(PROJECT)

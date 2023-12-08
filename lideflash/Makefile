@@ -16,4 +16,4 @@ lideflash: $(SRCS) *.h
 	${CC} -o $@ $(CFLAGS) $(SRCS)
 
 clean:
-	-rm $(PROJECT)
+	-rm -rf $(PROJECT)
