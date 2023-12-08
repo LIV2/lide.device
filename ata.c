@@ -36,7 +36,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 */
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
     asm volatile (
-        ".rep 4     \n\t"
+        ".rep 6     \n\t"
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
         ".endr      \n\t"
         :
