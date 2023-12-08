@@ -643,11 +643,12 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 
     BYTE devHead;
     
-    *unit->shadowDevHead = devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
-
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
+    devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
+    
+    *unit->shadowDevHead         = devHead;
     *unit->drive->devHead        = devHead;
     *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
     *unit->drive->lbaLow         = (UBYTE)(sector);
@@ -666,11 +667,13 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 */
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
     BYTE devHead;
-    *unit->shadowDevHead = devHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
+    devHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+
+    *unit->shadowDevHead         = devHead;
     *unit->drive->devHead        = devHead;
     *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
     *unit->drive->lbaLow         = (UBYTE)(lba);
