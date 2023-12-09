@@ -528,6 +528,7 @@ static BYTE init_units(struct IDETask *itask) {
 
             } else {
                 // Clear this to skip the pre-select BSY wait later
+                if (i % 2 == 0) i++;
                 *unit->shadowDevHead = 0;
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
