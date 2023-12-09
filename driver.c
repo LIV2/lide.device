@@ -318,7 +318,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
         if (itask->task == NULL) {
             Info("IDE Task %ld failed\n",itask->taskNum);
-                continue;
+                goto skip;
         } else {
             Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
         }
@@ -326,18 +326,20 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         // Wait for task to init
         while (itask->active == false) {
                 // If dev->itask->task has been set to NULL it means the task exited
-                if (itask->task == NULL) {
-                Info("IDE Task %ld exited.\n",itask->taskNum);
-                continue;
-            }
+                if (((volatile struct IDETask *)itask)->task == NULL) {
+                    Info("IDE Task %ld exited.\n",itask->taskNum);
+                    goto skip;
+                }
         }
 
         // Add the task to the list
         AddTail((struct List *)&dev->ide_tasks,(struct Node *)&itask->mn_Node);
         dev->num_tasks++;
+
+skip:;
     }
 
-    Info("Detected %ld drives, %ld boards\n",dev->num_units, num_boards);
+    Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->num_units, num_boards);
 
     if (dev->num_tasks == 0) {
         Cleanup(dev);

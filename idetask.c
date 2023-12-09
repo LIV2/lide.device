@@ -544,7 +544,9 @@ static BYTE init_units(struct IDETask *itask) {
  * Clean up after the task, freeing resources etc back to the system
 */
 static void cleanup(struct IDETask *itask) {
-    DeletePort(itask->iomp);
+    if (itask->iomp)
+        DeletePort(itask->iomp);
+
     if (itask->tr) {
         if (itask->tr->tr_node.io_Device)
             CloseDevice((struct IORequest *)itask->tr);
