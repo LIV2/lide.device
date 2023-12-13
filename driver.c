@@ -232,6 +232,58 @@ static void Cleanup(struct DeviceBase *dev) {
 }
 
 /**
+ * detectChannels
+ * 
+ * Detect how many IDE Channels this board has
+ * @param cd Pointer to the ConfigDev struct for this board
+ * @returns number of channels
+*/
+static BYTE detectChannels(struct ConfigDev *cd) {
+    UBYTE *drvsel = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
+
+    *drvsel = 0xE0; // Select the primary drive + poke IDE to turn off ROM
+
+    if (cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID || cd->cd_Rom.er_Manufacturer == A1K_MANUF_ID) {
+        // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
+        // Not a problem in single channel mode - the drive registers there only use the upper byte
+        // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
+        //
+        // Check for the ROM Footer
+        // On the AT-Bus 2008 clone it will still be there
+        // On a Matze TK the ROM goes away and the board can do 2 channels
+        ULONG signature = 0;
+        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8;
+        
+        if (cd->cd_Rom.er_InitDiagVec & 1 ||      // If the board has an odd offset then add it
+            cd->cd_Rom.er_InitDiagVec == 0x100) { // WinUAE AT-Bus 2008 has DiagVec @ 0x100 but Driver is on odd offset
+                romFooter++;
+            }
+
+        for (int i=0; i<4; i++) {
+            signature <<= 8;
+            signature |= *romFooter;
+            romFooter += 2;
+        }
+
+        if (signature == 'LIDE') {
+            Info("Channel detection: Saw ROM footer - assuming AT-Bus single channel mode\n");
+            return 1;
+        }
+    }
+
+    // Detect if there are 1 or 2 IDE channels on this board 
+    // 2 channel boards use the CS2 decode for the second channel 
+    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
+    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
+
+    if (*status == *alt_status) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+/**
  * init_device
  *
  * Scan for drives and initialize the driver if any are found
@@ -282,6 +334,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     struct ConfigDev *cd = cb.cb_ConfigDev;
     struct IDETask *itask;
+    struct Task *self = FindTask(NULL);
 
     // Add an IDE Task for each board
     // When loaded from Autoconfig ROM this will still only attach to one board.
@@ -301,42 +354,49 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         
         num_boards++;
 
-        Trace("Starting IDE Task %ld\n",num_boards);
+        UBYTE channels = detectChannels(cd);
 
-        itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+        for (int c=0; c < channels; c++) {
 
-        if (itask == NULL) {
-            Info("Couldn't allocate memory\n");
-            break;
+            Trace("Starting IDE Task %ld\n",num_boards);
+
+            itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+
+            if (itask == NULL) {
+                Info("Couldn't allocate memory\n");
+                break;
+            }
+
+            itask->dev     = dev;
+            itask->cd      = cd;
+            itask->channel = c;
+            itask->taskNum = dev->num_tasks;
+            itask->parent  = self;
+
+            SetSignal(0,SIGF_SINGLE);
+
+            // Start the IDE Task
+            itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
+            if (itask->task == NULL) {
+                Info("IDE Task %ld failed\n",itask->taskNum);
+                    continue;
+            } else {
+                Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
+            }
+
+            // Wait for task to init
+            Wait(SIGF_SINGLE);
+
+            // If dev->itask->task has been set to NULL it means the task exited
+            if (((volatile struct IDETask *)itask)->task == NULL) {
+                Info("IDE Task %ld exited.\n",itask->taskNum);
+                continue;
+            }
+
+            // Add the task to the list
+            AddTail((struct List *)&dev->ide_tasks,(struct Node *)&itask->mn_Node);
+            dev->num_tasks++;
         }
-
-        itask->dev     = dev;
-        itask->cd      = cd;
-        itask->taskNum = dev->num_tasks;
-
-        // Start the IDE Task
-        itask->task = L_CreateTask(dev->lib.lib_Node.ln_Name,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
-        if (itask->task == NULL) {
-            Info("IDE Task %ld failed\n",itask->taskNum);
-                goto skip;
-        } else {
-            Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
-        }
-
-        // Wait for task to init
-        while (itask->active == false) {
-                // If dev->itask->task has been set to NULL it means the task exited
-                if (((volatile struct IDETask *)itask)->task == NULL) {
-                    Info("IDE Task %ld exited.\n",itask->taskNum);
-                    goto skip;
-                }
-        }
-
-        // Add the task to the list
-        AddTail((struct List *)&dev->ide_tasks,(struct Node *)&itask->mn_Node);
-        dev->num_tasks++;
-
-skip:;
     }
 
     Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->num_units, num_boards);
@@ -346,7 +406,7 @@ skip:;
         return NULL;
     }
 
-    dev->ChangeTask = L_CreateTask(dev->lib.lib_Node.ln_Name,0,diskchange_task,TASK_STACK_SIZE,dev);
+    dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;

@@ -2,9 +2,10 @@
 /* This file is part of lide.device
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
-#define TASK_NAME "idetask"
+#define ATA_TASK_NAME    "lide ata task"
+#define CHANGE_TASK_NAME "lide change task"
 #define TASK_PRIORITY 11
-#define TASK_STACK_SIZE 16384
+#define TASK_STACK_SIZE 8192
 
 #define CHANGEINT_INTERVAL 2 // Poll units every x seconds for disk change
 

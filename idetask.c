@@ -410,59 +410,6 @@ die:
     while (1);
 }
 
-
-/**
- * detectChannels
- * 
- * Detect how many IDE Channels this board has
- * @param cd Pointer to the ConfigDev struct for this board
- * @returns number of channels
-*/
-static BYTE detectChannels(struct ConfigDev *cd) {
-    UBYTE *drvsel = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
-
-    *drvsel = 0xE0; // Select the primary drive + poke IDE to turn off ROM
-
-    if (cd->cd_Rom.er_Manufacturer == BSC_MANUF_ID || cd->cd_Rom.er_Manufacturer == A1K_MANUF_ID) {
-        // On the AT-Bus 2008 (Clone) the ROM is selected on the lower byte when IDE_CS1 is asserted
-        // Not a problem in single channel mode - the drive registers there only use the upper byte
-        // If Status == Alt Status or it's an AT-Bus card then only one channel is supported.
-        //
-        // Check for the ROM Footer
-        // On the AT-Bus 2008 clone it will still be there
-        // On a Matze TK the ROM goes away and the board can do 2 channels
-        ULONG signature = 0;
-        char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8;
-        
-        if (cd->cd_Rom.er_InitDiagVec & 1 ||      // If the board has an odd offset then add it
-            cd->cd_Rom.er_InitDiagVec == 0x100) { // WinUAE AT-Bus 2008 has DiagVec @ 0x100 but Driver is on odd offset
-                romFooter++;
-            }
-
-        for (int i=0; i<4; i++) {
-            signature <<= 8;
-            signature |= *romFooter;
-            romFooter += 2;
-        }
-
-        if (signature == 'LIDE') {
-            Info("Channel detection: Saw ROM footer - assuming AT-Bus single channel mode\n");
-            return 1;
-        }
-    }
-
-    // Detect if there are 1 or 2 IDE channels on this board 
-    // 2 channel boards use the CS2 decode for the second channel 
-    UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-    UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
-
-    if (*status == *alt_status) {
-        return 1;
-    } else {
-        return 2;
-    }
-}
-
 /**
  * init_units
  * 
@@ -474,20 +421,17 @@ static BYTE detectChannels(struct ConfigDev *cd) {
 static BYTE init_units(struct IDETask *itask) {
     BYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
-    UBYTE channels = detectChannels(itask->cd);
-    Info("Channels: %ld\n",channels);
 
-
-    for (BYTE i=0; i < (2 * channels); i++) {
+    for (BYTE i=0; i < 2; i++) {
         struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
         if (unit != NULL) {
             // Setup each unit structure
             unit->itask             = itask;
-            unit->unitNum           = (i + (itask->taskNum << 2));
+            unit->unitNum           = (i + (itask->taskNum << 1));
             unit->SysBase           = SysBase;
             unit->cd                = itask->cd;
             unit->primary           = ((i%2) == 1) ? false : true;
-            unit->channel           = ((i%4) < 2) ? 0 : 1;
+            unit->channel           = itask->channel;
             unit->open_count        = 0;
             unit->change_count      = 1;
             unit->device_type       = DG_DIRECT_ACCESS;
@@ -497,7 +441,7 @@ static BYTE init_units(struct IDETask *itask) {
             unit->atapi             = false;
             unit->xfer_multiple     = false;
             unit->multiple_count    = 0;
-            unit->shadowDevHead     = &itask->shadowDevHeads[i>>1];
+            unit->shadowDevHead     = &itask->shadowDevHead;
             *unit->shadowDevHead    = 0;
 
             // This controls which transfer routine is selected for the device by ata_init_unit
@@ -572,6 +516,7 @@ static void cleanup(struct IDETask *itask) {
 
     itask->active = false;
     itask->task   = NULL;
+    Signal(itask->parent, SIGF_SINGLE);
 }
 
 /**
@@ -623,6 +568,7 @@ void __attribute__((noreturn)) ide_task () {
     }
 
     itask->active = true;
+    Signal(itask->parent,SIGF_SINGLE);
 
     while (1) {
         // Main loop, handle IO Requests as they come in.

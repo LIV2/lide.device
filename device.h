@@ -92,14 +92,16 @@ struct DeviceBase {
 struct IDETask {
     struct MinNode     mn_Node;
     struct Task        *task;
+    struct Task        *parent;
     struct DeviceBase  *dev;
     struct ConfigDev   *cd;
     struct MsgPort     *iomp;
     struct MsgPort     *timermp;
     struct timerequest *tr;
     volatile bool      active;
-    UBYTE              shadowDevHeads[MAX_UNITS/2];
+    UBYTE              shadowDevHead;
     UBYTE              taskNum;
+    UBYTE              channel;
 };
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
