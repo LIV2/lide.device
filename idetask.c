@@ -447,12 +447,10 @@ static BYTE init_units(struct IDETask *itask) {
             // This controls which transfer routine is selected for the device by ata_init_unit
             //
             // See ata_init_unit and device.h for more info
-            if (SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) {
+            if (SysBase->AttnFlags & (AFF_68040 | AFF_68060)) {
                 unit->xfer_method       = longword_move;
-                Info("Detected 68020 or higher, transfer mode set to move.l\n");
             } else {
                 unit->xfer_method       = longword_movem;
-                Info("Detected 68000/68010, transfer mode set to movem.l\n");
             }
 
             // Initialize the change int list
