@@ -11,6 +11,8 @@
 #define BSC_MANUF_ID  2092
 #define A1K_MANUF_ID  2588
 
+#define RIPPLE_PROD_ID 7
+
 #define MAX_UNITS 4
 
 enum xfer {
