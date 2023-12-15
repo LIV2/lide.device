@@ -36,7 +36,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 */
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
     asm volatile (
-        ".rep 6     \n\t"
+        ".rep 4     \n\t"
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
         ".endr      \n\t"
         :
@@ -69,7 +69,6 @@ static void ata_save_error(struct IDEUnit *unit) {
  * @returns True if error is indicated
 */
 static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit) {
-    ata_status_reg_delay(unit);
     return (*unit->drive->status_command & (ata_flag_error | ata_flag_df));
 }
 
@@ -83,8 +82,6 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
     Info("wait_drq enter\n");
-
-    ata_status_reg_delay(unit);
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
