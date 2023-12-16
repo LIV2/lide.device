@@ -64,6 +64,7 @@ struct IDEUnit {
     BOOL  mediumPresentPrev;
     BOOL  xfer_multiple;
     BOOL  lba;
+    BOOL  lba48;
     UWORD open_count;
     UWORD change_count;
     UWORD cylinders;

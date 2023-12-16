@@ -13,7 +13,7 @@
 ## Features
 * Autoboot
 * Works with Kickstart 1.3 and up
-* Supports up to 127GB drives
+* Supports up to 2TB drives
 * Supports ATAPI Devices (CD/DVD-ROM, Zip disk etc)
 * Boot from ZIP/LS-120 etc
 * [Boot from CD-ROM*](#boot-from-cdrom)

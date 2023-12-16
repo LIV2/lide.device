@@ -41,13 +41,15 @@
 
 #define ata_err_flag_aborted (1<<2)
 
-#define ATA_CMD_DEVICE_RESET   0x08
-#define ATA_CMD_IDENTIFY       0xEC
-#define ATA_CMD_READ           0x20
-#define ATA_CMD_READ_MULTIPLE  0xC4
-#define ATA_CMD_WRITE          0x30
-#define ATA_CMD_WRITE_MULTIPLE 0xC5
-#define ATA_CMD_SET_MULTIPLE   0xC6
+#define ATA_CMD_DEVICE_RESET       0x08
+#define ATA_CMD_IDENTIFY           0xEC
+#define ATA_CMD_READ               0x20
+#define ATA_CMD_READ_MULTIPLE      0xC4
+#define ATA_CMD_READ_MULTIPLE_EXT  0x29
+#define ATA_CMD_WRITE              0x30
+#define ATA_CMD_WRITE_MULTIPLE     0xC5
+#define ATA_CMD_WRITE_MULTIPLE_EXT 0x39
+#define ATA_CMD_SET_MULTIPLE       0xC6
 
 // Identify data word offsets
 #define ata_identify_cylinders       1
@@ -60,11 +62,13 @@
 #define ata_identify_capabilities    49
 #define ata_identify_logical_sectors 60
 #define ata_identify_pio_modes       64
-
+#define ata_identify_features        83
+#define ata_identify_lba48_sectors   100
 #define ataf_multiple (1<<8)
 
 #define ata_capability_lba (1<<9)
 #define ata_capability_dma (1<<8)
+#define ata_feature_lba48  (1<<10)
 
 enum xfer_dir {
     READ,

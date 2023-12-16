@@ -23,6 +23,7 @@
 #include "wait.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
 
 /**
@@ -309,9 +310,25 @@ bool ata_init_unit(struct IDEUnit *unit) {
             unit->multiple_count = 1;
         }
 
-        if (unit->lba == true) {
+        // Support LBA-48 but only up to 2TB
+        if (((*((UWORD *)buf + ata_identify_features) & ata_feature_lba48) != 0) && unit->logicalSectors >= 0xFFFFFFF) {
+            if (*((UWORD *)buf + ata_identify_lba48_sectors + 2) > 0 ||
+                *((UWORD *)buf + ata_identify_lba48_sectors + 3) > 0) {
+                Info("INIT: Rejecting drive larger than 2TB\n");
+                return false;
+            }
+
+            unit->lba48 = true;
+            Info("INIT: Drive supports LBA48 mode \n");
+            unit->logicalSectors = (*((UWORD *)buf + ata_identify_lba48_sectors + 1) << 16 | *((UWORD *)buf + ata_identify_lba48_sectors));
+            unit->write_taskfile = &write_taskfile_lba48;
+ 
+        } else if (unit->lba == true) {
+            // LBA-28 up to 127GB
             unit->write_taskfile = &write_taskfile_lba;
+ 
         } else {
+            // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
             unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
@@ -321,7 +338,12 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
         if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
 
-        if (unit->logicalSectors >= 16514064) {
+        if (unit->logicalSectors >= 267382800) { 
+            // For drives larger than 127GB fudge the geometry
+            unit->heads           = 63;
+            unit->sectorsPerTrack = 255;
+            unit->cylinders       = (unit->logicalSectors / (63*255));
+        } else if (unit->logicalSectors >= 16514064) {
             // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
             // In this case generate a new Cylinders value
             unit->heads = 16;
@@ -422,7 +444,13 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     UBYTE error = 0;
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
-    UBYTE command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
+    UBYTE command;
+    
+    if (unit->lba48) {
+        command = ATA_CMD_READ_MULTIPLE_EXT;
+    } else {
+        command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
+    } 
 
     if (count == 0) return TDERR_TooFewSecs;
 
@@ -517,7 +545,13 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
-    UBYTE command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
+    UBYTE command;
+    
+    if (unit->lba48) {
+        command = ATA_CMD_WRITE_MULTIPLE_EXT;
+    } else {
+        command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
+    }
 
     if (count == 0) return TDERR_TooFewSecs;
 
@@ -676,6 +710,30 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     *unit->drive->lbaLow         = (UBYTE)(lba);
     *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
     *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive->status_command = command;
+
+    return 0;
+}
+
+/**
+ * write_taskfile_lba48
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param lba  Pointer to the LBA variable
+*/
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return HFERR_SelTimeout;
+
+    *unit->drive->sectorCount    = (sectorCount == 0) ? 1 : 0;
+    *unit->drive->lbaHigh        = 0;
+    *unit->drive->lbaMid         = 0;
+    *unit->drive->lbaLow         = (UBYTE)(lba >> 24);
+    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
+    *unit->drive->lbaLow         = (UBYTE)(lba);
     *unit->drive->status_command = command;
 
     return 0;
