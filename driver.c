@@ -390,8 +390,8 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             // Wait for task to init
             Wait(SIGF_SINGLE);
 
-            // If dev->itask->task has been set to NULL it means the task exited
-            if (((volatile struct IDETask *)itask)->task == NULL) {
+            // If itask->active has been set to false it means the task exited
+            if (itask->active == false) {
                 Info("IDE Task %ld exited.\n",itask->taskNum);
                 continue;
             }
