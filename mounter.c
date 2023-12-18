@@ -919,8 +919,8 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 						CreateFakeConfigDev(md);
 					}
 #endif
-					AddNode(part, pp, dn, part->pb_DriveName + 1, md);
 				}
+				AddNode(part, pp, dn, part->pb_DriveName + 1, md);
 				md->ret++;
 			} else {
 				dbg("Device node creation failed\n");
