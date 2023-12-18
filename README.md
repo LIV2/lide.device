@@ -4,6 +4,7 @@
 * [Features](#features)
 * [Downloads](#downloads)
 * [Boot from CDROM](#boot-from-cdrom)
+* [Large drive (>4GB) support](#large-drive-4gb-support)
 * [Hardware Implementation](#hardware-implementation)
 * [Building / Development](#building--development)
 * [Acknowledgements](#acknowlegements)
@@ -13,7 +14,7 @@
 ## Features
 * Autoboot
 * Works with Kickstart 1.3 and up
-* Supports up to 2TB drives
+* [Supports up to 2TB drives*](#large-drive-4gb-support)
 * Supports ATAPI Devices (CD/DVD-ROM, Zip disk etc)
 * Boot from ZIP/LS-120 etc
 * [Boot from CD-ROM*](#boot-from-cdrom)
@@ -34,6 +35,18 @@ Booting from CDROM requires Kickstart 2 or higher and one of the following:
 2. BootCDFileSystem from OS 4 either:
     * Added to a custom Kickstart ROM **OR**
     * Loaded by LoadModule
+
+## Large drive (>4GB) support
+For drives larger than 4GB it is required to use a Filesystem that supports TD64, NSD or SCSI-Direct  
+The default FFS in OS 3.1 does **not** support these, and use of this above the 4GB boundary will result in data corruption!
+
+There are several options for larger drive support
+* [PFS3](https://aminet.net/package/disk/misc/pfs3aio)
+* SFS
+* FFS from AmigaOS 3.2, 3.9 etc
+* [FFSTD64](https://aminet.net/package/disk/misc/ffstd64)
+
+Also make sure to use the "Quick Format" option when formatting such partitions
 
 ## Hardware implementation
 * IDECS1 is asserted when A12 is low and the IDE device's base address is decoded
