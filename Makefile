@@ -82,7 +82,12 @@ disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool
 	                            write lideflash/lideflash lideflash + \
 	                            write rename/renamelide renamelide + \
 	                            makedir s + \
-	                            write $(BUILDDIR)/startup-sequence s/startup-sequence
+	                            write $(BUILDDIR)/startup-sequence s/startup-sequence + \
+	                            makedir Expansion + \
+	                            write info/Expansion.info Expansion.info + \
+	                            write info/lide.device.info Expansion/lide.device.info + \
+	                            write lide.device Expansion/lide.device
+
 
 $(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool
 	@mkdir -p $(BUILDDIR)
