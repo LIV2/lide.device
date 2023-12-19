@@ -239,7 +239,7 @@ static void Cleanup(struct DeviceBase *dev) {
  * @returns number of channels
 */
 static BYTE detectChannels(struct ConfigDev *cd) {
-    if ((cd->cd_Rom.er_Manufacturer = OAHR_MANUF_ID) && (cd->cd_Rom.er_Product == RIPPLE_PROD_ID))
+    if ((cd->cd_Rom.er_Manufacturer == OAHR_MANUF_ID) && (cd->cd_Rom.er_Product == RIPPLE_PROD_ID))
         return 2;
 
     UBYTE *drvsel = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_devHead;
