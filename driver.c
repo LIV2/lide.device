@@ -168,9 +168,9 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
     struct IDEUnit *unit;
 
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_sem);
+        ObtainSemaphoreShared(&dev->ulSem);
     } else {
-        ObtainSemaphore(&dev->ul_sem);
+        ObtainSemaphore(&dev->ulSem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -182,7 +182,7 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
             }
          }
 
-    ReleaseSemaphore(&dev->ul_sem);
+    ReleaseSemaphore(&dev->ulSem);
 
     if (!found) return false;
 
@@ -203,9 +203,9 @@ static void Cleanup(struct DeviceBase *dev) {
     struct IDEUnit *unit;
     
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_sem);
+        ObtainSemaphoreShared(&dev->ulSem);
     } else {
-        ObtainSemaphore(&dev->ul_sem);
+        ObtainSemaphore(&dev->ulSem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -215,13 +215,13 @@ static void Cleanup(struct DeviceBase *dev) {
             unit->cd->cd_Flags |= CDF_CONFIGME;
         }
 
-    ReleaseSemaphore(&dev->ul_sem);
+    ReleaseSemaphore(&dev->ulSem);
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
 
     struct IDETask *itask;
 
-    for (itask = (struct IDETask *)dev->ide_tasks.mlh_Head;
+    for (itask = (struct IDETask *)dev->ideTasks.mlh_Head;
          itask->mn_Node.mln_Succ != NULL;
          itask = (struct IDETask *)itask->mn_Node.mln_Succ)
     {
@@ -300,7 +300,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     char *devName;
 
-    UBYTE num_boards = 0;
+    UBYTE numBoards = 0;
 
     if (!(devName = set_dev_name(dev))) return NULL;
     /* save pointer to our loaded code (the SegList) */
@@ -312,14 +312,14 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->lib.lib_Revision     = DEVICE_REVISION;
     dev->lib.lib_IdString     = (APTR)device_id_string;
 
-    dev->is_open       = FALSE;
-    dev->num_units     = 0;
-    dev->num_tasks     = 0;
+    dev->isOpen        = FALSE;
+    dev->numUnits     = 0;
+    dev->numTasks     = 0;
     
     NewList((struct List *)&dev->units);
-    InitSemaphore(&dev->ul_sem);
+    InitSemaphore(&dev->ulSem);
 
-    NewList((struct List *)&dev->ide_tasks);
+    NewList((struct List *)&dev->ideTasks);
 
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
@@ -355,13 +355,13 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
         cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
         
-        num_boards++;
+        numBoards++;
 
         UBYTE channels = detectChannels(cd);
 
         for (int c=0; c < channels; c++) {
 
-            Trace("Starting IDE Task %ld\n",num_boards);
+            Trace("Starting IDE Task %ld\n",numBoards);
 
             itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
 
@@ -373,9 +373,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             itask->dev      = dev;
             itask->cd       = cd;
             itask->channel  = c;
-            itask->taskNum  = dev->num_tasks;
+            itask->taskNum  = dev->numTasks;
             itask->parent   = self;
-            itask->boardNum = (num_boards - 1);
+            itask->boardNum = (numBoards - 1);
 
             SetSignal(0,SIGF_SINGLE);
 
@@ -398,14 +398,14 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             }
 
             // Add the task to the list
-            AddTail((struct List *)&dev->ide_tasks,(struct Node *)&itask->mn_Node);
-            dev->num_tasks++;
+            AddTail((struct List *)&dev->ideTasks,(struct Node *)&itask->mn_Node);
+            dev->numTasks++;
         }
     }
 
-    Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->num_units, num_boards);
+    Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->numUnits, numBoards);
 
-    if (dev->num_tasks == 0) {
+    if (dev->numTasks == 0) {
         Cleanup(dev);
         return NULL;
     }
@@ -483,15 +483,15 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
-    if (unitnum > dev->highest_unit) {
+    if (unitnum > dev->highestUnit) {
         error = IOERR_OPENFAIL;
         goto exit;
     }
 
     if (SysBase->SoftVer >= 36) {
-        ObtainSemaphoreShared(&dev->ul_sem);
+        ObtainSemaphoreShared(&dev->ulSem);
     } else {
-        ObtainSemaphore(&dev->ul_sem);
+        ObtainSemaphore(&dev->ulSem);
     }
 
     for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -504,7 +504,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
             }
         }
 
-    ReleaseSemaphore(&dev->ul_sem);
+    ReleaseSemaphore(&dev->ulSem);
 
     if (found == false || unit->present == false) {
         error = TDERR_BadUnitNum;
@@ -523,15 +523,15 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
     // This will update the media presence & geometry
-    if (unit->atapi && unit->open_count == 0) direct_changestate(unit,dev);
+    if (unit->atapi && unit->openCount == 0) direct_changestate(unit,dev);
 
-    unit->open_count++;
+    unit->openCount++;
 
     dev->lib.lib_Flags &= ~LIBF_DELEXP;
 
-    if (!dev->is_open)
+    if (!dev->isOpen)
     {
-        dev->is_open = TRUE;
+        dev->isOpen = TRUE;
     }
 exit:
     if (error != 0) {
@@ -563,7 +563,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_Heads        = unit->heads;
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
-    geometry->dg_DeviceType   = unit->device_type;
+    geometry->dg_DeviceType   = unit->deviceType;
     geometry->dg_Flags        = (unit->atapi) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Actual = sizeof(struct DriveGeometry);
@@ -582,7 +582,7 @@ static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6")
 
         if (dev->lib.lib_OpenCnt) dev->lib.lib_OpenCnt--;
 
-        if (unit->open_count > 0) unit->open_count--;
+        if (unit->openCount > 0) unit->openCount--;
 
         if (dev->lib.lib_OpenCnt == 0 && (dev->lib.lib_Flags & LIBF_DELEXP))
             return expunge(dev);
@@ -675,12 +675,12 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 break;
 
             case TD_CHANGENUM:
-                ioreq->io_Actual = unit->change_count;
+                ioreq->io_Actual = unit->changeCount;
                 error            = 0;
                 break;
 
             case TD_GETDRIVETYPE:
-                ioreq->io_Actual = unit->device_type;
+                ioreq->io_Actual = unit->deviceType;
                 error            = 0;
                 break;
 
@@ -867,9 +867,9 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         struct IDEUnit *unit;
 
         if (SysBase->SoftVer >= 36) {
-            ObtainSemaphoreShared(&mydev->ul_sem);
+            ObtainSemaphoreShared(&mydev->ulSem);
         } else {
-            ObtainSemaphore(&mydev->ul_sem);
+            ObtainSemaphore(&mydev->ulSem);
         }
 
         for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
@@ -879,15 +879,15 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
             if (unit->present == true) {
 #if CDBOOT
                 // If CDFS not resident don't bother adding the CDROM to the mountlist
-                if (unit->device_type == DG_CDROM && !CDBoot) continue;
+                if (unit->deviceType == DG_CDROM && !CDBoot) continue;
 #endif
                 ms->Units[*idx].unitNum    = unit->unitNum;
-                ms->Units[*idx].deviceType = unit->device_type;
+                ms->Units[*idx].deviceType = unit->deviceType;
                 ms->Units[*idx].configDev  = unit->cd;
                 *idx += 1;
             }
         }
-        ReleaseSemaphore(&mydev->ul_sem);
+        ReleaseSemaphore(&mydev->ulSem);
         if (ms->numUnits > 0) {
             MountDrive(ms);
         }
