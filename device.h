@@ -46,7 +46,7 @@ struct IDEUnit {
     struct IDETask *itask;
     volatile struct Drive *drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
-    enum  xfer xfer_method;
+    enum  xfer xferMethod;
     void  (*read_fast)(void *, void *);
     void  (*write_fast)(void *, void *);
     void  (*read_unaligned)(void *, void *);
@@ -55,18 +55,18 @@ struct IDEUnit {
     volatile void  *changeInt;
     UBYTE unitNum;
     UBYTE channel;
-    UBYTE device_type;
+    UBYTE deviceType;
     UBYTE last_error[6];
     BOOL  primary;
     BOOL  present;
     BOOL  atapi;
     BOOL  mediumPresent;
     BOOL  mediumPresentPrev;
-    BOOL  xfer_multiple;
+    BOOL  xferMultiple;
     BOOL  lba;
     BOOL  lba48;
-    UWORD open_count;
-    UWORD change_count;
+    UWORD openCount;
+    UWORD changeCount;
     UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
@@ -74,7 +74,7 @@ struct IDEUnit {
     UWORD blockShift;
     ULONG logicalSectors;
     struct MinList changeInts;
-    UBYTE multiple_count;
+    UBYTE multipleCount;
 };
 
 struct DeviceBase {
@@ -83,13 +83,13 @@ struct DeviceBase {
     struct Library         *ExpansionBase;
     struct Task            *ChangeTask;
     BPTR                   saved_seg_list;
-    BOOL                   is_open;
-    ULONG                  num_units;
-    ULONG                  highest_unit;
-    UBYTE                  num_tasks;
+    BOOL                   isOpen;
+    ULONG                  numUnits;
+    ULONG                  highestUnit;
+    UBYTE                  numTasks;
     struct MinList         units;
-    struct SignalSemaphore ul_sem;
-    struct MinList         ide_tasks;
+    struct SignalSemaphore ulSem;
+    struct MinList         ideTasks;
 };
 
 struct IDETask {

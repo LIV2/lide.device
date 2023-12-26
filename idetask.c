@@ -32,7 +32,7 @@ static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command)
     struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
     BYTE error;
 
-    data->peripheral_type   = unit->device_type;
+    data->peripheral_type   = unit->deviceType;
     data->removable_media   = 0;
     data->version           = 2;
     data->response_format   = 2;
@@ -123,7 +123,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
     }
 
     UBYTE *data_length = data;   // Mode data length
-    data[1] = unit->device_type; // Mode parameter: Media type
+    data[1] = unit->deviceType; // Mode parameter: Media type
     data[2] = 0;                 // DPOFUA
     data[3] = 0;                 // Block descriptor length
 
@@ -351,9 +351,9 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Length = 0;
 
         if (SysBase->SoftVer >= 36) {
-            ObtainSemaphoreShared(&dev->ul_sem);
+            ObtainSemaphoreShared(&dev->ulSem);
         } else {
-            ObtainSemaphore(&dev->ul_sem);
+            ObtainSemaphore(&dev->ulSem);
         }
 
         for (unit = (struct IDEUnit *)dev->units.mlh_Head;
@@ -391,7 +391,7 @@ void __attribute__((noreturn)) diskchange_task () {
             }
         }
 
-        ReleaseSemaphore(&dev->ul_sem);
+        ReleaseSemaphore(&dev->ulSem);
 
         Trace("Wait...\n");
         wait(TimerReq,CHANGEINT_INTERVAL);
@@ -432,15 +432,15 @@ static BYTE init_units(struct IDETask *itask) {
             unit->cd                = itask->cd;
             unit->primary           = ((i%2) == 1) ? false : true;
             unit->channel           = itask->channel;
-            unit->open_count        = 0;
-            unit->change_count      = 1;
-            unit->device_type       = DG_DIRECT_ACCESS;
+            unit->openCount         = 0;
+            unit->changeCount       = 1;
+            unit->deviceType        = DG_DIRECT_ACCESS;
             unit->mediumPresent     = false;
             unit->mediumPresentPrev = false;
             unit->present           = false;
             unit->atapi             = false;
-            unit->xfer_multiple     = false;
-            unit->multiple_count    = 0;
+            unit->xferMultiple      = false;
+            unit->multipleCount     = 0;
             unit->shadowDevHead     = &itask->shadowDevHead;
             *unit->shadowDevHead    = 0;
 
@@ -448,9 +448,9 @@ static BYTE init_units(struct IDETask *itask) {
             //
             // See ata_init_unit and device.h for more info
             if (SysBase->AttnFlags & (AFF_68040 | AFF_68060)) {
-                unit->xfer_method       = longword_move;
+                unit->xferMethod = longword_move;
             } else {
-                unit->xfer_method       = longword_movem;
+                unit->xferMethod = longword_movem;
             }
 
             // Initialize the change int list
@@ -462,11 +462,11 @@ static BYTE init_units(struct IDETask *itask) {
 
             if (ata_init_unit(unit)) {
                 num_units++;
-                itask->dev->num_units++;
-                dev->highest_unit = unit->unitNum;
-                ObtainSemaphore(&dev->ul_sem);
+                itask->dev->numUnits++;
+                dev->highestUnit = unit->unitNum;
+                ObtainSemaphore(&dev->ulSem);
                 AddTail((struct List *)&dev->units,(struct Node *)unit);
-                ReleaseSemaphore(&dev->ul_sem);
+                ReleaseSemaphore(&dev->ulSem);
 
             } else {
                 // Clear this to skip the pre-select BSY wait later
@@ -503,9 +503,9 @@ static void cleanup(struct IDETask *itask) {
          unit->mn_Node.mln_Succ != NULL;
          unit =  (struct IDEUnit *)unit->mn_Node.mln_Succ) {
             if (unit->itask == itask) {
-                ObtainSemaphore(&itask->dev->ul_sem);
+                ObtainSemaphore(&itask->dev->ulSem);
                 Remove((struct Node *)unit);
-                ReleaseSemaphore(&itask->dev->ul_sem);
+                ReleaseSemaphore(&itask->dev->ulSem);
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }
@@ -626,7 +626,7 @@ void __attribute__((noreturn)) ide_task () {
                 case NSCMD_ETD_FORMAT64:
                     direction = WRITE;
 validate_etd:
-                    if (iotd->iotd_Count < unit->change_count) {
+                    if (iotd->iotd_Count < unit->changeCount) {
                         error  = TDERR_DiskChanged;
                         break;
                     } else {

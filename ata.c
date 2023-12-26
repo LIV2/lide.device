@@ -261,7 +261,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->present         = false;
     unit->mediumPresent   = false;
 
-    ata_set_xfer(unit,unit->xfer_method);
+    ata_set_xfer(unit,unit->xferMethod);
 
     ULONG offset;
     UWORD *buf;
@@ -301,13 +301,13 @@ bool ata_init_unit(struct IDEUnit *unit) {
         unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
         unit->blockShift      = 0;
         unit->mediumPresent   = true;
-        unit->multiple_count  = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
+        unit->multipleCount   = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
 
-        if (unit->multiple_count > 0 && (ata_set_multiple(unit,unit->multiple_count) == 0)) {
-            unit->xfer_multiple = true;
+        if (unit->multipleCount > 0 && (ata_set_multiple(unit,unit->multipleCount) == 0)) {
+            unit->xferMultiple = true;
         } else {
-            unit->xfer_multiple = false;
-            unit->multiple_count = 1;
+            unit->xferMultiple = false;
+            unit->multipleCount = 1;
         }
 
         // Support LBA-48 but only up to 2TB
@@ -360,7 +360,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
         if (atapi_identify(unit,buf) && (buf[0] & 0xC000) == 0x8000) {
             Info("INIT: ATAPI Drive found!\n");
 
-                unit->device_type     = (buf[0] >> 8) & 0x1F;
+                unit->deviceType      = (buf[0] >> 8) & 0x1F;
                 unit->atapi           = true;
         } else {
 ident_failed:
@@ -449,7 +449,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     if (unit->lba48) {
         command = ATA_CMD_READ_MULTIPLE_EXT;
     } else {
-        command = (unit->xfer_multiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
+        command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     } 
 
     if (count == 0) return TDERR_TooFewSecs;
@@ -511,7 +511,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multiple_count && txn_count; i++) {
+            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_read((void *)unit->drive->data,buffer);
                 lba++;
                 txn_count--;
@@ -550,7 +550,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
     if (unit->lba48) {
         command = ATA_CMD_WRITE_MULTIPLE_EXT;
     } else {
-        command = (unit->xfer_multiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
+        command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
 
     if (count == 0) return TDERR_TooFewSecs;
@@ -611,7 +611,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multiple_count && txn_count; i++) {
+            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_write(buffer,(void *)unit->drive->data);
                 lba++;
                 txn_count--;

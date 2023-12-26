@@ -886,12 +886,12 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 bool atapi_update_presence(struct IDEUnit *unit, bool present) {
     bool ret = false;
     if (present && unit->mediumPresent == false) {
-        unit->change_count++;
+        unit->changeCount++;
         unit->mediumPresent = true;
         atapi_get_capacity(unit);
         ret = true;
     } else if (!present && unit->mediumPresent == true) {
-        unit->change_count++;
+        unit->changeCount++;
         unit->mediumPresent  = false;
         unit->logicalSectors = 0;
         unit->blockShift     = 0;
