@@ -103,6 +103,7 @@ struct IDETask {
     struct timerequest *tr;
     volatile bool      active;
     UBYTE              shadowDevHead;
+    UBYTE              boardNum;
     UBYTE              taskNum;
     UBYTE              channel;
 };

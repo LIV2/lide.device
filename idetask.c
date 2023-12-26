@@ -419,15 +419,15 @@ die:
  * @returns number of drives foun
 */
 static BYTE init_units(struct IDETask *itask) {
-    BYTE num_units = 0;
+    UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
-
+    
     for (BYTE i=0; i < 2; i++) {
         struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
         if (unit != NULL) {
             // Setup each unit structure
             unit->itask             = itask;
-            unit->unitNum           = (i + (itask->taskNum << 1));
+            unit->unitNum           = ((itask->boardNum * 4) + (itask->channel << 1) + i);
             unit->SysBase           = SysBase;
             unit->cd                = itask->cd;
             unit->primary           = ((i%2) == 1) ? false : true;

@@ -370,11 +370,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 break;
             }
 
-            itask->dev     = dev;
-            itask->cd      = cd;
-            itask->channel = c;
-            itask->taskNum = dev->num_tasks;
-            itask->parent  = self;
+            itask->dev      = dev;
+            itask->cd       = cd;
+            itask->channel  = c;
+            itask->taskNum  = dev->num_tasks;
+            itask->parent   = self;
+            itask->boardNum = (num_boards - 1);
 
             SetSignal(0,SIGF_SINGLE);
 
