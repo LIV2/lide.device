@@ -414,14 +414,27 @@ static APTR fsrelocate(struct MountData *md)
 	if (data != HUNK_HEADER) {
 		return NULL;
 	}
-	// skip first two longs
-	lseg_read_long(md, &firstHunk);
-	lseg_read_long(md, &firstHunk);
-	firstHunk = lastHunk = -1;
+	// Read the size of a resident library name. This should
+	// never be != 0.
+	if (!lseg_read_long(md, &data) || data != 0) {
+		return NULL;
+	}
+	// Read the size of the hunk table, which should be > 0.
+	// Note that this number may be larger than the
+	// difference between the last and the first hunk + 1 for
+	// overlay binary files. But then this function does not
+	// support overlay binary files.
+	if (!lseg_read_long(md, &data) || data <= 0) {
+		return NULL;
+	}
 	// first hunk
-	lseg_read_long(md, &firstHunk);
+	if (!lseg_read_long(md, &firstHunk)) {
+		return NULL;
+	}
 	// last hunk
-	lseg_read_long(md, &lastHunk);
+	if (!lseg_read_long(md, &lastHunk)) {
+		return NULL;
+	}
 	if (firstHunk < 0 || lastHunk < 0 || firstHunk > lastHunk) {
 		return NULL;
 	}
@@ -654,7 +667,10 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 				ULONG *srcPatch = &fshb->fhb_Type;
 				ULONG patchFlags = fshb->fhb_PatchFlags;
 				while (patchFlags) {
-					*dstPatch++ = *srcPatch++;
+					if ((patchFlags & 1) != 0)
+						*dstPatch = *srcPatch;
+					dstPatch++;
+					srcPatch++;
 					patchFlags >>= 1;
 				}
 				fse->fse_DosType = fshb->fhb_DosType;
@@ -803,7 +819,7 @@ static void CheckAndFixDevName(struct MountData *md, UBYTE *bname)
 		struct DeviceNode *dn = bn->bn_DeviceNode;
 		const UBYTE *bname2 = BADDR(dn->dn_Name);
 		if (CompareBSTRNoCase(bname, bname2)) {
-			UBYTE len = bname[0];
+			UBYTE len = bname[0] > 30 ? 30 : bname[0];
 			UBYTE *name = bname + 1;
 			dbg("Duplicate device name '%s'\n", name);
 			if (len > 2 && name[len - 2] == '.' && name[len - 1] >= '0' && name[len - 1] < '9') {
@@ -890,12 +906,14 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 	if (!(part->pb_Flags & PBFF_NOMOUNT)) {
 		struct ParameterPacket *pp = AllocMem(sizeof(struct ParameterPacket), MEMF_PUBLIC | MEMF_CLEAR);
 		if (pp) {
+			UBYTE len;
 			copymem(&pp->de, &part->pb_Environment, (part->pb_Environment[0] + 1) * sizeof(ULONG));
 			struct FileSysEntry *fse = ParseFSHD(buf + md->blocksize, filesysblock, pp->de.de_DosType, md);
 			pp->execname = md->devicename;
 			pp->unitnum = md->unitnum;
 			pp->dosname = part->pb_DriveName + 1;
-			part->pb_DriveName[(*part->pb_DriveName) + 1] = 0;
+			len=(*part->pb_DriveName) > 30 ? 30 : (*part->pb_DriveName);
+			part->pb_DriveName[len + 1] = 0;
 			dbg("PART '%s'\n", pp->dosname);
 			CheckAndFixDevName(md, part->pb_DriveName);
 			struct DeviceNode *dn = MakeDosNode(pp);
