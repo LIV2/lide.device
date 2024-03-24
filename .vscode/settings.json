@@ -21,7 +21,10 @@
         "string.h": "c",
         "scsidisk.h": "c",
         "ndkcompat.h": "c",
-        "device.h": "c"
+        "device.h": "c",
+        "config.h": "c",
+        "main.h": "c",
+        "ata.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
     "m68k.includePaths": [

@@ -433,8 +433,14 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 byte_count -= 2;
             } else {
                 // If we got here the drive wanted to transfer more data than the buffer could take
-                ret = HFERR_BadStatus;
-                goto end;
+                //
+                // Make the drive happy by reading/writing some more...
+                if (cmd->scsi_Flags & SCSIF_READ) {
+                    volatile UWORD throwaway = *unit->drive->data;
+                } else {
+                    *unit->drive->data = 0;
+                }
+                byte_count -= 2;
             }
         }
     }
@@ -780,7 +786,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
     cmd_select->scsi_Command[1] = cmd->scsi_Command[1];       // PF / SP 
-    cmd_select->scsi_Command[8] = (cmd->scsi_Command[4] + 4); // Parameter list length
+    cmd_select->scsi_Command[8] = cmd->scsi_Command[4] + 4; // Parameter list length
 
     cmd_select->scsi_Data   = (UWORD *)buf;
     cmd_select->scsi_Length = bufSize;
@@ -789,7 +795,10 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_select->scsi_SenseData   = cmd->scsi_SenseData;
     cmd_select->scsi_SenseLength = cmd->scsi_SenseLength;
 
-    // Copy the Mode Parameters, skip the header because it is not used for Mode Select
+    // Copy the Mode Parameters
+    dst[1] = src[0];
+    dst[3] = src[2];
+    dst[7] = src[3];
     src += 4;                    // Skip the mode parameter header
     dst += 8;                    // Skip the mode parameter header
     len = cmd->scsi_Length - 4;
