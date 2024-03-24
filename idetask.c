@@ -266,6 +266,10 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 error = atapi_scsi_mode_sense_6(scsi_command,unit);
                 break;
 
+            case SCSI_CMD_MODE_SELECT_6:
+                error = atapi_scsi_mode_select_6(scsi_command,unit);
+                break;
+
             case SCSI_CMD_READ_CAPACITY_10:
                 // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
                 for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
