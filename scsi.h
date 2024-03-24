@@ -7,10 +7,12 @@
 #define SCSI_CMD_READ_6           0x08
 #define SCSI_CMD_WRITE_6          0x0A
 #define SCSI_CMD_INQUIRY          0x12
+#define SCSI_CMD_MODE_SELECT_6    0x15
 #define SCSI_CMD_MODE_SENSE_6     0x1A
 #define SCSI_CMD_READ_CAPACITY_10 0x25
 #define SCSI_CMD_READ_10          0x28
 #define SCSI_CMD_WRITE_10         0x2A
+#define SCSI_CMD_MODE_SELECT_10   0x55
 #define SCSI_CMD_MODE_SENSE_10    0x5A
 #define SCSI_CMD_START_STOP_UNIT  0x1B
 

@@ -744,6 +744,71 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 }
 
 /**
+ * atapi_scsi_mode_select_6
+ * 
+ * ATAPI devices do not support MODE SELECT (6) so translate to a MODE SELECT (10)
+ * 
+ * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error, mode-sense data in cmd->scsi_Data
+*/
+BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    BYTE ret;
+    UBYTE *buf = NULL;
+    UBYTE *src = NULL;
+    UBYTE *dst = NULL;
+    ULONG len = 0;
+
+    struct SCSICmd *cmd_select = NULL;
+
+    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
+
+    ULONG bufSize = cmd->scsi_Length + 4;
+
+    if ((buf = AllocMem(bufSize,MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        return TDERR_NoMem;
+    }
+
+    src = (UBYTE *)cmd->scsi_Data;
+    dst = buf;
+
+    cmd_select = MakeSCSICmd();
+
+    if (cmd_select == NULL) {
+        return TDERR_NoMem;
+    }
+
+    cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
+    cmd_select->scsi_Command[1] = cmd->scsi_Command[1];       // PF / SP 
+    cmd_select->scsi_Command[8] = (cmd->scsi_Command[4] + 4); // Parameter list length
+
+    cmd_select->scsi_Data   = (UWORD *)buf;
+    cmd_select->scsi_Length = bufSize;
+    cmd_select->scsi_Flags  = cmd->scsi_Flags;
+
+    cmd_select->scsi_SenseData   = cmd->scsi_SenseData;
+    cmd_select->scsi_SenseLength = cmd->scsi_SenseLength;
+
+    // Copy the Mode Parameters, skip the header because it is not used for Mode Select
+    src += 4;                    // Skip the mode parameter header
+    dst += 8;                    // Skip the mode parameter header
+    len = cmd->scsi_Length - 4;
+
+    CopyMem(src,dst,len);
+
+    ret = atapi_packet(cmd_select, unit);
+
+    cmd->scsi_SenseActual = cmd_select->scsi_SenseActual;
+    cmd->scsi_Actual      = cmd_select->scsi_Actual;
+    cmd->scsi_Status      = cmd_select->scsi_Status;
+
+    DeleteSCSICmd(cmd_select);
+    FreeMem(buf,bufSize);
+
+    return ret;
+}
+
+/**
  * atapi_scsi_read_write_6
  * 
  * ATAPI devices do not support READ (6) or WRITE (6)

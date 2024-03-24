@@ -45,6 +45,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit);
 BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey, UBYTE *asc, UBYTE *asq);
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual);
 BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit);
+BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej);
 BYTE atapi_check_wp(struct IDEUnit *unit);
 bool atapi_update_presence(struct IDEUnit *unit, bool present);
