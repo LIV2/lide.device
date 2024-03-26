@@ -76,25 +76,28 @@ void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
 }
 
 /**
- * MakeSCSICmd()
+ * MakeSCSICmd
  * 
  * Creates an new SCSICmd struct and CDB
+ * 
+ * @param cdbSize Size of CDB to create
+ * @returns Pointer to an initialized SCSICmd struct 
 */
-struct SCSICmd * MakeSCSICmd() {
+struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
     UBYTE          *cdb = NULL;
     struct SCSICmd *cmd = NULL;
 
-    if ((cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+    if ((cdb = AllocMem(cdbSize,MEMF_ANY|MEMF_CLEAR)) == NULL) {
         return NULL;
     }
 
     if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
-        FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        FreeMem(cdb,cdbSize);
         return NULL;
     }
 
     cmd->scsi_Command   = (UBYTE *)cdb;
-    cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
+    cmd->scsi_CmdLength = cdbSize;
     cmd->scsi_Data      = NULL;
     cmd->scsi_Length    = 0;
     cmd->scsi_SenseData = NULL;
@@ -106,11 +109,13 @@ struct SCSICmd * MakeSCSICmd() {
  * DeleteSCSICmd
  * 
  * Delete a SCSICmd and its CDB
+ * 
+ * @param cmd Pointer to a SCSICmd struct to be deleted
 */
 void DeleteSCSICmd(struct SCSICmd *cmd) {
     if (cmd) {
         UBYTE *cdb = cmd->scsi_Command;
-        if (cdb) FreeMem(cdb,sizeof(struct SCSI_CDB_10));
+        if (cdb) FreeMem(cdb,(ULONG)cmd->scsi_CmdLength);
         FreeMem(cmd,sizeof(struct SCSICmd));
     }
 }

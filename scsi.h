@@ -18,6 +18,9 @@
 
 #define SCSI_CHECK_CONDITION      0x02
 
+#define SZ_CDB_10 10
+#define SZ_CDB_12 12
+
 struct __attribute__((packed)) SCSI_Inquiry {
     UBYTE peripheral_type;
     UBYTE removable_media;
@@ -77,5 +80,5 @@ struct __attribute__((packed)) SCSI_FIXED_SENSE {
 };
 
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
-struct SCSICmd * MakeSCSICmd();
+struct SCSICmd * MakeSCSICmd(ULONG cdbSize);
 void DeleteSCSICmd(struct SCSICmd *cmd);

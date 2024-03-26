@@ -288,7 +288,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
                         Trace("Auto sense requested\n");
 
-                        struct SCSICmd *cmd = MakeSCSICmd();
+                        struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
 
                         if (cmd != NULL) {
                             cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
