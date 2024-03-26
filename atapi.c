@@ -216,7 +216,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction) 
 {
     Trace("atapi_translate enter\n");
-    struct SCSICmd *cmd = MakeSCSICmd();
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
     UBYTE errorCode = 0;
@@ -490,7 +490,7 @@ end:
  * @returns nonzero if there was an error
 */
 BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
-    struct SCSICmd *cmd = MakeSCSICmd();
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
@@ -564,7 +564,7 @@ done:
  * @return non-zero on error
 */
 BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey, UBYTE *asc, UBYTE *asq) {
-    struct SCSICmd *cmd = MakeSCSICmd();
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     UBYTE *cdb = (UBYTE *)cmd->scsi_Command;
 
@@ -608,7 +608,7 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey
  * @return non-zero on error
 */
 BYTE atapi_get_capacity(struct IDEUnit *unit) {
-    struct SCSICmd *cmd = MakeSCSICmd();
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
@@ -663,7 +663,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
  * @return Non-zero on error
 */
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual) {
-    struct SCSICmd *cmd = MakeSCSICmd();
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
 
     UBYTE *cdb = cmd->scsi_Command;
@@ -778,7 +778,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     src = (UBYTE *)cmd->scsi_Data;
     dst = buf;
 
-    cmd_select = MakeSCSICmd();
+    cmd_select = MakeSCSICmd(SZ_CDB_10);
 
     if (cmd_select == NULL) {
         return TDERR_NoMem;
@@ -909,7 +909,7 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
     if (loej)  operation |= (1<<1);
     if (start) operation |= (1<<0);
 
-    if ((cmd = MakeSCSICmd()) == NULL) return TDERR_NoMem;
+    if ((cmd = MakeSCSICmd(SZ_CDB_10)) == NULL) return TDERR_NoMem;
     
     cmd->scsi_Command[0] = SCSI_CMD_START_STOP_UNIT;
     cmd->scsi_Command[1] = (1<<0); // Immediate bit set
