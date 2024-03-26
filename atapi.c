@@ -734,7 +734,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
         dest[0] = (buf[1] - 4); // Length
         dest[1] = buf[1];       // Medium type
         dest[2] = buf[3];       // WP/DPOFUA Flags
-        dest[3] = 0;            // Block descriptor length
+        dest[3] = buf[7];       // Block descriptor length
 
         for (int i = 4; i < actual; i++) {
             // Copy the Mode Sense data

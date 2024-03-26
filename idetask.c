@@ -283,28 +283,29 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                     error = atapi_packet_unaligned(scsi_command,unit);
                 }
 
-                if (error != 0) {
-                    if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
-
-                        Trace("Auto sense requested\n");
-
-                        struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
-
-                        if (cmd != NULL) {
-                            cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-                            cmd->scsi_Command[4] = 18;
-                            cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
-                            cmd->scsi_Length     = scsi_command->scsi_SenseLength;
-                            cmd->scsi_Flags      = SCSIF_READ;
-                            cmd->scsi_CmdLength  = 1;
-
-                            atapi_packet(cmd,unit);
-                            scsi_command->scsi_SenseActual = cmd->scsi_Actual;
-                            DeleteSCSICmd(cmd);
-                        }
-                    }
-                }
                 break;
+        }
+
+        if (error != 0) {
+            if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
+
+                Trace("Auto sense requested\n");
+
+                struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
+
+                if (cmd != NULL) {
+                    cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+                    cmd->scsi_Command[4] = 18;
+                    cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
+                    cmd->scsi_Length     = scsi_command->scsi_SenseLength;
+                    cmd->scsi_Flags      = SCSIF_READ;
+                    cmd->scsi_CmdLength  = 12;
+
+                    atapi_packet(cmd,unit);
+                    scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+                    DeleteSCSICmd(cmd);
+                }
+            }
         }
     }
 
