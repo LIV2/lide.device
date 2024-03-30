@@ -295,7 +295,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
                 if (cmd != NULL) {
                     cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-                    cmd->scsi_Command[4] = 18;
+                    cmd->scsi_Command[4] = cmd->scsi_SenseLength & 0xFF;
                     cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
                     cmd->scsi_Length     = scsi_command->scsi_SenseLength;
                     cmd->scsi_Flags      = SCSIF_READ;
