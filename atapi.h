@@ -31,7 +31,6 @@
 #define IR_COMMAND 0x1
 #define IR_PIO_R   0x2
 #define IR_STATUS  0x3
-#define IR_PIOF    0x2
 
 void atapi_dev_reset(struct IDEUnit *unit);
 bool atapi_check_signature(struct IDEUnit *unit);
