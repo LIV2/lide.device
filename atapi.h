@@ -49,4 +49,5 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej);
 BYTE atapi_check_wp(struct IDEUnit *unit);
 bool atapi_update_presence(struct IDEUnit *unit, bool present);
+void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd);
 #endif

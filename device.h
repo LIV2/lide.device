@@ -53,6 +53,7 @@ struct IDEUnit {
     void  (*write_unaligned)(void *, void *);
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
+    volatile BOOL  deferTUR;
     UBYTE unitNum;
     UBYTE channel;
     UBYTE deviceType;

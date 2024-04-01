@@ -477,6 +477,10 @@ end:
         Warn("Command %lx Transferred %ld of %ld requested for %ld blocks\n",(ULONG)(*(UBYTE *)cmd->scsi_Command),cmd->scsi_Actual, cmd->scsi_Length, ((struct SCSI_CDB_10 *)cmd->scsi_Command)->length);
     }
 
+    if (ret == 0) {
+        atapi_do_defer_tur(unit,cmd->scsi_Command[0]);
+    }
+
     Trace("exit atapi_packet\n");
     return ret;
 }
@@ -973,4 +977,20 @@ bool atapi_update_presence(struct IDEUnit *unit, bool present) {
         ret = true;
     }
     return ret;
+}
+
+/**
+ * atapi_do_defer_tur
+ * 
+ * If an access to the medium was successful then we know that it is present.
+ * The diskchange task can then skip the next "Test Unit Ready" so it won't interrupt a transfer
+*/
+void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
+
+    cmd &= 0x5F;
+    // If this is one of the various read/write/verify commands then we can defer TUR
+    if (cmd >= 0x08 && cmd <= 0x0F) {
+        unit->deferTUR = true;
+    }
+
 }

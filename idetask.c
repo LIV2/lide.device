@@ -365,7 +365,7 @@ void __attribute__((noreturn)) diskchange_task () {
              unit->mn_Node.mln_Succ != NULL;
              unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
         {
-            if (unit->present && unit->atapi) {
+            if (unit->present && unit->atapi && !unit->deferTUR) {
                 Trace("Testing unit %ld\n",unit->unitNum);
                 ioreq->io_Unit = (struct Unit *)unit;
 
@@ -394,6 +394,7 @@ void __attribute__((noreturn)) diskchange_task () {
 
                 unit->mediumPresentPrev = present;
             }
+            unit->deferTUR = false;
         }
 
         ReleaseSemaphore(&dev->ulSem);
@@ -448,6 +449,7 @@ static BYTE init_units(struct IDETask *itask) {
             unit->multipleCount     = 0;
             unit->shadowDevHead     = &itask->shadowDevHead;
             *unit->shadowDevHead    = 0;
+            unit->deferTUR          = false;
 
             // This controls which transfer routine is selected for the device by ata_init_unit
             //
