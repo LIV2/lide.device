@@ -401,9 +401,10 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
         if (cmd->scsi_Length == 0) break;
 
+        if ((*unit->drive->sectorCount & 0x01) != 0x00) break; // CoD doesn't indicate further data transfer
+
         if (!(atapi_wait_drq(unit,10))) break;
 
-        if ((*unit->drive->sectorCount & 0x01) != 0x00) break; // CoD doesn't indicate further data transfer
 
         byte_count = *unit->drive->lbaHigh << 8 | *unit->drive->lbaMid;
         byte_count += (byte_count & 0x01); // Ensure that the byte count is always an even number
