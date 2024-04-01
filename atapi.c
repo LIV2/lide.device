@@ -452,9 +452,11 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT);
 
-    if ((*unit->drive->sectorCount & 0x03) != IR_STATUS) { // Drive reports command completion?
-      // No
-      ret = HFERR_Phase;
+    if (!(*unit->drive->sectorCount & atapi_flag_cd)) {
+        // Drive is still in the data phase but should be either reporting completion or ready for a command
+        Warn("ATAPI: Completion not reported at end of command\n");
+        ret = HFERR_Phase;
+        goto ata_error;
     }
 
 end:
