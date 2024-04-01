@@ -394,6 +394,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     while (1) {
 
+        atapi_status_reg_delay(unit);
+
         if (!atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT)) {
           ret = IOERR_UNITBUSY;
           goto end;
