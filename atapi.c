@@ -323,7 +323,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
     volatile UBYTE *status = unit->drive->status_command;
 
-    
+
     if (cmd->scsi_Length > 0 && cmd->scsi_Data == NULL) {
         ret = IOERR_BADADDRESS;
         goto end;
@@ -671,7 +671,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
  * @param actual Pointer to the actual byte count returned
  * @return Non-zero on error
 */
-BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD length, UWORD *actual) {
+BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, UWORD *buffer, UWORD length, UWORD *actual, BOOL dbd) {
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
 
@@ -680,7 +680,9 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, UWORD *buffer, UWORD
 
 
     cdb[0] = SCSI_CMD_MODE_SENSE_10;
-    cdb[2] = page_code & 0x3F;
+    cdb[1] = (dbd ? 1 : 0) << 3;
+    cdb[2] = page_code;
+    cdb[3] = subpage_code;
     cdb[7] = length >> 8;
     cdb[8] = length & 0xFF;
 
@@ -714,25 +716,26 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     BYTE ret;
 
     UBYTE page_code;
+    UBYTE subpage_code;
 
     UBYTE *buf  = NULL;
     UBYTE *dest = (UBYTE *)cmd->scsi_Data; 
 
     ULONG length = cmd->scsi_Length + 4;
     UWORD actual = 0;
+    BOOL dbd = (cmd->scsi_Command[1] & 1 << 3);
 
     if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
-
-    // ATAPI doesn't seem to support subpages at all;
-    if (cmd->scsi_Command[3] != 0) return IOERR_ABORTED;
 
     if ((buf = AllocMem(length,MEMF_ANY|MEMF_CLEAR)) == NULL) {
         return TDERR_NoMem;
     }
 
-    page_code = cmd->scsi_Command[2];
-    
-    ret = atapi_mode_sense(unit,page_code,(UWORD *)buf,length,&actual);
+
+    page_code    = cmd->scsi_Command[2];
+    subpage_code = cmd->scsi_Command[3];
+
+    ret = atapi_mode_sense(unit,page_code,subpage_code,(UWORD *)buf,length,&actual,dbd);
 
     if (buf[0] != 0) { // Mode sense length MSB
         Warn("ATAPI: MODESENSE 6 to 10 - Returned mode sense data too large\n");
@@ -741,7 +744,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     if (ret == 0) {
         dest[0] = (buf[1] - 4); // Length
-        dest[1] = buf[1];       // Medium type
+        dest[1] = buf[2];       // Medium type
         dest[2] = buf[3];       // WP/DPOFUA Flags
         dest[3] = buf[7];       // Block descriptor length
 
@@ -794,7 +797,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     }
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
-    cmd_select->scsi_Command[1] = cmd->scsi_Command[1];       // PF / SP 
+    cmd_select->scsi_Command[1] = cmd->scsi_Command[1];     // PF / SP 
     cmd_select->scsi_Command[8] = cmd->scsi_Command[4] + 4; // Parameter list length
 
     cmd_select->scsi_Data   = (UWORD *)buf;
@@ -806,6 +809,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     // Copy the Mode Parameters
     dst[1] = src[0];
+    dst[2] = src[1];
     dst[3] = src[2];
     dst[7] = src[3];
     src += 4;                    // Skip the mode parameter header
@@ -947,7 +951,7 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 
     UWORD actual = 0;
 
-    if ((ret = atapi_mode_sense(unit,0x3F,(UWORD *)buf,512,&actual)) == 0) {
+    if ((ret = atapi_mode_sense(unit,0x3F,0,(UWORD *)buf,512,&actual,false)) == 0) {
         if (buf[3] & 1<<7)
             ret = TDERR_WriteProt;
     }
