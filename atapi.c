@@ -993,6 +993,9 @@ bool atapi_update_presence(struct IDEUnit *unit, bool present) {
  * 
  * If an access to the medium was successful then we know that it is present.
  * The diskchange task can then skip the next "Test Unit Ready" so it won't interrupt a transfer
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @param cmd SCSI Command
 */
 void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
 
@@ -1002,4 +1005,167 @@ void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
         unit->deferTUR = true;
     }
 
+}
+
+/**
+ * atapi_read_toc
+ * 
+ * Reads the CD TOC into the supplied buffer
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param buf Pointer to the buffer
+ * @param bufSize Size of buffer
+ * @returns non-zero on error
+*/
+BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
+    BYTE ret = 0;
+
+    if (buf == NULL || bufSize == 0) {
+        return IOERR_BADADDRESS;
+    }
+
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+
+    cmd->scsi_Data       = (UWORD *)buf;
+    cmd->scsi_Length     = bufSize;
+    cmd->scsi_Flags      = SCSIF_READ;
+    cmd->scsi_Command[0] = SCSI_CMD_READ_TOC;
+    cmd->scsi_Command[1] = 0x02; // MSF Flag
+    cmd->scsi_Command[7] = bufSize >> 8;
+    cmd->scsi_Command[8] = bufSize & 0xFF;
+
+    ret = atapi_packet(cmd,unit) != 0;
+
+    DeleteSCSICmd(cmd);
+
+    return ret;    
+}
+
+/**
+ *  atapi_get_track_msf
+ * 
+ * Find the M/S/F of a Track
+ * 
+ * @param toc pointer to a SCSI_CD_TOC struct
+ * @param trackNum track number to find
+ * @param msf Pointer to a SCSI_TRACK_MSF struct
+ * @returns true if track found
+*/
+BOOL atapi_get_track_msf(struct SCSI_CD_TOC *toc, int trackNum, struct SCSI_TRACK_MSF *msf) {
+
+    if (toc    == NULL || msf == NULL) {
+        return false;
+    }
+
+    int numTracks = (toc->lastTrack - toc->firstTrack) + 1;
+
+    for (int t=0; t<=numTracks; t++) {
+        if (toc->td[t].trackNumber == trackNum) {
+            msf->minute = toc->td[t].minute;
+            msf->second = toc->td[t].second;
+            msf->frame  = toc->td[t].frame;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/** 
+ * atapi_play_track_index
+ * 
+ * Find tracks <start> and <end> in TOC and issue a PLAY AUDIO MSF command
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param start Start track number
+ * @param end End track number 
+ * @returns non-zero on error
+*/
+BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
+    BYTE ret = 0;
+    struct SCSI_TRACK_MSF startmsf, endmsf;
+
+    struct SCSI_CD_TOC *toc = AllocMem(SCSI_TOC_SIZE,MEMF_ANY|MEMF_CLEAR);
+
+    if (toc == NULL) return TDERR_NoMem;
+
+    ret = atapi_read_toc(unit,(BYTE *)toc,SCSI_TOC_SIZE);
+    
+    if (ret == 0) {
+
+        if (end > toc->lastTrack) end = 0xAA; // Lead out
+
+        if (atapi_get_track_msf(toc,start,&startmsf) &&
+            atapi_get_track_msf(toc,end,&endmsf))
+        {
+            ret = atapi_play_audio_msf(unit,&startmsf,&endmsf);
+        } else {
+            ret = IOERR_BADADDRESS;
+        }
+
+    }
+
+    FreeMem(toc,SCSI_TOC_SIZE);
+    return ret;
+}
+
+/**
+ * atapi_play_audio_msf
+ * 
+ * Issue a PLAY AUDIO MSF command to the drive
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param start Pointer to a SCSI_TRACK_MSF struct for the starting position
+ * @param end Pointer to a SCSI_TRACK_MSF struct for the ending position
+ * @returns non-zero on error
+*/
+BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, struct SCSI_TRACK_MSF *end) {
+    BYTE ret = 0;
+
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+    
+    if (cmd == NULL) return TDERR_NoMem;
+
+    cmd->scsi_Command[0] = SCSI_CMD_PLAY_AUDIO_MSF;
+    cmd->scsi_Command[3] = start->minute;
+    cmd->scsi_Command[4] = start->second;
+    cmd->scsi_Command[5] = start->frame;
+
+    cmd->scsi_Command[6] = end->minute;
+    cmd->scsi_Command[7] = end->second;
+    cmd->scsi_Command[8] = end->frame;
+
+    cmd->scsi_Flags  = SCSIF_READ;
+    cmd->scsi_Data   = NULL;
+    cmd->scsi_Length = 0;
+
+    ret = atapi_packet(cmd,unit);
+
+    DeleteSCSICmd(cmd);
+
+    return ret;
+}
+
+/**
+ * atapi_translate_play_audio_index
+ * 
+ * PLAY AUDIO INDEX was deprecated with SCSI-3 and is not supported by ATAPI drives
+ * Some software makes use of this, so we translate it to a PLAY AUDIO MSF command
+ * 
+ * @param cmd Pointer to a SCSICmd struct for a PLAY AUDIO INDEX command
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error
+*/
+BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    UBYTE start = cmd->scsi_Command[4];
+    UBYTE end   = cmd->scsi_Command[7];
+
+    BYTE ret = 0;
+
+    ret = atapi_play_track_index(unit,start,end);
+
+    cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+    cmd->scsi_Status = (ret == 0) ? 0 : SCSI_CHECK_CONDITION;
+
+    return ret;
 }

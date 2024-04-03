@@ -184,7 +184,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
     enum xfer_dir direction = WRITE;
 
-    Trace("SCSI: Command %ld\n",*scsi_command->scsi_Command);
+    Trace("SCSI: Command %lx\n",*scsi_command->scsi_Command);
 
     if (unit->atapi == false)
     {
@@ -268,6 +268,10 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
             case SCSI_CMD_MODE_SELECT_6:
                 error = atapi_scsi_mode_select_6(scsi_command,unit);
+                break;
+
+            case SCSI_CMD_PLAY_TRACK_INDEX:
+                error = atapi_translate_play_audio_index(scsi_command,unit);
                 break;
 
             case SCSI_CMD_READ_CAPACITY_10:
