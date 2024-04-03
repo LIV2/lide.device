@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include "device.h"
+#include "scsi.h"
 #include <exec/types.h>
 
 #define atapi_flag_cd (1<<0)
@@ -49,4 +50,9 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej);
 BYTE atapi_check_wp(struct IDEUnit *unit);
 bool atapi_update_presence(struct IDEUnit *unit, bool present);
 void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd);
+BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize);
+BOOL atapi_get_track_msf(struct SCSI_CD_TOC *toc, int trackNum, struct SCSI_TRACK_MSF *msf);
+BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end);
+BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, struct SCSI_TRACK_MSF *end);
+BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit);
 #endif

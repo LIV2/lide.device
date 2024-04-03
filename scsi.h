@@ -2,6 +2,9 @@
 /* This file is part of lide.device
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
+#ifndef _SCSI_H
+#define _SCSI_H
+
 #define SCSI_CMD_TEST_UNIT_READY  0x00
 #define SCSI_CMD_REQUEST_SENSE    0x03
 #define SCSI_CMD_READ_6           0x08
@@ -12,6 +15,9 @@
 #define SCSI_CMD_READ_CAPACITY_10 0x25
 #define SCSI_CMD_READ_10          0x28
 #define SCSI_CMD_WRITE_10         0x2A
+#define SCSI_CMD_READ_TOC         0x43
+#define SCSI_CMD_PLAY_AUDIO_MSF   0x47
+#define SCSI_CMD_PLAY_TRACK_INDEX 0x48
 #define SCSI_CMD_MODE_SELECT_10   0x55
 #define SCSI_CMD_MODE_SENSE_10    0x5A
 #define SCSI_CMD_START_STOP_UNIT  0x1B
@@ -20,6 +26,10 @@
 
 #define SZ_CDB_10 10
 #define SZ_CDB_12 12
+
+#define SCSI_CD_MAX_TRACKS 100
+
+#define SCSI_TOC_SIZE (SCSI_CD_MAX_TRACKS * 8) + 4 // SCSI_CD_MAX_TRACKS track descriptors + the toc header
 
 struct __attribute__((packed)) SCSI_Inquiry {
     UBYTE peripheral_type;
@@ -79,6 +89,33 @@ struct __attribute__((packed)) SCSI_FIXED_SENSE {
     UBYTE sks[3];
 };
 
+struct __attribute__((packed)) SCSI_TOC_TRACK_DESCRIPTOR {
+    UBYTE reserved1;
+    UBYTE adrControl;
+    UBYTE trackNumber;
+    UBYTE reserved2;
+    UBYTE reserved3;
+    UBYTE minute;
+    UBYTE second;
+    UBYTE frame;
+};
+
+struct __attribute__((packed)) SCSI_CD_TOC {
+    UWORD length;
+    UBYTE firstTrack;
+    UBYTE lastTrack;
+    struct SCSI_TOC_TRACK_DESCRIPTOR td[SCSI_CD_MAX_TRACKS];
+};
+
+struct __attribute__((packed)) SCSI_TRACK_MSF {
+    UBYTE minute;
+    UBYTE second;
+    UBYTE frame;
+};
+
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
 struct SCSICmd * MakeSCSICmd(ULONG cdbSize);
 void DeleteSCSICmd(struct SCSICmd *cmd);
+
+
+#endif
