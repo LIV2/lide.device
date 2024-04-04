@@ -713,51 +713,63 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, U
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
 */
 BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
-    BYTE ret;
-
-    UBYTE page_code;
-    UBYTE subpage_code;
-
-    UBYTE *buf  = NULL;
-    UBYTE *dest = (UBYTE *)cmd->scsi_Data; 
-
-    ULONG length = cmd->scsi_Length + 4;
-    UWORD actual = 0;
-    BOOL dbd = (cmd->scsi_Command[1] & 1 << 3);
 
     if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
 
-    if ((buf = AllocMem(length,MEMF_ANY|MEMF_CLEAR)) == NULL) {
+    BYTE ret;
+    UBYTE *buf  = NULL;
+    UBYTE *dest = (UBYTE *)cmd->scsi_Data; 
+    ULONG len   = cmd->scsi_Command[4] + 4; // Original allocation length
+
+    struct SCSICmd *cmd_sense = NULL;
+
+    if ((buf = AllocMem(len,MEMF_ANY|MEMF_CLEAR)) == NULL) {
         return TDERR_NoMem;
     }
 
+    cmd_sense = MakeSCSICmd(SZ_CDB_10);
 
-    page_code    = cmd->scsi_Command[2];
-    subpage_code = cmd->scsi_Command[3];
+    if (cmd_sense == NULL) {
+        return TDERR_NoMem;
+    }
 
-    ret = atapi_mode_sense(unit,page_code,subpage_code,(UWORD *)buf,length,&actual,dbd);
+    cmd_sense->scsi_Command[0] = SCSI_CMD_MODE_SENSE_10;
+    cmd_sense->scsi_Command[1] = cmd->scsi_Command[1];      // DBD flag
+    cmd_sense->scsi_Command[2] = cmd->scsi_Command[2];      // Page Code
+    cmd_sense->scsi_Command[3] = cmd->scsi_Command[3];      // Subpage Code
+    cmd_sense->scsi_Command[8] = len;                       // Allocation Length
+
+    cmd_sense->scsi_Data   = (UWORD *)buf;
+    cmd_sense->scsi_Length = len;
+    cmd_sense->scsi_Flags  = SCSIF_READ;
+
+    ret = atapi_packet(cmd_sense,unit);
 
     if (buf[0] != 0) { // Mode sense length MSB
         Warn("ATAPI: MODESENSE 6 to 10 - Returned mode sense data too large\n");
         ret = IOERR_BADLENGTH;
-    }
-
-    if (ret == 0) {
+        cmd->scsi_Status = SCSI_CHECK_CONDITION;
+    } else {
+        if (cmd->scsi_Status == 0) {
         dest[0] = (buf[1] - 4); // Length
         dest[1] = buf[2];       // Medium type
         dest[2] = buf[3];       // WP/DPOFUA Flags
         dest[3] = buf[7];       // Block descriptor length
 
-        for (int i = 4; i < actual; i++) {
+            for (int i = 4; i < cmd_sense->scsi_Actual; i++) {
             // Copy the Mode Sense data
             dest[i] = buf[i+4];
         }
-        cmd->scsi_Actual    = actual - 4;
-        cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+            cmd->scsi_Actual    = cmd_sense->scsi_Actual - 4;
     }
 
-    if (buf) FreeMem(buf,length);
+        cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
+        cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
+        cmd->scsi_Status      = cmd_sense->scsi_Status;
+    }
 
+    FreeMem(buf,len);
+    DeleteSCSICmd(cmd_sense);
     return ret;
 }
 
@@ -781,7 +793,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
 
-    ULONG bufSize = cmd->scsi_Length + 4;
+    ULONG bufSize = cmd->scsi_Command[4] + 4;
 
     if ((buf = AllocMem(bufSize,MEMF_ANY|MEMF_CLEAR)) == NULL) {
         return TDERR_NoMem;
@@ -798,7 +810,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
     cmd_select->scsi_Command[1] = cmd->scsi_Command[1];     // PF / SP 
-    cmd_select->scsi_Command[8] = cmd->scsi_Command[4] + 4; // Parameter list length
+    cmd_select->scsi_Command[8] = bufSize;                  // Parameter list length
 
     cmd_select->scsi_Data   = (UWORD *)buf;
     cmd_select->scsi_Length = bufSize;
@@ -821,6 +833,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     ret = atapi_packet(cmd_select, unit);
 
     cmd->scsi_SenseActual = cmd_select->scsi_SenseActual;
+    cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_Actual      = cmd_select->scsi_Actual;
     cmd->scsi_Status      = cmd_select->scsi_Status;
 
