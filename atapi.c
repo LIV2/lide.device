@@ -1057,6 +1057,8 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
 
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
  
+    if (cmd == NULL) return TDERR_NoMem;
+    
     cmd->scsi_Data       = (UWORD *)buf;
     cmd->scsi_Length     = bufSize;
     cmd->scsi_Flags      = SCSIF_READ;
