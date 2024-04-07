@@ -91,7 +91,7 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
 
     for (int i=0; i < tries; i++) {
-        if ((*(volatile BYTE *)unit->drive->status_command & ata_flag_busy) == 0) return true;
+        if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
         wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     Trace("atapi_wait_not_bsy timeout\n");
@@ -115,6 +115,26 @@ static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
         wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     Trace("atapi_wait_not_drqbsy timeout\n");
+    return false;
+}
+
+/**
+ * atapi_check_ir
+ * 
+ * Mask the Interrupt Reason register and check against a value
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param mask Mask
+ * @param value Expected value after masking
+ * @param tries Maximum attempts to find the expected value
+ * @returns True if value matches
+*/
+static bool atapi_check_ir(struct IDEUnit *unit, UBYTE mask, UBYTE value, UWORD tries) {
+    for (int i=0; i<tries; i++) {
+        atapi_status_reg_delay(unit);
+        if ((*unit->drive->sectorCount & mask) == value) return true;
+    }
+
     return false;
 }
 
@@ -363,8 +383,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         ret = IOERR_UNITBUSY;
         goto end;
     }
-        
-    if ((*unit->drive->sectorCount & 0x03) != IR_COMMAND) {
+    
+    if (!atapi_check_ir(unit,IR_STATUS,IR_COMMAND,10)) {
         Trace("ATAPI: Failed command phase\n");
         ret = HFERR_Phase;
         goto end;
@@ -393,7 +413,6 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     ULONG index = 0;
 
     while (1) {
-
         atapi_status_reg_delay(unit);
 
         if (!atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT)) {
@@ -403,8 +422,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
         if (cmd->scsi_Length == 0) break;
 
-        if ((*unit->drive->sectorCount & 0x01) != 0x00) break; // CoD doesn't indicate further data transfer
-
+        if ((atapi_check_ir(unit,0x03,IR_STATUS,1))) break;
+    
         if (!(atapi_wait_drq(unit,10))) break;
 
 
@@ -453,8 +472,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     }
 
     atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT);
-
-    if (!(*unit->drive->sectorCount & atapi_flag_cd)) {
+    if (!atapi_check_ir(unit,atapi_flag_cd,IR_COMMAND,10)) {
         // Drive is still in the data phase but should be either reporting completion or ready for a command
         Warn("ATAPI: Completion not reported at end of command\n");
         ret = HFERR_Phase;
@@ -1038,7 +1056,7 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
     }
 
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-
+ 
     cmd->scsi_Data       = (UWORD *)buf;
     cmd->scsi_Length     = bufSize;
     cmd->scsi_Flags      = SCSIF_READ;
