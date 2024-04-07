@@ -3,14 +3,14 @@
 {
 	"name": "amiga-gcc-amitools",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "liv2/amiga-gcc-amitools:latest",
+	"image": "stefanreinauer/amiga-gcc:latest",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
-	"onCreateCommand": "rm -f /root/.gitconfig",
+	// "onCreateCommand": "rm -f /root/.gitconfig",
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
@@ -21,8 +21,8 @@
 				"gigabates.m68k-lsp"
 			]
 		}
-	}
+	},
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "root"
+	"remoteUser": "ubuntu"
 }
