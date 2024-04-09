@@ -1039,6 +1039,29 @@ void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
 }
 
 /**
+ * atapi_adjust_end_msf
+ * 
+ * Decrement the MSF by one frame.
+ * i.e get the end of the last track by inputting the MSF for the lead-out
+ *  
+ * @param msf 
+ */
+static void atapi_adjust_end_msf(struct SCSI_TRACK_MSF *msf) {
+    if (msf->frame > 0) {
+        msf->frame--;
+    } else {
+        msf->frame = 74;
+        if (msf->second > 0) {
+            msf->second --;
+        } else {
+            msf->second = 59;
+            if (msf->minute > 0)
+                msf->minute--;
+        }
+    }
+}
+
+/**
  * atapi_read_toc
  * 
  * Reads the CD TOC into the supplied buffer
@@ -1131,6 +1154,8 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
         if (atapi_get_track_msf(toc,start,&startmsf) &&
             atapi_get_track_msf(toc,end,&endmsf))
         {
+            // Point to end of last track rather than lead-out
+            if (end == 0xAA) atapi_adjust_end_msf(&endmsf);
             ret = atapi_play_audio_msf(unit,&startmsf,&endmsf);
         } else {
             ret = IOERR_BADADDRESS;
