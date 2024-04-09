@@ -82,7 +82,7 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
 */
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
-    Info("wait_drq enter\n");
+    Trace("wait_drq enter\n");
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -92,7 +92,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
         }
         wait_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
-    Info("wait_drq timeout\n");
+    Trace("wait_drq timeout\n");
     return false;
 }
 
