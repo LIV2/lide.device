@@ -488,7 +488,8 @@ end:
         senseKey = *unit->drive->error_features >> 4;
         Warn("ATAPI ERROR!\n");
         Warn("Sense Key: %02lx\n",senseKey);
-        Warn("Error: %02lx\n",*status);
+        Warn("Error: %02lx\n",*unit->drive->error_features);
+        Warn("Status: %02lx\n",*status);
         Warn("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
         cmd->scsi_Status = 2;
         if (ret == 0) ret = HFERR_BadStatus;
