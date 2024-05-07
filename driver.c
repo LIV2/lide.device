@@ -140,6 +140,33 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         return task;
 }
 
+/**
+ * sleep
+ * 
+ * @param seconds Seconds to wait
+ * @param microseconds Microseconds to wait
+*/
+static void sleep(ULONG seconds, ULONG microseconds) {
+        
+    struct timerequest *tr = NULL;
+    struct MsgPort     *iomp = NULL;
+
+
+    if ((iomp = CreatePort(NULL,0))) {
+        if ((tr = (struct timerequest *)CreateExtIO(iomp, sizeof(struct timerequest)))) {
+            if ((OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)tr,0)) == 0) {
+                tr->tr_node.io_Command = TR_ADDREQUEST;
+                tr->tr_time.tv_sec = seconds;
+                tr->tr_time.tv_micro = microseconds;
+                DoIO((struct IORequest *)tr);
+                CloseDevice((struct IORequest *)tr);
+            }
+            DeleteExtIO((struct IORequest *)tr);
+        }
+        DeletePort(iomp);
+    }
+}
+
 #if CDBOOT
 /**
  * FindCDFS
@@ -274,6 +301,8 @@ static BYTE detectChannels(struct ConfigDev *cd) {
         }
     }
 
+    sleep(0,500000); // Wait 500ms for drive(s) to finish RESET
+
     // Detect if there are 1 or 2 IDE channels on this board 
     // 2 channel boards use the CS2 decode for the second channel 
     UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
@@ -356,7 +385,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
         
         numBoards++;
-
         UBYTE channels = detectChannels(cd);
 
         for (int c=0; c < channels; c++) {
