@@ -324,6 +324,8 @@ done:
     return ret;
 }
 
+#pragma GCC optimize ("-O3")
+
 /**
  * atapi_packet
  * 
@@ -508,6 +510,7 @@ end:
     Trace("exit atapi_packet\n");
     return ret;
 }
+#pragma GCC reset_options
 
 /**
  * atapi_test_unit_ready
