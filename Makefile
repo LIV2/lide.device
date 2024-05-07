@@ -74,12 +74,15 @@ lidetool/lidetool:
 rename/renamelide:
 	make -C rename
 
-disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool
+lideflash/bootblock/obj/bootblock.o:
+	make -C lideflash/bootblock
+
+disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/bootblock/obj/bootblock.o
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
 	xdftool $(BUILDDIR)/$(DISK) format lide-update + \
-	                            boot install boot1x + \
+	                            boot write lideflash/bootblock/obj/bootblock.o + \
 	                            write $(ROM) + \
 	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
@@ -112,3 +115,4 @@ clean:
 	make -C rename clean
 	-rm -rf *.rom
 	-rm -rf $(BUILDDIR)
+	make -C lideflash/bootblock clean
