@@ -37,7 +37,11 @@ LDFLAGS+= -lnix13
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
 .INTERMEDIATE: move16.o
 
-all:	$(ROM) lideflash rename/renamelide lide-N2630-high.rom lide-N2630-low.rom
+all:	$(ROM) \
+		lideflash \
+		rename/renamelide \
+		lide-N2630-high.rom \
+		lide-N2630-low.rom
 
 OBJ = driver.o \
       ata.o \
@@ -107,6 +111,15 @@ lide-N2630-high.rom: $(ROM)
 
 lide-N2630-low.rom:  $(ROM)
 	srec_cat lide-word.rom -binary -split 2 1 1 -out $@ -binary
+
+lide-tk-29F010.rom: $(ROM)
+	@cat lide-atbus.rom lide-atbus.rom lide-atbus.rom lide-atbus.rom > $@
+
+lide-tk-29F020.rom: lide-tk-29F010.rom
+	@cat $< $< > $@
+
+lide-tk-29F040.rom: lide-tk-29F020.rom
+	@cat $< $< > $@
 
 clean:
 	-rm $(PROJECT)
