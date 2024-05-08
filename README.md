@@ -23,10 +23,12 @@
 # Downloads
 ROM downloads are available under [releases](https://github.com/LIV2/lide.device/releases)
 
-Currently there are three builds
-* lide.rom - Used for boards designed by me that feature an IDE interface (such as CIDER)
-* lide-atbus.rom - For AT-Bus style devices i.e AT-Bus 2008 + clone, Matze accelerators etc
-* lide-word.rom - For devices with word width bootroms
+Releases contain the following builds
+|Filename|Boards supported|Notes|
+|--------|----------------|-----|
+|lide.rom|[CIDER](https://github.com/LIV2/CIDER)<br/>[RIPPLE](https://github.com/LIV2/RIPPLE-IDE)|Update RIPPLE and CIDER by booting the latest lide-update adf under [releases](https://github.com/LIV2/lide.device/releases)|
+|lide-N2630-high.rom<br>lide-N2630-low.rom|[N2630](https://github.com/jasonsbeer/Amiga-N2630)|Follow the N2630 documentation to combine LIDE with the N2630 ROM|
+|lide-atbus.rom|AT-Bus 2008 and clones<br>[Dicke Olga](https://www.amibay.com/threads/dicke-olga-030-cpu-64-128mb-accelerator-card-for-a2000-amiga-official-host.2443695/)<br>[68030-TK2](https://gitlab.com/MHeinrichs/68030-tk2)<br>[68EC020-TK](https://gitlab.com/MHeinrichs/68EC020-TK)<br>[CDTV-RAM-IDE](https://gitlab.com/MHeinrichs/CDTV-RAM-IDE)<br>[Zorro-LAN-IDE](https://gitlab.com/MHeinrichs/Zorro-LAN-IDE)|ROM must be repeated as many times as needed to completely fill the flash i.e:<br>xxF010: 4x<br>xxF020: 8x<br>xxF040: 16x|
 
 ## Boot from CDROM
 Booting from CDROM requires Kickstart 2 or higher and one of the following:  
