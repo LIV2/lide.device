@@ -460,7 +460,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 //
                 // Make the drive happy by reading/writing some more...
                 if (cmd->scsi_Flags & SCSIF_READ) {
-                    volatile UWORD throwaway = *unit->drive->data;
+                    *unit->drive->data;
                 } else {
                     *unit->drive->data = 0;
                 }
