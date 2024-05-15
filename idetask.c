@@ -256,6 +256,18 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
         
         switch (scsi_command->scsi_Command[0]) {
 
+            case SCSI_CMD_INQUIRY:
+                // Fudge the SCSI version number for CD/DVDs
+                // Some software expects version 2 but ATAPI returns version 0
+                error = atapi_packet(scsi_command,unit);
+                
+                if (error == 0 && unit->deviceType == DG_CDROM) {
+                    if ((scsi_command->scsi_Command[1] & 1) == 0) {
+                        ((struct SCSI_Inquiry *)scsi_command->scsi_Data)->version = 2;
+                    }
+                }
+                break;
+
             case SCSI_CMD_READ_6:
             case SCSI_CMD_WRITE_6:
                 // ATAPI devices don't support READ/WRITE(6) so translate it
