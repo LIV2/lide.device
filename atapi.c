@@ -26,20 +26,14 @@
  * atapi_status_reg_delay
  * 
  * We need a short delay before actually checking the status register to let the drive update the status
- * To get the right delay we read the status register 4 times but just throw away the result
+ * Reading a CIA register should ensure a consistent delay regardless of CPU speed
  * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
  * 
  * @param unit Pointer to an IDEUnit struct
 */
 static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUnit *unit) {
-    BYTE status;
     asm volatile (
-        ".rep 4         \n\t"
-        "move.b (%1),%0 \n\t"
-        ".endr          \n\t"
-        : "=&d" (status)
-        : "a" (unit->drive->status_command)
-        : "d0"
+        "tst.b 0xBFE001"
     );
 }
 /**
