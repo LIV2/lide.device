@@ -1225,3 +1225,25 @@ BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit)
 
     return ret;
 }
+
+BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
+    UBYTE ret = 0;
+    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
+
+    if (cmd != NULL) {
+        cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+        cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
+        cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
+        cmd->scsi_Length     = scsi_command->scsi_SenseLength;
+        cmd->scsi_Flags      = SCSIF_READ;
+        cmd->scsi_CmdLength  = 12;
+
+        ret = atapi_packet(cmd,unit);
+        scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+        DeleteSCSICmd(cmd);
+
+        return ret;
+    } else {
+        return TDERR_NoMem;
+    }
+}

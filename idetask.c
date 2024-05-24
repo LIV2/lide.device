@@ -306,20 +306,12 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
             if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
 
                 Trace("Auto sense requested\n");
+                // Request sense with retries
+                for (int retry = 0; retry < 3; retry++) {
+                    if ((atapi_autosense(scsi_command,unit)) == 0) 
+                        break;
 
-                struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
-
-                if (cmd != NULL) {
-                    cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-                    cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
-                    cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
-                    cmd->scsi_Length     = scsi_command->scsi_SenseLength;
-                    cmd->scsi_Flags      = SCSIF_READ;
-                    cmd->scsi_CmdLength  = 12;
-
-                    atapi_packet(cmd,unit);
-                    scsi_command->scsi_SenseActual = cmd->scsi_Actual;
-                    DeleteSCSICmd(cmd);
+                    wait_us(unit->itask->tr,250000); // Wait 250ms before retrying
                 }
             }
         }
