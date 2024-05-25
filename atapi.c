@@ -767,7 +767,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
         cmd->scsi_Status = SCSI_CHECK_CONDITION;
     } else {
         if (ret == 0) {
-        dest[0] = (buf[1] - 4); // Length
+        dest[0] = (buf[1] - 3); // Length
         dest[1] = buf[2];       // Medium type
         dest[2] = buf[3];       // WP/DPOFUA Flags
         dest[3] = buf[7];       // Block descriptor length
