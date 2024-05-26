@@ -33,7 +33,7 @@
 */
 static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUnit *unit) {
     asm volatile (
-        "tst.b 0xBFE001"
+        "tst.b 0xBFEB01"
     );
 }
 /**
@@ -336,7 +336,6 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     UWORD data;
     BYTE ret = 0;
     UBYTE senseKey;
-    UBYTE operation = ((struct SCSI_CDB_10 *)cmd->scsi_Command)->operation;
     volatile UBYTE *status = unit->drive->status_command;
 
 
@@ -489,12 +488,6 @@ end:
         Warn("Interrupt reason: %02lx\n",*unit->drive->sectorCount);
         cmd->scsi_Status = 2;
         if (ret == 0) ret = HFERR_BadStatus;
-    }
-    if (cmd->scsi_Actual < cmd->scsi_Length) {
-        if (ret == 0 && (operation == SCSI_CMD_READ_10 || operation == SCSI_CMD_WRITE_10)) {
-            ret = IOERR_BADLENGTH;
-        }
-        Warn("Command %lx Transferred %ld of %ld requested for %ld blocks\n",(ULONG)(*(UBYTE *)cmd->scsi_Command),cmd->scsi_Actual, cmd->scsi_Length, ((struct SCSI_CDB_10 *)cmd->scsi_Command)->length);
     }
 
     if (ret == 0) {
@@ -780,8 +773,8 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
         cmd->scsi_Status = 2;
     }
 
-        cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
-        cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
+    cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
+    cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
 
     FreeMem(buf,len);
     DeleteSCSICmd(cmd_sense);
