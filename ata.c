@@ -449,13 +449,13 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
     if (count == 0) return TDERR_TooFewSecs;
 
-    void (*ata_read)(void *source, void *destination);
+    void (*ata_xfer)(void *source, void *destination);
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if (((ULONG)buffer) & 0x01) {
-        ata_read = unit->read_unaligned;
+        ata_xfer = unit->read_unaligned;
     } else {
-        ata_read = unit->read_fast;
+        ata_xfer = unit->read_fast;
     }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
@@ -507,7 +507,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_read((void *)unit->drive->data,buffer);
+                ata_xfer((void *)unit->drive->data,buffer);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
@@ -550,13 +550,13 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
     if (count == 0) return TDERR_TooFewSecs;
 
-    void (*ata_write)(void *source, void *destination);
+    void (*ata_xfer)(void *source, void *destination);
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if ((ULONG)buffer & 0x01) {
-        ata_write = unit->write_unaligned;
+        ata_xfer = unit->write_unaligned;
     } else {
-        ata_write = unit->write_fast;
+        ata_xfer = unit->write_fast;
     }
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
@@ -607,7 +607,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_write(buffer,(void *)unit->drive->data);
+                ata_xfer(buffer,(void *)unit->drive->data);
                 lba++;
                 txn_count--;
                 *actual += unit->blockSize;
