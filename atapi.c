@@ -1217,6 +1217,15 @@ BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit)
     return ret;
 }
 
+/**
+ * atapi_autosense
+ * 
+ * Perform a REQUEST SENSE and put the result into scsi_SenseData of a supplied SCSICmd
+ * 
+ * @param scsi_command Pointer to a SCSICmd struct
+ * @param unit Pointer to an IDEUnit struct
+ * @returns non-zero on error
+*/
 BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     UBYTE ret = 0;
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
