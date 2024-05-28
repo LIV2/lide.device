@@ -122,10 +122,10 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
         return error;
     }
 
-    UBYTE *data_length = data;   // Mode data length
+    UBYTE *data_length = data;  // Mode data length
     data[1] = unit->deviceType; // Mode parameter: Media type
-    data[2] = 0;                 // DPOFUA
-    data[3] = 0;                 // Block descriptor length
+    data[2] = 0;                // DPOFUA
+    data[3] = 0;                // Block descriptor length
 
     *data_length = 3;
 
@@ -148,7 +148,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
     if (page == 0x3F || page == 0x04) {
         data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
         data[idx++] = 0x16; // Page length
-        data[idx++] = 0;
+        data[idx++] = (unit->cylinders >> 16);
         data[idx++] = (unit->cylinders >> 8);
         data[idx++] = unit->cylinders;
         data[idx++] = unit->heads;
@@ -157,8 +157,8 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
         }
     }
 
-    *data_length += (idx + 1);
-    scsi_command->scsi_Actual = *data_length;
+    *data_length = idx - 1;
+    scsi_command->scsi_Actual = idx;
     return 0;
 
 }

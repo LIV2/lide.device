@@ -68,11 +68,11 @@ struct IDEUnit {
     BOOL  lba48;
     UWORD openCount;
     UWORD changeCount;
-    UWORD cylinders;
     UWORD heads;
     UWORD sectorsPerTrack;
     UWORD blockSize;
     UWORD blockShift;
+    ULONG cylinders;
     ULONG logicalSectors;
     struct MinList changeInts;
     UBYTE multipleCount;
