@@ -30,14 +30,19 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * ata_status_reg_delay
  * 
  * We need a short delay before actually checking the status register to let the drive update the status
- * Reading a CIA register should ensure a consistent delay regardless of CPU speed
+ * To get the right delay we read the status register 4 times but just throw away the result
  * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
  * 
  * @param unit Pointer to an IDEUnit struct
 */
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
     asm volatile (
-        "tst.b 0xBFE001"
+        ".rep 4     \n\t"
+        "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
+        ".endr      \n\t"
+        :
+        : "a" (unit->drive->status_command)
+        :
     );
 }
 
