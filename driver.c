@@ -892,7 +892,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         ms->numUnits    = 0;
         ms->SysBase     = SysBase;
 
-        UWORD index = 0;
+        UWORD *idx = &ms->numUnits;
 #if CDBOOT
         BOOL CDBoot = FindCDFS();
 #endif
@@ -913,15 +913,12 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                 // If CDFS not resident don't bother adding the CDROM to the mountlist
                 if (unit->deviceType == DG_CDROM && !CDBoot) continue;
 #endif
-                ms->Units[index].unitNum    = unit->unitNum;
-                ms->Units[index].deviceType = unit->deviceType;
-                ms->Units[index].configDev  = unit->cd;
-                index++;
+                ms->Units[*idx].unitNum    = unit->unitNum;
+                ms->Units[*idx].deviceType = unit->deviceType;
+                ms->Units[*idx].configDev  = unit->cd;
+                *idx += 1;
             }
         }
-
-        ms->numUnits = index;
-
         ReleaseSemaphore(&mydev->ulSem);
         if (ms->numUnits > 0) {
             MountDrive(ms);
