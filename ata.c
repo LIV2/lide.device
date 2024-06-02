@@ -274,7 +274,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
-        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->drive->data + i) & 0xC0) != 0xC0) {
+        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->drive + i) & 0xC0) != 0xC0) {
             dev_found = true;
             Trace("INIT: Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;
@@ -293,15 +293,15 @@ bool ata_init_unit(struct IDEUnit *unit) {
     if (ata_identify(unit,buf) == true) {
         Info("INIT: ATA Drive found!\n");
 
-        unit->lba             = ((*((UWORD *)buf + ata_identify_capabilities) & ata_capability_lba) != 0);
-        unit->cylinders       = *((UWORD *)buf + ata_identify_cylinders);
-        unit->heads           = *((UWORD *)buf + ata_identify_heads);
-        unit->sectorsPerTrack = *((UWORD *)buf + ata_identify_sectors);
+        unit->lba             = (buf[ata_identify_capabilities] & ata_capability_lba) != 0;
+        unit->cylinders       = buf[ata_identify_cylinders];
+        unit->heads           = buf[ata_identify_heads];
+        unit->sectorsPerTrack = buf[ata_identify_sectors];
         unit->blockSize       = 512;
-        unit->logicalSectors  = *((UWORD *)buf + ata_identify_logical_sectors+1) << 16 | *((UWORD *)buf + ata_identify_logical_sectors);
+        unit->logicalSectors  = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
         unit->blockShift      = 0;
         unit->mediumPresent   = true;
-        unit->multipleCount   = (*((UWORD *)buf + ata_identify_multiple) & 0xFF);
+        unit->multipleCount   = buf[ata_identify_multiple] & 0xFF;
 
         if (unit->multipleCount > 0 && (ata_set_multiple(unit,unit->multipleCount) == 0)) {
             unit->xferMultiple = true;
@@ -311,16 +311,17 @@ bool ata_init_unit(struct IDEUnit *unit) {
         }
 
         // Support LBA-48 but only up to 2TB
-        if (((*((UWORD *)buf + ata_identify_features) & ata_feature_lba48) != 0) && unit->logicalSectors >= 0xFFFFFFF) {
-            if (*((UWORD *)buf + ata_identify_lba48_sectors + 2) > 0 ||
-                *((UWORD *)buf + ata_identify_lba48_sectors + 3) > 0) {
+        if ((buf[ata_identify_features] & ata_feature_lba48) && unit->logicalSectors >= 0xFFFFFFF) {
+            if (buf[ata_identify_lba48_sectors + 2] > 0 ||
+                buf[ata_identify_lba48_sectors + 3] > 0) {
                 Info("INIT: Rejecting drive larger than 2TB\n");
                 return false;
             }
 
             unit->lba48 = true;
             Info("INIT: Drive supports LBA48 mode \n");
-            unit->logicalSectors = (*((UWORD *)buf + ata_identify_lba48_sectors + 1) << 16 | *((UWORD *)buf + ata_identify_lba48_sectors));
+            unit->logicalSectors = (buf[ata_identify_lba48_sectors + 1] << 16 | 
+                                    buf[ata_identify_lba48_sectors]);
             unit->write_taskfile = &write_taskfile_lba48;
  
         } else if (unit->lba == true) {
