@@ -121,7 +121,7 @@ struct IDETask {
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 7
+#define DEVICE_REVISION 8
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
 
 #endif
