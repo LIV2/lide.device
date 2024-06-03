@@ -26,8 +26,23 @@
 // NDK 1.3 definition of FindConfigDev is incorrect which causes "makes pointer from integer without a cast" warning
 struct ConfigDev* FindConfigDev(struct ConfigDev*, LONG, LONG);
 
+enum BOOTROM {
+  CIDER,
+  ATBUS
+};
+struct ideBoard {
+  struct ConfigDev *cd;
+  enum BOOTROM bootrom;
+  void *flashbase;
+  bool (*flash_init)(UBYTE *, UBYTE *, ULONG *);
+  void (*flash_erase_chip)();
+  void (*flash_erase_bank)();
+  void (*flash_writeByte)(ULONG, UBYTE);
+  void (*bankSelect)(UBYTE, UBYTE *);
+};
+
 ULONG getFileSize(char *);
 BOOL readFileToBuf(char *, void *);
-BOOL writeBufToFlash(UBYTE *source, UBYTE *dest, ULONG size);
+BOOL writeBufToFlash(struct ideBoard *board, UBYTE *source, UBYTE *dest, ULONG size);
 
 #endif
