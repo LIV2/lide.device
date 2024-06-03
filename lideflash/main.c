@@ -29,8 +29,16 @@
 #include "main.h"
 #include "config.h"
 
-#define MANUF_ID_BSC 0x082C
+#define MANUF_ID_A1K  0x0A1C
+#define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
+
+#define PROD_ID_CIDER  0x05
+#define PROD_ID_RIPPLE 0x07
+#define PROD_ID_OLGA   0xD0
+
+#define SERIAL_MATZE 0xB16B00B5
+#define SERIAL_LIV2  0x4C495632
 
 #define ROMSIZE 32768
 
@@ -39,7 +47,71 @@ struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;
 struct Config *config;
 
-static void bankSelect(UBYTE bank, UBYTE *boardBase);
+void bankSelect(UBYTE bank, UBYTE *boardBase);
+
+static void setup_liv2_board(struct ideBoard *board) {
+  board->bootrom          = CIDER;
+  board->bankSelect       = &bankSelect;
+  board->flash_init       = &flash_init;
+  board->flash_erase_bank = &flash_erase_bank;
+  board->flash_erase_chip = &flash_erase_chip;
+  board->flash_writeByte  = &flash_writeByte;
+
+  board->flashbase = board->cd->cd_BoardAddr;
+
+  if (board->cd->cd_BoardSize > 65536) {
+    // Newer version of the CIDER & RIPPLE firmware give the IDE device a 128K block, with the top 64K dedicated to the Flash
+    // This means we can flash the IDE ROM without having to disable IDE
+    board->flashbase += 65536;
+  }
+}
+
+static void setup_olga_board(struct ideBoard *board) {
+  board->bootrom          = ATBUS;
+  board->bankSelect       = NULL;
+  board->flash_init       = &flash_init;
+  board->flash_erase_bank = NULL;
+  board->flash_erase_chip = &flash_erase_chip;
+  board->flash_writeByte  = &flash_writeByte;
+
+  board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
+}
+
+/**
+ * assemble_rom
+ * 
+ * Given either lide.rom or lide-atbus.rom - adjust the file for the currebt board
+ * This is needed because lideflash will update all compatible boards, and can only be supplied with one filename
+*/
+static void assemble_rom(char *src_buffer, char *dst_buffer, ULONG bufSize, enum BOOTROM dstRomType) {
+  if (!src_buffer || !dst_buffer || bufSize == 0) return;
+
+  char *bootstrap = NULL;
+  char *driver    = NULL;
+
+  enum BOOTROM srcRomType = (((ULONG *)src_buffer)[0] == SERIAL_LIV2) ? CIDER : ATBUS;
+
+  memset(dst_buffer,0xFF,bufSize);
+
+  if (srcRomType == dstRomType) {
+    CopyMem(src_buffer,dst_buffer,bufSize);
+  } else {
+    driver = src_buffer + 0x1000;
+
+    if (dstRomType == ATBUS) {
+      // Source file was lide.rom, remove the 'LIV2' header
+      bootstrap = src_buffer + 4;
+      CopyMem(bootstrap,dst_buffer,0x1000);
+    } else {
+      // Source file was lide-atbus.rom, add the 'LIV2' header
+      ((ULONG *)dst_buffer)[0] = SERIAL_LIV2;
+      CopyMem(src_buffer,dst_buffer + 4, 0xFFC);
+    }
+
+    CopyMem(driver,dst_buffer + 0x1000, bufSize - 0x1000);
+
+  } 
+}
 
 int main(int argc, char *argv[])
 {
@@ -50,6 +122,7 @@ int main(int argc, char *argv[])
   int boards_found = 0;
 
   void *driver_buffer = NULL;
+  void *driver_buffer2 = NULL;
   void *cdfs_buffer   = NULL;
 
   ULONG romSize    = 0;
@@ -59,7 +132,7 @@ int main(int argc, char *argv[])
     return(rc);
   }
 
-  printf("LIV2 IDE Updater\n");
+  printf("\n==== LIDE Flash Updater ====\n");
 
   struct Task *task = FindTask(0);
   SetTaskPri(task,20);
@@ -78,9 +151,16 @@ int main(int argc, char *argv[])
         goto exit;
       }
 
+      if (romSize < 4096) {
+        printf("ROM file too small.\n");
+        rc = 5;
+        goto exit;
+      }
 
-      driver_buffer = AllocMem(romSize,MEMF_ANY|MEMF_CLEAR);
-      if (driver_buffer) {
+      driver_buffer  = AllocMem(romSize,MEMF_ANY|MEMF_CLEAR);
+      driver_buffer2 = AllocMem(romSize,MEMF_ANY|MEMF_CLEAR);
+
+      if (driver_buffer && driver_buffer2) {
         if (readFileToBuf(config->ide_rom_filename,driver_buffer) == false) {
           rc = 5;
           goto exit;
@@ -122,28 +202,49 @@ int main(int argc, char *argv[])
 
     if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
 
-      void *flashbase = NULL;
       struct ConfigDev *cd = NULL;
-      
+      struct ideBoard board;
+  
       while ((cd = FindConfigDev(cd,-1,-1)) != NULL) {
+
+        board.cd = cd;
 
         switch (cd->cd_Rom.er_Manufacturer) {
           case MANUF_ID_OAHR:
-            if (cd->cd_Rom.er_Product == 5) { // CIDER IDE
+            if (cd->cd_Rom.er_Product == PROD_ID_CIDER) {
               printf("Found CIDER IDE");
+              setup_liv2_board(&board);
               break;
-            } else if (cd->cd_Rom.er_Product == 7) { // RIPPLE
+            } else if (cd->cd_Rom.er_Product == PROD_ID_RIPPLE) {
               printf("Found RIPPLE IDE");
+              setup_liv2_board(&board);
               break;
             } else {
               continue; // Skip this board
             }
           
           case MANUF_ID_BSC:
-            if (cd->cd_Rom.er_Product == 6 && cd->cd_Rom.er_SerialNumber == 0x4C495632) { // Is it a LIV2 board pretending to be an AT-Bus 2008?
-              printf("Found Unknown LIV2 IDE board");
-              break;
-            } else {
+            if (cd->cd_Rom.er_Product == 6) {
+              // Is it a LIV2 board pretending to be an AT-Bus 2008?
+              if (cd->cd_Rom.er_SerialNumber == SERIAL_LIV2) {
+                printf("Found Unknown LIV2 IDE board");
+                setup_liv2_board(&board);
+                break;
+              } else if (cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
+                struct ConfigDev *tempcd;
+                if ((tempcd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_OLGA))) {
+                  printf("Found Dicke Olga");
+
+                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
+                    printf("\nSet Olgas Auto-boot switch to \"off\", reboot and try again.\n\n");
+                    continue;
+                  }
+
+                  setup_olga_board(&board);
+                  break;                  
+                }
+              }
+              
               continue; // Skip this board
             }
 
@@ -154,41 +255,47 @@ int main(int argc, char *argv[])
         printf(" at Address 0x%06x\n",(int)cd->cd_BoardAddr);
         boards_found++;
 
-        flashbase = cd->cd_BoardAddr;
-
-        if (cd->cd_BoardSize > 65536) {
-          // Newer version of the CIDER firmware give the IDE device a 128K block, with the top 64K dedicated to the Flash
-          // This means we can flash the IDE ROM without having to disable IDE
-          flashbase += 65536;
-        }
-
         UBYTE manufId,devId;
-        if (flash_init(&manufId,&devId,(ULONG *)flashbase)) {
+        if (board.flash_init(&manufId,&devId,board.flashbase)) {
 
           if (config->eraseFlash) {
             printf("Erasing flash.\n");
-            flash_erase_chip();
+            board.flash_erase_chip();
           }
 
           if (config->ide_rom_filename) {
-            bankSelect(0,cd->cd_BoardAddr);
+            if (board.bankSelect != NULL) {
+              board.bankSelect(0,cd->cd_BoardAddr);
+            }
+
             if (config->eraseFlash == false) {
-              printf("Erasing IDE bank...\n");
-              flash_erase_bank();
+              if (board.flash_erase_bank != NULL) {
+                printf("Erasing IDE bank...\n");
+                board.flash_erase_bank();
+              } else {
+                printf("Erasing IDE flash...\n");
+                board.flash_erase_chip();
+              }
             }
             printf("Writing IDE ROM.\n");
-            writeBufToFlash(driver_buffer,flashbase,romSize);
+            assemble_rom(driver_buffer,driver_buffer2,romSize,board.bootrom);
+            writeBufToFlash(&board,driver_buffer2,board.flashbase,romSize);
+            printf("\n");
           }
 
           if (config->cdfs_filename) {
-            bankSelect(1,cd->cd_BoardAddr);
-            if (cd->cd_Rom.er_Product == 7) {
+
+            if (cd->cd_Rom.er_Manufacturer == MANUF_ID_OAHR && 
+                cd->cd_Rom.er_Product == PROD_ID_RIPPLE && 
+                board.bankSelect != NULL) {
+
+              board.bankSelect(1,cd->cd_BoardAddr);
               if (config->eraseFlash == false) {
                 printf("Erasing CDFS bank...\n");
-                flash_erase_bank();
+                board.flash_erase_bank();
               }
               printf("Writing CDFS.\n");
-              writeBufToFlash(cdfs_buffer,flashbase,cdfsSize);
+              writeBufToFlash(&board,cdfs_buffer,board.flashbase,cdfsSize);
             } else {
               printf("This board does not support flashing CDFS.\n");
             }
@@ -216,12 +323,12 @@ int main(int argc, char *argv[])
   }
 
 exit:
-
-  if (driver_buffer) FreeMem(driver_buffer,romSize);
-  if (cdfs_buffer)   FreeMem(cdfs_buffer,cdfsSize);
-  if (config)        FreeMem(config,sizeof(struct Config));
-  if (ExpansionBase) CloseLibrary((struct Library *)ExpansionBase);
-  if (DosBase)       CloseLibrary((struct Library *)DosBase);
+  if (driver_buffer2) FreeMem(driver_buffer2,romSize);
+  if (driver_buffer)  FreeMem(driver_buffer,romSize);
+  if (cdfs_buffer)    FreeMem(cdfs_buffer,cdfsSize);
+  if (config)         FreeMem(config,sizeof(struct Config));
+  if (ExpansionBase)  CloseLibrary((struct Library *)ExpansionBase);
+  if (DosBase)        CloseLibrary((struct Library *)DosBase);
   return (rc);
 }
 
@@ -297,7 +404,7 @@ BOOL readFileToBuf(char *filename, void *buffer) {
  * @param bank the bank number to select
  * @param boardBase base address of the IDE board
 */
-static void bankSelect(UBYTE bank, UBYTE *boardBase) {
+void bankSelect(UBYTE bank, UBYTE *boardBase) {
   *(boardBase + BANK_SEL_REG) = (bank << 6);
 }
 
@@ -312,7 +419,7 @@ static void bankSelect(UBYTE bank, UBYTE *boardBase) {
  * @param size number of bytes to write
  * @returns true on success
 */
-BOOL writeBufToFlash(UBYTE *source, UBYTE *dest, ULONG size) {
+BOOL writeBufToFlash(struct ideBoard *board, UBYTE *source, UBYTE *dest, ULONG size) {
   UBYTE *sourcePtr = NULL;
   UBYTE *destPtr   = NULL;
 
@@ -332,7 +439,7 @@ BOOL writeBufToFlash(UBYTE *source, UBYTE *dest, ULONG size) {
       lastProgress = progress;
     }
     sourcePtr = ((void *)source + i);
-    flash_writeByte(i,*sourcePtr);
+    board->flash_writeByte(i,*sourcePtr);
 
   }
 

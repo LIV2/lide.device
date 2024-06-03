@@ -39,7 +39,6 @@ struct Config* configure(int argc, char *argv[]) {
   
   if (config == NULL) return NULL;
 
-  config->ide_rom_filename = NULL;
   config->cdfs_filename    = NULL;
   config->eraseFlash       = false;
 
@@ -67,7 +66,7 @@ struct Config* configure(int argc, char *argv[]) {
     }
   }
 
-  if (config->ide_rom_filename == NULL && config->cdfs_filename == NULL && config->eraseFlash == false) {
+ if (config->ide_rom_filename == NULL && config->cdfs_filename == NULL && config->eraseFlash == false) {
       error = true;
   }
 

@@ -38,4 +38,5 @@
 #define CMD_CFI_ID_EXIT  0xF0
 #define CMD_READ_RESET   0xF0
 
+
 #endif
