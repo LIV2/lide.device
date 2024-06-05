@@ -5,7 +5,8 @@ CFLAGS=-lamiga -mcrt=nix13 -mcpu=68000 -Wall -Wno-pointer-sign -g -O3 -fomit-fra
 
 all:	$(PROJECT)
 
-OBJ = flash.o \
+OBJ = olga.o \
+	flash.o \
 	config.o \
 	main.o
 

@@ -28,16 +28,14 @@
 #include "flash.h"
 #include "main.h"
 #include "config.h"
+#include "olga.h"
 
-#define MANUF_ID_A1K  0x0A1C
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
 
-#define PROD_ID_CIDER  0x05
-#define PROD_ID_RIPPLE 0x07
-#define PROD_ID_OLGA   0xD0
+#define PROD_ID_CIDER     0x05
+#define PROD_ID_RIPPLE    0x07
 
-#define SERIAL_MATZE 0xB16B00B5
 #define SERIAL_LIV2  0x4C495632
 
 #define ROMSIZE 32768
@@ -64,17 +62,6 @@ static void setup_liv2_board(struct ideBoard *board) {
     // This means we can flash the IDE ROM without having to disable IDE
     board->flashbase += 65536;
   }
-}
-
-static void setup_olga_board(struct ideBoard *board) {
-  board->bootrom          = ATBUS;
-  board->bankSelect       = NULL;
-  board->flash_init       = &flash_init;
-  board->flash_erase_bank = NULL;
-  board->flash_erase_chip = &flash_erase_chip;
-  board->flash_writeByte  = &flash_writeByte;
-
-  board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
 }
 
 /**
@@ -223,6 +210,31 @@ int main(int argc, char *argv[])
               continue; // Skip this board
             }
           
+          case MANUF_ID_A1K:
+            if (cd->cd_Rom.er_Product == PROD_ID_MATZE_IDE &&
+                cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
+
+                if (find_olga()) {
+                  printf("Found Dicke Olga");
+
+                  if (!olga_fw_supported(cd)) {
+                    printf("\nFirmware version %d or newer is required, please update and try again.\n",OLGA_MIN_FW_VER);
+                    continue;
+                  }
+
+                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
+                    printf("\nSet Olgas Auto-boot switch to \"off\", reboot and try again.\n\n");
+                    continue;
+                  }
+
+                  setup_olga_board(&board);
+                  break;                  
+                }
+
+            }
+
+            continue;
+
           case MANUF_ID_BSC:
             if (cd->cd_Rom.er_Product == 6) {
               // Is it a LIV2 board pretending to be an AT-Bus 2008?
@@ -231,9 +243,13 @@ int main(int argc, char *argv[])
                 setup_liv2_board(&board);
                 break;
               } else if (cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
-                struct ConfigDev *tempcd;
-                if ((tempcd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_OLGA))) {
+                if (find_olga()) {
                   printf("Found Dicke Olga");
+
+                  if (!olga_fw_supported(cd)) {
+                    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",OLGA_MIN_FW_VER);
+                    continue;
+                  }
 
                   if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
                     printf("\nSet Olgas Auto-boot switch to \"off\", reboot and try again.\n\n");
