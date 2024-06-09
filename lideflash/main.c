@@ -28,7 +28,7 @@
 #include "flash.h"
 #include "main.h"
 #include "config.h"
-#include "olga.h"
+#include "matzetk.h"
 
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
@@ -217,8 +217,7 @@ int main(int argc, char *argv[])
                 if (find_olga()) {
                   printf("Found Dicke Olga");
 
-                  if (!olga_fw_supported(cd)) {
-                    printf("\nFirmware version %d or newer is required, please update and try again.\n",OLGA_MIN_FW_VER);
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
                     continue;
                   }
 
@@ -227,8 +226,22 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_olga_board(&board);
+                  setup_matzetk_board(&board);
                   break;                  
+                } else if (find_68ec020_tk()) {
+                  printf("Found 68EC020-TK");
+
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                    continue;
+                  }
+
+                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
+                    printf("\nClose the \"BOOT\" jumper, reboot and try again.\n\n");
+                    continue;
+                  }   
+
+                  setup_matzetk_board(&board);
+                  break;
                 }
 
             }
@@ -246,8 +259,7 @@ int main(int argc, char *argv[])
                 if (find_olga()) {
                   printf("Found Dicke Olga");
 
-                  if (!olga_fw_supported(cd)) {
-                    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",OLGA_MIN_FW_VER);
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
                     continue;
                   }
 
@@ -256,8 +268,22 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_olga_board(&board);
+                  setup_matzetk_board(&board);
                   break;                  
+                } else if (find_68ec020_tk()) {
+                  printf("Found 68EC020-TK");
+
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                    continue;
+                  }
+
+                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
+                    printf("\nClose the \"BOOT\" jumper, reboot and try again.\n\n");
+                    continue;
+                  }   
+
+                  setup_matzetk_board(&board);
+                  break;
                 }
               }
               

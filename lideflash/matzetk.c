@@ -18,11 +18,12 @@
 
 #include <proto/expansion.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "flash.h"
 #include "main.h"
 #include "config.h"
-#include "olga.h"
+#include "matzetk.h"
 
 #define CONFIG_REG_OFFSET 0xE000
 #define FW_VER_OFFSET     0xA000
@@ -30,31 +31,34 @@
 #define CONFIG_FLASH_EN   0x4000
 
 /**
- * olga_enable_flash
+ * matzetk_enable_flash
  * 
- * Olgas config, waitstate registers etc all overlap the IDE space
+ * Config, waitstate registers etc all overlap the IDE space
  * This will poke a config bit to hide them until reboot
  * 
 */
-static void olga_enable_flash(struct ConfigDev *cd) {
+static void matzetk_enable_flash(struct ConfigDev *cd) {
     UWORD *configReg = (UWORD *)(cd->cd_BoardAddr + CONFIG_REG_OFFSET);
     
     *configReg |= CONFIG_FLASH_EN;
 }
 
-bool olga_fw_supported(struct ConfigDev *cd) {
+bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
     UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
     UWORD version = (*fwreg) >> 12;
 
-    return (version >= OLGA_MIN_FW_VER);
+    if (version < minVersion)
+      printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+
+    return (version >= minVersion);
 }
 
 /**
- * setup_olga_board
+ * setup_matzetk_board
  * 
- * Setup the ideBoard struct for Olga
+ * Setup the ideBoard struct
 */
-void setup_olga_board(struct ideBoard *board) {
+void setup_matzetk_board(struct ideBoard *board) {
   board->bootrom          = ATBUS;
   board->bankSelect       = NULL;
   board->flash_init       = &flash_init;
@@ -64,7 +68,7 @@ void setup_olga_board(struct ideBoard *board) {
 
   board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
 
-  olga_enable_flash(board->cd);
+  matzetk_enable_flash(board->cd);
 }
 
 /**
@@ -75,6 +79,20 @@ void setup_olga_board(struct ideBoard *board) {
 bool find_olga() {
   struct ConfigDev *cd;
     if ((cd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_OLGA)) != NULL) {
+      return true;
+    } else {
+      return false;
+    }
+}
+
+/**
+ * find_68ec020_tk
+ * 
+ * Returns true if 68EC020-TK is present
+*/
+bool find_68ec020_tk() {
+  struct ConfigDev *cd;
+    if ((cd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_68EC020_TK)) != NULL) {
       return true;
     } else {
       return false;
