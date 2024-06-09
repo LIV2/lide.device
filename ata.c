@@ -83,12 +83,14 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
 static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
     Trace("wait_drq enter\n");
+    UBYTE status;
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<1000; j++) {
-            if ((*unit->drive->status_command & ata_flag_drq) != 0) return true;
-            if (*unit->drive->status_command & (ata_flag_error | ata_flag_df)) return false;
+            status = *unit->drive->status_command;
+            if ((status & ata_flag_drq) != 0) return true;
+            if (status & (ata_flag_error | ata_flag_df)) return false;
         }
         wait_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
@@ -471,7 +473,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
         ata_save_error(unit);
         return HFERR_SelTimeout;
-
     }
 
     /**
@@ -496,27 +497,18 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
             return error;
         }
 
+        lba += txn_count;
+
         while (txn_count) {
-            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
-                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
-            }
-
-            if (ata_check_error(unit)) {
-                ata_save_error(unit);
-                Warn("ATA ERROR!!!\n");
-                Warn("last_error: %08lx\n",unit->last_error);
-                Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
-                return TDERR_NotSpecified;
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_xfer((void *)unit->drive->data,buffer);
-                lba++;
                 txn_count--;
-                *actual += unit->blockSize;
                 buffer += unit->blockSize;
             }
         }
@@ -596,27 +588,18 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
             return error;
         }
 
+        lba += txn_count;
+
         while (txn_count) {
-            if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT) || 
-                !ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
-            }
- 
-            if (ata_check_error(unit)) {
-                ata_save_error(unit);
-                Warn("ATA ERROR!!!\n");
-                Warn("last_error: %08lx\n",unit->last_error);
-                Warn("LBA: %ld, LastLBA: %ld\n",lba,unit->logicalSectors-1);
-                return TDERR_NotSpecified;
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_xfer(buffer,(void *)unit->drive->data);
-                lba++;
                 txn_count--;
-                *actual += unit->blockSize;
                 buffer += unit->blockSize;
             }
         }

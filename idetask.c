@@ -235,7 +235,9 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 } else {
                     error = ata_write(data,lba,count,&scsi_command->scsi_Actual,unit);
                 }
-                if (error != 0 ) {
+                if (error == 0) {
+                    scsi_command->scsi_Actual = scsi_command->scsi_Length;
+                } else {
                     if (error == TDERR_NotSpecified) {
                         scsi_sense(scsi_command,lba,
                         (unit->last_error[0] << 8 | unit->last_error[4])
@@ -685,6 +687,7 @@ transfer:
                         } else {
                             error  = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
                         }
+                        if (error == 0) ioreq->io_Actual = ioreq->io_Length;
                     }
                     break;
 
