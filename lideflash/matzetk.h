@@ -20,7 +20,7 @@
 #define MATZETK_H
 
 #define OLGA_MIN_FW_VER 9
-#define TK020_MIN_FW_VER 4
+#define TK020_MIN_FW_VER 5
 
 #define MANUF_ID_A1K  0x0A1C
 
