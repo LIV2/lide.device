@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board);
+                  setup_matzetk_board(&board,PROD_ID_OLGA);
                   break;                  
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
@@ -235,12 +235,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
-                    printf("\nClose the \"BOOT\" jumper, reboot and try again.\n\n");
-                    continue;
-                  }   
-
-                  setup_matzetk_board(&board);
+                  setup_matzetk_board(&board,PROD_ID_68EC020_TK);
                   break;
                 }
 
@@ -268,7 +263,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board);
+                  setup_matzetk_board(&board,PROD_ID_OLGA);
                   break;                  
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
@@ -277,12 +272,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
-                    printf("\nClose the \"BOOT\" jumper, reboot and try again.\n\n");
-                    continue;
-                  }   
-
-                  setup_matzetk_board(&board);
+                  setup_matzetk_board(&board,PROD_ID_68EC020_TK);
                   break;
                 }
               }
