@@ -58,7 +58,7 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
  * 
  * Setup the ideBoard struct
 */
-void setup_matzetk_board(struct ideBoard *board) {
+void setup_matzetk_board(struct ideBoard *board, UBYTE productId) {
   board->bootrom          = ATBUS;
   board->bankSelect       = NULL;
   board->flash_init       = &flash_init;
@@ -68,7 +68,8 @@ void setup_matzetk_board(struct ideBoard *board) {
 
   board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
 
-  matzetk_enable_flash(board->cd);
+  if (productId == PROD_ID_OLGA)
+    matzetk_enable_flash(board->cd);
 }
 
 /**
