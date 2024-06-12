@@ -31,7 +31,7 @@
 #define SERIAL_MATZE 0xB16B00B5
 
 bool matzetk_fw_supported(struct ConfigDev *, ULONG);
-void setup_matzetk_board(struct ideBoard *, UBYTE);
+void setup_matzetk_board(struct ideBoard *);
 bool find_olga();
 bool find_68ec020_tk();
 

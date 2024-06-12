@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board,PROD_ID_OLGA);
+                  setup_matzetk_board(&board);
                   break;                  
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board,PROD_ID_68EC020_TK);
+                  setup_matzetk_board(&board);
                   break;
                 }
 
@@ -263,7 +263,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board,PROD_ID_OLGA);
+                  setup_matzetk_board(&board);
                   break;                  
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
@@ -272,7 +272,7 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  setup_matzetk_board(&board,PROD_ID_68EC020_TK);
+                  setup_matzetk_board(&board);
                   break;
                 }
               }
