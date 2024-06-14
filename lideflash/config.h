@@ -22,6 +22,8 @@ struct Config {
   char *ide_rom_filename;
   char *cdfs_filename;
   bool eraseFlash;
+  bool rebootRequired;
+  bool assumeYes;
 };
 
 struct Config* configure(int, char* []);

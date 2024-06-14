@@ -36,7 +36,7 @@ static const LONG devices_supported[] = {
 };
 
 /** flash_is_supported
- * 
+ *
  * @brief Check if the device id is supported
  * @param manufacturer the manufacturer ID
  * @param device the device id
@@ -49,7 +49,7 @@ static bool flash_is_supported(UBYTE manufacturer, UBYTE device) {
   while (devices_supported[i] != 0) {
     if (devices_supported[i] == deviceId)
       return true;
-    
+
     i++;
   }
 
@@ -121,10 +121,10 @@ void flash_erase_bank() {
 }
 
 /** flash_erase_sector
- * 
+ *
  * @brief Erase a sector
  * @param address Address of sector to erase
- * 
+ *
 */
 void flash_erase_sector(ULONG address) {
   address &= (FLASH_SIZE-1);
@@ -161,7 +161,7 @@ bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base) {
   bool ret = false;
   UBYTE manufId;
   UBYTE deviceId;
-  
+
   flashbase = (ULONG)base;
 
   flash_unlock_sdp();

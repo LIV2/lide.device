@@ -47,6 +47,34 @@ struct Config *config;
 
 void bankSelect(UBYTE bank, UBYTE *boardBase);
 
+/**
+ * _ColdReboot()
+ *
+ * Kickstart V36 (2.0+) and up contain a function for this
+ * But for 1.3 we will need to provide our own function
+ */
+static void _ColdReboot() {
+  // Copied from coldboot.asm
+  // http://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node02E3.html
+  asm("move.l  4,a6               \n\t" // SysBase
+      "lea.l   DoIt(pc),a5        \n\t"
+      "jsr     -0x1e(a6)          \n\t" // Call from Supervisor mode
+      ".align 4                   \n\t" // Must be aligned!
+      "DoIt:                      \n\t"
+      "lea.l   0x1000000,a0       \n\t" // (ROM end)
+      "sub.l   -0x14(a0),a0       \n\t" // (ROM end)-(ROM Size)
+      "move.l  4(a0),a0           \n\t" // Initial PC
+      "subq.l  #2,(a0)            \n\t" // Points to second RESET
+      "reset                      \n\t"
+      "jmp     (a0)");
+}
+
+/**
+ * setup_liv2_board
+ *
+ * Configure the board struct for a LIV2 Board (CIDER/RIPPLE)
+ * @param board pointer to the board struct
+ */
 static void setup_liv2_board(struct ideBoard *board) {
   board->bootrom          = CIDER;
   board->bankSelect       = &bankSelect;
@@ -54,6 +82,8 @@ static void setup_liv2_board(struct ideBoard *board) {
   board->flash_erase_bank = &flash_erase_bank;
   board->flash_erase_chip = &flash_erase_chip;
   board->flash_writeByte  = &flash_writeByte;
+  board->writeEnable      = NULL;
+  board->rebootRequired   = false;
 
   board->flashbase = board->cd->cd_BoardAddr;
 
@@ -65,8 +95,38 @@ static void setup_liv2_board(struct ideBoard *board) {
 }
 
 /**
+ * promptUser
+ *
+ * Ask if the user wants to update this board
+ * @param config pointer to the config struct
+ * @return boolean true / false
+ */
+static bool promptUser(struct Config *config) {
+  char c;
+  char answer = 'y'; // Default to yes
+
+  printf("Update this device? (Y)es/(n)o/(a)ll: ");
+
+  if (config->assumeYes) {
+    printf("y\n");
+    return true;
+  }
+
+  while ((c = getchar()) != '\n' && c != EOF) answer = c;
+
+  answer |= 0x20; // convert to lowercase;
+
+  if (answer == 'a') {
+    config->assumeYes = true;
+    return true;
+  }
+
+  return (answer == 'y');
+}
+
+/**
  * assemble_rom
- * 
+ *
  * Given either lide.rom or lide-atbus.rom - adjust the file for the currebt board
  * This is needed because lideflash will update all compatible boards, and can only be supplied with one filename
 */
@@ -97,7 +157,7 @@ static void assemble_rom(char *src_buffer, char *dst_buffer, ULONG bufSize, enum
 
     CopyMem(driver,dst_buffer + 0x1000, bufSize - 0x1000);
 
-  } 
+  }
 }
 
 int main(int argc, char *argv[])
@@ -191,7 +251,7 @@ int main(int argc, char *argv[])
 
       struct ConfigDev *cd = NULL;
       struct ideBoard board;
-  
+
       while ((cd = FindConfigDev(cd,-1,-1)) != NULL) {
 
         board.cd = cd;
@@ -209,7 +269,7 @@ int main(int argc, char *argv[])
             } else {
               continue; // Skip this board
             }
-          
+
           case MANUF_ID_A1K:
             if (cd->cd_Rom.er_Product == PROD_ID_MATZE_IDE &&
                 cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
@@ -221,13 +281,9 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
-                    printf("\nSet Olgas Auto-boot switch to \"off\", reboot and try again.\n\n");
-                    continue;
-                  }
-
                   setup_matzetk_board(&board);
-                  break;                  
+                  break;
+
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
 
@@ -251,6 +307,7 @@ int main(int argc, char *argv[])
                 setup_liv2_board(&board);
                 break;
               } else if (cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
+
                 if (find_olga()) {
                   printf("Found Dicke Olga");
 
@@ -258,13 +315,9 @@ int main(int argc, char *argv[])
                     continue;
                   }
 
-                  if (cd->cd_Rom.er_Type & ERTF_DIAGVALID) {
-                    printf("\nSet Olgas Auto-boot switch to \"off\", reboot and try again.\n\n");
-                    continue;
-                  }
-
                   setup_matzetk_board(&board);
-                  break;                  
+                  break;
+
                 } else if (find_68ec020_tk()) {
                   printf("Found 68EC020-TK");
 
@@ -276,7 +329,7 @@ int main(int argc, char *argv[])
                   break;
                 }
               }
-              
+
               continue; // Skip this board
             }
 
@@ -286,6 +339,15 @@ int main(int argc, char *argv[])
 
         printf(" at Address 0x%06x\n",(int)cd->cd_BoardAddr);
         boards_found++;
+
+        // Ask the user if they wish to update this board
+        if (!promptUser(config)) continue;
+
+        if (board.writeEnable != NULL)  // Setup board to allow flash write access
+          board.writeEnable(&board);
+
+        if (board.rebootRequired)
+          config->rebootRequired = true;
 
         UBYTE manufId,devId;
         if (board.flash_init(&manufId,&devId,board.flashbase)) {
@@ -317,8 +379,8 @@ int main(int argc, char *argv[])
 
           if (config->cdfs_filename) {
 
-            if (cd->cd_Rom.er_Manufacturer == MANUF_ID_OAHR && 
-                cd->cd_Rom.er_Product == PROD_ID_RIPPLE && 
+            if (cd->cd_Rom.er_Manufacturer == MANUF_ID_OAHR &&
+                cd->cd_Rom.er_Product == PROD_ID_RIPPLE &&
                 board.bankSelect != NULL) {
 
               board.bankSelect(1,cd->cd_BoardAddr);
@@ -341,13 +403,23 @@ int main(int argc, char *argv[])
           rc = 5;
         }
       }
-    
+
       if (boards_found == 0) {
         printf("No IDE board(s) found\n");
       }
     } else {
       printf("Couldn't open Expansion.library.\n");
       rc = 5;
+    }
+
+    if (config->rebootRequired) {
+      printf("Press return to reboot.\n");
+      getchar();
+      if (SysBase->SoftVer >= 36) {
+        ColdReboot();
+      } else {
+        _ColdReboot();
+      }
     }
 
   } else {

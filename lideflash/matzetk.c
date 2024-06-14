@@ -32,14 +32,14 @@
 
 /**
  * matzetk_enable_flash
- * 
+ *
  * Config, waitstate registers etc all overlap the IDE space
  * This will poke a config bit to hide them until reboot
- * 
+ *
 */
-static void matzetk_enable_flash(struct ConfigDev *cd) {
-    UWORD *configReg = (UWORD *)(cd->cd_BoardAddr + CONFIG_REG_OFFSET);
-    
+void matzetk_enable_flash(struct ideBoard *board) {
+    UWORD *configReg = (UWORD *)(board->cd->cd_BoardAddr + CONFIG_REG_OFFSET);
+
     *configReg |= CONFIG_FLASH_EN;
 }
 
@@ -55,7 +55,7 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
 
 /**
  * setup_matzetk_board
- * 
+ *
  * Setup the ideBoard struct
 */
 void setup_matzetk_board(struct ideBoard *board) {
@@ -65,15 +65,16 @@ void setup_matzetk_board(struct ideBoard *board) {
   board->flash_erase_bank = NULL;
   board->flash_erase_chip = &flash_erase_chip;
   board->flash_writeByte  = &flash_writeByte;
+  board->writeEnable      = &matzetk_enable_flash;
+  board->rebootRequired   = true; // write enable turns off IDE so we must reboot afterwards
+
 
   board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
-
-  matzetk_enable_flash(board->cd);
 }
 
 /**
  * find_olga
- * 
+ *
  * Returns true if Olga is present
 */
 bool find_olga() {
@@ -87,7 +88,7 @@ bool find_olga() {
 
 /**
  * find_68ec020_tk
- * 
+ *
  * Returns true if 68EC020-TK is present
 */
 bool find_68ec020_tk() {

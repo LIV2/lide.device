@@ -36,11 +36,13 @@ struct Config* configure(int argc, char *argv[]) {
 
   struct Config *config;
   config = (struct Config *)AllocMem(sizeof(struct Config),MEMF_CLEAR);
-  
+
   if (config == NULL) return NULL;
 
   config->cdfs_filename    = NULL;
   config->eraseFlash       = false;
+  config->rebootRequired   = false;
+  config->assumeYes        = false;
 
   for (int i=1; i<argc; i++) {
     if (argv[i][0] == '-') {
@@ -62,6 +64,15 @@ struct Config* configure(int argc, char *argv[]) {
         case 'E':
           config->eraseFlash = true;
           break;
+
+        case 'R':
+          config->rebootRequired = true;
+          break;
+
+        case 'Y':
+          config->assumeYes = true;
+          break;
+
       }
     }
   }
@@ -86,5 +97,6 @@ void usage() {
     printf("       -I <ide rom> - Flash IDE ROM.\n");
     printf("       -C <CDFileSystem> - Flash CDFilesystem to ROM.\n");
     printf("       -E Erase flash.\n");
+    printf("       -R reboot.\n");
 
 }
