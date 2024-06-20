@@ -73,29 +73,34 @@ void setup_matzetk_board(struct ideBoard *board) {
 }
 
 /**
- * find_olga
+ * boardIsOlga
  *
- * Returns true if Olga is present
+ * Returns true if the board is a Dicke Olga
 */
-bool find_olga() {
-  struct ConfigDev *cd;
-    if ((cd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_OLGA)) != NULL) {
+bool boardIsOlga(struct ConfigDev *cd) {
+  struct ConfigDev *prevCd = (struct ConfigDev *)cd->cd_Node.ln_Pred;
+
+  if (prevCd->cd_Rom.er_Manufacturer == MANUF_ID_A1K &&
+      prevCd->cd_Rom.er_Product == PROD_ID_OLGA)
+
       return true;
-    } else {
-      return false;
-    }
+
+  return false;
 }
 
 /**
- * find_68ec020_tk
+ * boardIs68ec020tk
  *
- * Returns true if 68EC020-TK is present
+ * Returns true the board is a 68EC020-TK
 */
-bool find_68ec020_tk() {
-  struct ConfigDev *cd;
-    if ((cd = FindConfigDev(NULL,MANUF_ID_A1K,PROD_ID_68EC020_TK)) != NULL) {
+bool boardIs68ec020tk(struct ConfigDev *cd) {
+  struct ConfigDev *prevCd = (struct ConfigDev *)cd->cd_Node.ln_Pred;
+
+  if (prevCd->cd_Rom.er_Manufacturer == MANUF_ID_A1K &&
+      (prevCd->cd_Rom.er_Product == PROD_ID_68EC020_TK_1 ||
+      (prevCd->cd_Rom.er_Product == PROD_ID_68EC020_TK_2)))
+
       return true;
-    } else {
-      return false;
-    }
+
+  return false;
 }

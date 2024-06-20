@@ -24,15 +24,16 @@
 
 #define MANUF_ID_A1K  0x0A1C
 
-#define PROD_ID_OLGA       0xD0
-#define PROD_ID_MATZE_IDE  0x7D
-#define PROD_ID_68EC020_TK 0x08
+#define PROD_ID_OLGA         0xD0
+#define PROD_ID_MATZE_IDE    0x7D
+#define PROD_ID_68EC020_TK_1 0x08
+#define PROD_ID_68EC020_TK_2 0x09
 
 #define SERIAL_MATZE 0xB16B00B5
 
 bool matzetk_fw_supported(struct ConfigDev *, ULONG);
 void setup_matzetk_board(struct ideBoard *);
-bool find_olga();
-bool find_68ec020_tk();
+bool boardIsOlga(struct ConfigDev *);
+bool boardIs68ec020tk(struct ConfigDev *);
 
 #endif

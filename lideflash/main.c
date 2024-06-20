@@ -274,7 +274,7 @@ int main(int argc, char *argv[])
             if (cd->cd_Rom.er_Product == PROD_ID_MATZE_IDE &&
                 cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
 
-                if (find_olga()) {
+                if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
                   if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
                   setup_matzetk_board(&board);
                   break;
 
-                } else if (find_68ec020_tk()) {
+                } else if (boardIs68ec020tk(cd)) {
                   printf("Found 68EC020-TK");
 
                   if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
                 break;
               } else if (cd->cd_Rom.er_SerialNumber == SERIAL_MATZE) {
 
-                if (find_olga()) {
+                if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
                   if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
@@ -318,7 +318,7 @@ int main(int argc, char *argv[])
                   setup_matzetk_board(&board);
                   break;
 
-                } else if (find_68ec020_tk()) {
+                } else if (boardIsOlga(cd)) {
                   printf("Found 68EC020-TK");
 
                   if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
