@@ -550,8 +550,15 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     ioreq->io_Unit = (struct Unit *)unit;
 
-    // Set io_Message type to NT_MESSAGE to make sure CheckIO() functions correctly
-    ioreq->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+    /* IMPORTANT: Mark IORequest as "complete" or otherwise CheckIO() may
+     *            consider it as "in use" in spite of never having been
+     *            used at all. This also avoids that WaitIO() will hang
+     *            on an IORequest which has never been used.
+     *
+     *            Source: Olaf Barthel's Trackfile.device
+     *            https://github.com/obarthel/trackfile-device
+    */
+    ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
 
     // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
     // This will update the media presence & geometry
