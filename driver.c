@@ -387,6 +387,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
         Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
         cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
+        cd->cd_Driver = dev;
         
         numBoards++;
         UBYTE channels = detectChannels(cd);
