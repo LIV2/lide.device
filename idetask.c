@@ -680,7 +680,7 @@ transfer:
 
                     if ((lba + count) > (unit->logicalSectors)) {
                         Trace("Read past end of device\n");
-                        error  = TDERR_SeekError;
+                        error  = IOERR_BADADDRESS;
                         break;
                     }
 
