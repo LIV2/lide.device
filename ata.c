@@ -455,8 +455,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     } 
 
-    if (count == 0) return TDERR_TooFewSecs;
-
     void (*ata_xfer)(void *source, void *destination);
 
     /* If the buffer is not word-aligned we need to use a slower routine */
@@ -545,8 +543,6 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
     } else {
         command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
-
-    if (count == 0) return TDERR_TooFewSecs;
 
     void (*ata_xfer)(void *source, void *destination);
 

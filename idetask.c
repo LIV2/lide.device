@@ -673,6 +673,11 @@ transfer:
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
                     count = (ioreq->io_Length >> blockShift);
 
+                    if (count == 0) {
+                        error = IOERR_BADLENGTH;
+                        break;
+                    }
+
                     if ((lba + count) > (unit->logicalSectors)) {
                         Trace("Read past end of device\n");
                         error  = TDERR_SeekError;
