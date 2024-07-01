@@ -21,6 +21,7 @@
 #include "string.h"
 #include "wait.h"
 #include "blockcopy.h"
+#include "idetask.h"
 
 /**
  * atapi_status_reg_delay
@@ -280,7 +281,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
                     case 0x02:                       // Unit not ready
                         if (asc == 0x4) {            // Becoming ready
                             ret = TDERR_DiskChanged;
-                            wait(unit->itask->tr,1);   // Wait
+                            wait_s(unit->itask->tr,1);   // Wait
                             continue;                // and try again
                         } else {
                             ret = TDERR_DiskChanged; // No media
@@ -367,6 +368,9 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         byte_count = cmd->scsi_Length;
     }
 
+    // *unit->altStatus &= ~(ATA_NIEN);
+    *unit->altStatus |= (ATA_NIEN);
+
     *unit->drive->lbaMid         = byte_count & 0xFF; 
     *unit->drive->lbaHigh        = byte_count >> 8 & 0xFF;
     *unit->drive->error_features = 0;
@@ -400,7 +404,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
             Trace("ATAPI: CMD Word: %ld\n",0);
         }
     }
-
+    // Wait( 1 << unit->itask->irqSignal);
     if (*status & ata_flag_error) goto ata_error;
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
@@ -460,6 +464,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 byte_count -= 2;
             }
         }
+
+        // Wait(1 << unit->itask->irqSignal);
     }
 
     if (unit->SysBase->SoftVer > 36) {
@@ -535,7 +541,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (tries > 0) wait(unit->itask->tr,3);
+                            if (tries > 0) wait_s(unit->itask->tr,3);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;

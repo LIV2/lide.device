@@ -44,6 +44,7 @@ struct IDEUnit {
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct IDETask *itask;
+    volatile UBYTE *altStatus;
     volatile struct Drive *drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
     enum  xfer xferMethod;
@@ -93,21 +94,6 @@ struct DeviceBase {
     struct MinList         ideTasks;
 };
 
-struct IDETask {
-    struct MinNode     mn_Node;
-    struct Task        *task;
-    struct Task        *parent;
-    struct DeviceBase  *dev;
-    struct ConfigDev   *cd;
-    struct MsgPort     *iomp;
-    struct MsgPort     *timermp;
-    struct timerequest *tr;
-    volatile bool      active;
-    UBYTE              shadowDevHead;
-    UBYTE              boardNum;
-    UBYTE              taskNum;
-    UBYTE              channel;
-};
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
                           if invoked from a macro, macro arguments are expanded). */

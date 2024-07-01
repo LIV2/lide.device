@@ -443,7 +443,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
+    //dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;

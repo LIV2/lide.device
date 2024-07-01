@@ -70,6 +70,8 @@
 #define ata_capability_dma (1<<8)
 #define ata_feature_lba48  (1<<10)
 
+#define ATA_NIEN 0x02
+
 enum xfer_dir {
     READ,
     WRITE
