@@ -99,7 +99,7 @@ disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/b
 	                            write lide.device Expansion/lide.device
 
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info
 	@mkdir -p $(BUILDDIR)
 	cp $^ $(BUILDDIR)
 	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
