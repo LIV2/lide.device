@@ -17,8 +17,7 @@
 
 enum xfer {
     longword_movem,
-    longword_move,
-    longword_move16
+    longword_move
 };
 
 /**

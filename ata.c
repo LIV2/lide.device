@@ -19,7 +19,6 @@
 #include "scsi.h"
 #include "string.h"
 #include "blockcopy.h"
-#include "move16.h"
 #include "wait.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
@@ -239,13 +238,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
             unit->write_fast      = &ata_write_long_move;
             unit->write_unaligned = &ata_write_unaligned_long;
             break;
-        case longword_move16:
-            unit->read_fast       = &ata_xfer_long_move16;
-            unit->read_unaligned  = &ata_read_unaligned_long;
-            unit->write_fast      = &ata_xfer_long_move16;
-            unit->write_unaligned = &ata_write_unaligned_long;
-            break;
-        }
+    }
 }
 
 /**

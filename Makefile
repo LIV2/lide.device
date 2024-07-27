@@ -35,7 +35,6 @@ endif
 LDFLAGS+= -lnix13
 
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
-.INTERMEDIATE: move16.o
 
 all:	$(ROM) \
 		lideflash \
@@ -55,11 +54,6 @@ ASMOBJ = endskip.o
 
 SRCS = $(OBJ:%.o=%.c)
 SRCS += $(ASMOBJ:%.o=%.S)
-SRCS += move16.o
-
-move16.o: move16.c
-	${CC} -o $@ $(CFLAGS) -c -mcpu=68060 $< $(LDFLAGS)
-
 
 $(PROJECT): $(SRCS)
 	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)
