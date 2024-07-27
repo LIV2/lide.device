@@ -516,6 +516,11 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
+    /* IMPORTANT: Must return TDERR_BadUnitNum when lun > 0
+     * SCSI Unit encoding places the LUN in the 10s column of the unit number
+     * HDToolbox scans each LUN of a unit and stops searching if it sees an error other than TDERR_BadUnitNum
+     * So if this is not returned, only one drive will ever be detected
+    */
     UBYTE lun = unitnum / 10;
     unitnum = (unitnum % 10);
     
