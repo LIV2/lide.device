@@ -516,6 +516,15 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
+    UBYTE lun = unitnum / 10;
+    unitnum = (unitnum % 10);
+    
+    if (lun != 0) {
+        // No LUNs for IDE drives
+        error = TDERR_BadUnitNum;
+        goto exit;
+    }
+
     if (unitnum > dev->highestUnit) {
         error = IOERR_OPENFAIL;
         goto exit;
