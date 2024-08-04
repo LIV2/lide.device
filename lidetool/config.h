@@ -21,6 +21,10 @@
 struct Config {
   int Unit;
   int Mode;
+  int Pio;
+  char *Device;
+  bool DumpInfo;
+  int Multiple;
 };
 
 struct Config* configure(int, char* []);

@@ -20,4 +20,33 @@
 #define MAIN_H
 
 
+struct __attribute__((packed)) SCSI_Inquiry {
+    UBYTE peripheral_type;
+    UBYTE removable_media;
+    UBYTE version;
+    UBYTE response_format;
+    UBYTE additional_length;
+    UBYTE flags[3];
+    UBYTE vendor[8];
+    UBYTE product[16];
+    UBYTE revision[4];
+    UBYTE serial[8];
+};
+
+struct __attribute__((packed)) SCSI_CDB_10 {
+    UBYTE operation;
+    UBYTE flags;
+    ULONG lba;
+    UBYTE group;
+    UWORD length;
+    UBYTE control;
+};
+
+#define SZ_CDB_10 10
+#define SCSI_CMD_INQUIRY 0x12
+
+#define CMD_XFER 0x1001
+#define CMD_PIO  (CMD_XFER + 1)
+
+
 #endif

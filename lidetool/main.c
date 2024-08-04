@@ -23,6 +23,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include "../device.h"
+#include <devices/scsidisk.h>
+#include <devices/trackdisk.h>
 
 #include "main.h"
 #include "config.h"
@@ -32,6 +35,216 @@
 struct ExecBase *SysBase;
 struct Config *config;
 
+/**
+ * MakeSCSICmd
+ * 
+ * Creates an new SCSICmd struct and CDB
+ * 
+ * @param cdbSize Size of CDB to create
+ * @returns Pointer to an initialized SCSICmd struct 
+*/
+struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
+    UBYTE          *cdb = NULL;
+    struct SCSICmd *cmd = NULL;
+
+    if ((cdb = AllocMem(cdbSize,MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        return NULL;
+    }
+
+    if ((cmd = AllocMem(sizeof(struct SCSICmd),MEMF_ANY|MEMF_CLEAR)) == NULL) {
+        FreeMem(cdb,cdbSize);
+        return NULL;
+    }
+
+    cmd->scsi_Command   = (UBYTE *)cdb;
+    cmd->scsi_CmdLength = cdbSize;
+    cmd->scsi_Data      = NULL;
+    cmd->scsi_Length    = 0;
+    cmd->scsi_SenseData = NULL;
+
+    return cmd;
+}
+
+/**
+ * DeleteSCSICmd
+ * 
+ * Delete a SCSICmd and its CDB
+ * 
+ * @param cmd Pointer to a SCSICmd struct to be deleted
+*/
+void DeleteSCSICmd(struct SCSICmd *cmd) {
+    if (cmd) {
+        UBYTE *cdb = cmd->scsi_Command;
+        if (cdb) FreeMem(cdb,(ULONG)cmd->scsi_CmdLength);
+        FreeMem(cmd,sizeof(struct SCSICmd));
+    }
+}
+
+/** 
+ * doScsiInquiry
+ * 
+ * Send an INQUIRY command to the device and print the details
+ * 
+ * @param req An open IOStdReq 
+ */
+static void doScsiInquiry(struct IOStdReq *req) {
+  BYTE error = 0;
+  struct SCSICmd *cmd;
+  struct SCSI_Inquiry *data;
+
+  if ((cmd = MakeSCSICmd(SZ_CDB_10)) != NULL) {
+    if ((data = AllocMem(100,MEMF_ANY|MEMF_CLEAR)) != NULL) {
+      char vendor[9];
+      char product[17];
+      char revision[5];
+      char serial[9];
+
+      cmd->scsi_Command[0] = SCSI_CMD_INQUIRY;
+      cmd->scsi_Command[2] = 0;
+      cmd->scsi_Command[4] = sizeof(struct SCSI_Inquiry);
+      cmd->scsi_Data   = (UWORD *)data;
+      cmd->scsi_Length = 100;
+      cmd->scsi_Flags  = SCSIF_READ;
+
+      req->io_Actual  = 0;
+      req->io_Length  = 100;
+      req->io_Command = HD_SCSICMD;
+      req->io_Data    = cmd;
+      req->io_Offset  = 0;
+
+      error = DoIO((struct IORequest *)req);
+      if (error == 0 && cmd->scsi_Status == 0) {
+        memset(vendor,0,9);
+        memset(product,0,17);
+        memset(revision,0,5);
+        memset(serial,0,9);
+
+        strncpy(vendor, data->vendor, 8);
+        strncpy(product, data->product, 16);
+        strncpy(revision, data->revision, 4);
+        strncpy(serial, data->serial, 8);
+        printf("Vendor:              %s\n",vendor);
+        printf("Product:             %s\n", product);
+        printf("Revision:            %s\n", revision);
+        printf("Serial:              %s\n", serial);
+      } else {
+        if (error)
+          printf("IO Error %d\n", error);
+        
+        if (cmd->scsi_Status)
+          printf("SCSI Status: %d\n",cmd->scsi_Status);
+      }
+      FreeMem(data,100);
+    } else {
+      printf("Failed to allocate memory.\n");
+    }
+
+    DeleteSCSICmd(cmd);
+  } else {
+    printf("Failed to allocate memory.\n");
+  }
+}
+
+/** 
+ * DumpUnit
+ * 
+ * Print various details of the Unit
+ * 
+ * @param req An open IOStdReq 
+ */
+static void DumpUnit(struct IOStdReq *req) { 
+  
+    struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
+
+    printf("Device Type:         %d\n", unit->deviceType);
+    printf("Transfer method:     %d\n", unit->xferMethod);
+    printf("Primary:             %s\n", (unit->primary) ? "Yes" : "No");
+    printf("ATAPI:               %s\n", (unit->atapi) ? "Yes" : "No");
+    printf("Medium Present:      %s\n", (unit->mediumPresent) ? "Yes" : "No");
+    printf("Supports LBA:        %s\n", (unit->lba) ? "Yes" : "No");
+    printf("Supports LBA48:      %s\n", (unit->lba48) ? "Yes" : "No");
+    printf("C/H/S:               %d/%d/%d\n", unit->cylinders, unit->heads, unit->sectorsPerTrack);
+    printf("Logical Sectors:     %ld\n", (long int)unit->logicalSectors);
+    printf("READ/WRITE Multiple: %s\n", (unit->xferMultiple) ? "Yes" : "No");
+    printf("Multiple count:      %d\n", unit->multipleCount);
+    printf("Last Error: ");
+    for (int i=0; i<6; i++) {
+      printf("%02x ",unit->last_error[i]);
+    }
+    printf("\n");
+
+}
+
+/**
+ * setTransferMode
+ * 
+ * Set the requested transfer method on the unit
+ * 
+ * @param req An open IOStdReq 
+ */
+BYTE setTransferMode(struct IOStdReq *req) {
+  BYTE error = 0;
+
+  req->io_Data    = NULL;
+  req->io_Offset  = 0;
+  req->io_Length  = config->Mode;
+  req->io_Command = CMD_XFER;
+  error = DoIO((struct IORequest *)req);
+  if (error == 0) {
+    printf("Transfer mode configured for unit %d\n",config->Unit);
+  } else {
+    printf("IO Error %d\n", error);
+  }
+
+  return error;
+}
+
+/**
+ * setPio
+ * 
+ * Set the requested pio mode on the unit
+ * 
+ * @param req An open IOStdReq 
+ */
+BYTE setPio(struct IOStdReq *req,int pio) {
+  BYTE error = 0;
+
+  req->io_Data    = NULL;
+  req->io_Offset  = 0;
+  req->io_Length  = pio;
+  req->io_Command = CMD_PIO;
+  error = DoIO((struct IORequest *)req);
+  if (error == 0) {
+    printf("PIO mode configured for unit %d\n",config->Unit);
+  } else {
+    printf("IO Error %d\n", error);
+  }
+
+  return error;
+}
+
+
+/**
+ * setMultiple
+ * 
+ * @param req An open IOStdReq
+ * @param multiple Multiple count
+ * 
+*/
+static void setMultiple(struct IOStdReq *req, int multiple) {
+  struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
+
+  if (multiple > 0) {
+    unit->xferMultiple = true;
+    unit->multipleCount = multiple;
+    printf("set multiple transfer: %d\n",multiple);
+  } else {
+    printf("Transfer multiple disabled.\n");
+    unit->xferMultiple = false;
+    unit->multipleCount = 1;
+  }
+
+}
 int main(int argc, char *argv[])
 {
   SysBase = *((struct ExecBase **)4UL);
@@ -44,17 +257,27 @@ int main(int argc, char *argv[])
     struct IOStdReq *req = NULL;
     if (mp = CreateMsgPort()) {
       if (req = CreateIORequest(mp,sizeof(struct IOStdReq))) {
-        if ((error = OpenDevice("lide.device",config->Unit,(struct IORequest *)req,0)) == 0) {
-          req->io_Length  = config->Mode;
-          req->io_Command = CMD_XFER;
-          error = DoIO((struct IORequest *)req);
-          if (error == 0) {
-            printf("Transfer mode configured for unit %d\n",config->Unit);
-          } else {
-            printf("IO Error %d\n", error);
+        if ((error = OpenDevice(config->Device,config->Unit,(struct IORequest *)req,0)) == 0) {
+
+          if (config->Mode != -1) {
+            setTransferMode(req);
           }
+
+          if (config->DumpInfo) {
+            doScsiInquiry(req);
+            DumpUnit(req);
+          }
+
+          if (config->Multiple >= 0) {
+            setMultiple(req,config->Multiple);
+          }
+
+          if (config->Pio >= 0) {
+            setPio(req,config->Pio);
+          }
+          CloseDevice((struct IORequest *)req);
         } else {
-          printf("Error %d opening lide.device", error);
+          printf("Error %d opening %s", error, config->Device);
         }
 
 
@@ -74,3 +297,4 @@ int main(int argc, char *argv[])
   if (ExpansionBase) CloseLibrary((struct Library *)ExpansionBase);
   return (rc);
 }
+
