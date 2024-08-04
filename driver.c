@@ -794,6 +794,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             case NSCMD_ETD_WRITE64:
             case NSCMD_ETD_FORMAT64:
             case CMD_XFER:
+            case CMD_PIO:
             case HD_SCSICMD:
                 // Send all of these to ide_task
                 ioreq->io_Flags &= ~IOF_QUICK;

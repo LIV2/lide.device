@@ -710,6 +710,14 @@ transfer:
                     }
                     break;
 
+                case CMD_PIO:
+                    if (ioreq->io_Length <= 4) {
+                        error = ata_set_pio(unit,ioreq->io_Length);
+                    } else {
+                        error = IOERR_BADADDRESS;
+                    }
+                    break;
+
                 /* CMD_DIE: Shut down this task and clean up */
                 case CMD_DIE:
                     Info("Task: CMD_DIE: Shutting down IDE Task\n");

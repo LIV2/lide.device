@@ -231,12 +231,16 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
             unit->read_unaligned  = &ata_read_unaligned_long;
             unit->write_fast      = &ata_write_long_movem;
             unit->write_unaligned = &ata_write_unaligned_long;
+
+            unit->xferMethod = longword_movem;
             break;
         case longword_move:
             unit->read_fast       = &ata_read_long_move;
             unit->read_unaligned  = &ata_read_unaligned_long;
             unit->write_fast      = &ata_write_long_move;
             unit->write_unaligned = &ata_write_unaligned_long;
+
+            unit->xferMethod = longword_move;
             break;
     }
 }
@@ -377,7 +381,7 @@ ident_failed:
     unit->present = true;
 
     Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
-
+    
     if (buf) FreeMem(buf,512);
     return true;
 }
@@ -708,6 +712,37 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
     *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
     *unit->drive->lbaLow         = (UBYTE)(lba);
     *unit->drive->status_command = command;
+
+    return 0;
+}
+
+
+/**
+ * ata_set_pio
+ * 
+ * @param unit Pointer t oan IDEUnit struct
+ * @param pio pio mode
+*/
+BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
+    
+    if (pio > 4) return IOERR_BADADDRESS;
+    
+    if (pio > 0) pio |= 0x80;
+
+    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+
+    ata_select(unit,drvSel,true);
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+        ata_save_error(unit);
+        return HFERR_SelTimeout;
+    }
+
+    *unit->drive->error_features = 0x03; // Set Transfer Mode
+    *unit->drive->sectorCount    = pio;
+    *unit->drive->status_command = ATA_CMD_SET_FEATURES;
+
+    if (ata_check_error(unit)) return IOERR_BADLENGTH;
 
     return 0;
 }

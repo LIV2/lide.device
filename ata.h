@@ -50,6 +50,7 @@
 #define ATA_CMD_WRITE_MULTIPLE     0xC5
 #define ATA_CMD_WRITE_MULTIPLE_EXT 0x39
 #define ATA_CMD_SET_MULTIPLE       0xC6
+#define ATA_CMD_SET_FEATURES       0xEF
 
 // Identify data word offsets
 #define ata_identify_cylinders       1
@@ -96,6 +97,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
 BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit);
+BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 
 void ata_read_unaligned_long(void *source, void *destination);
 void ata_write_unaligned_long(void *source, void *destination);

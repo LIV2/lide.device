@@ -11,6 +11,7 @@
 
 #define CMD_DIE  0x1000
 #define CMD_XFER (CMD_DIE + 1)
+#define CMD_PIO  (CMD_XFER + 1)
 
 void ide_task();
 void diskchange_task();
