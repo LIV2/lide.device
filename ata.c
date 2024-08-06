@@ -727,7 +727,7 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
     
     if (pio > 4) return IOERR_BADADDRESS;
     
-    if (pio > 0) pio |= 0x80;
+    if (pio > 0) pio |= 0x08;
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
 
@@ -738,8 +738,12 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
         return HFERR_SelTimeout;
     }
 
-    *unit->drive->error_features = 0x03; // Set Transfer Mode
+    *unit->drive->devHead        = drvSel;
     *unit->drive->sectorCount    = pio;
+    *unit->drive->lbaLow         = 0;
+    *unit->drive->lbaMid         = 0;
+    *unit->drive->lbaHigh        = 0;
+    *unit->drive->error_features = 0x03; // Set Transfer Mode
     *unit->drive->status_command = ATA_CMD_SET_FEATURES;
 
     if (ata_check_error(unit)) return IOERR_BADLENGTH;
