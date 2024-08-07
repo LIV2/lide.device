@@ -190,6 +190,10 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     {
         // Non-ATAPI drives - Translate SCSI CMD to ATA
         switch (scsi_command->scsi_Command[0]) {
+            case SCSI_CMD_ATA_PASSTHROUGH:
+                error = scsi_ata_passthrough(unit,scsi_command);
+                break;
+
             case SCSI_CMD_TEST_UNIT_READY:
                 scsi_command->scsi_Actual = 0;
                 error = 0;

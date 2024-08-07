@@ -223,6 +223,66 @@ BYTE setPio(struct IOStdReq *req,int pio) {
   return error;
 }
 
+/**
+ * ident
+ * 
+ * Send an IDENTIFY DEVICE command to the device
+ * 
+ * @param req An opened IOStdReq
+ * 
+ * @return non-zero on error
+ */
+BYTE identify(struct IOStdReq *req) {
+  BYTE error = 0;
+
+  struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
+  UWORD *buf = AllocMem(512,MEMF_ANY|MEMF_CLEAR);
+
+  if (cmd) {
+    if (buf) {
+      cmd->scsi_Actual = 0;
+      cmd->scsi_CmdActual = 0;
+      cmd->scsi_Flags = SCSIF_READ;
+      cmd->scsi_Data = buf;
+      cmd->scsi_Length = 512;
+      cmd->scsi_Command[0] = SCSI_CMD_ATA_PASSTHROUGH;
+      cmd->scsi_Command[1] = (4<<1); // PIO IN
+      cmd->scsi_Command[2] = 4 | 2;  //BYT_BLOK | T_LEN etc
+      cmd->scsi_Command[4] = 1;      // 1 sector (512 bytes)
+      cmd->scsi_Command[9] = 0xEC;   // Identify;
+
+      req->io_Offset  = 0;
+      req->io_Actual  = 0;
+      req->io_Length  = 12;
+      req->io_Command = HD_SCSICMD;
+      req->io_Data = cmd;
+
+      error = DoIO((struct IORequest *)req);
+
+      if (error == 0 && cmd->scsi_Status == 0) {
+        printf("IDENTIFY DEVICE:");
+        for (int i=0; i<256; i++) {
+          if (i % 8 == 0) printf("\n%04x: ",i << 1);
+          printf("%04x%s",__bswap16(buf[i]), ((i + 1) % 8) == 0 ? "" : "." );
+        }
+        printf("\n");
+      }
+
+      if (error)
+        printf("IO Error %d\n", error);
+      
+      if (cmd->scsi_Status)
+        printf("SCSI Status: %d\n",cmd->scsi_Status);
+
+      FreeMem(buf,512);
+    }
+    DeleteSCSICmd(cmd);
+  }
+
+
+  return error;
+}
+
 
 /**
  * setMultiple
@@ -275,6 +335,11 @@ int main(int argc, char *argv[])
           if (config->Pio >= 0) {
             setPio(req,config->Pio);
           }
+
+          if (config->DumpIdent) {
+            identify(req);
+          }
+
           CloseDevice((struct IORequest *)req);
         } else {
           printf("Error %d opening %s", error, config->Device);

@@ -21,9 +21,9 @@
 #include "blockcopy.h"
 #include "wait.h"
 
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
 
 /**
  * ata_status_reg_delay
@@ -487,7 +487,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0) {
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count,0)) != 0) {
             ata_save_error(unit);
             return error;
         }
@@ -576,7 +576,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
 
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if ((error = unit->write_taskfile(unit,command,lba,txn_count)) != 0) {
+        if ((error = unit->write_taskfile(unit,command,lba,txn_count,0)) != 0) {
             ata_save_error(unit);
             return error;
         }
@@ -644,7 +644,7 @@ void ata_write_unaligned_long(void *source, void *destination) {
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
     UWORD cylinder = (lba / (unit->heads * unit->sectorsPerTrack));
     UBYTE head     = ((lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
     UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
@@ -662,6 +662,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     *unit->drive->lbaLow         = (UBYTE)(sector);
     *unit->drive->lbaMid         = (UBYTE)(cylinder);
     *unit->drive->lbaHigh        = (UBYTE)(cylinder >> 8);
+    *unit->drive->error_features = features;
     *unit->drive->status_command = command;
 
     return 0;
@@ -673,7 +674,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
     BYTE devHead;
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
@@ -687,6 +688,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     *unit->drive->lbaLow         = (UBYTE)(lba);
     *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
     *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive->error_features = features;
     *unit->drive->status_command = command;
 
     return 0;
@@ -698,7 +700,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount) {
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
@@ -711,6 +713,7 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
     *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
     *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
     *unit->drive->lbaLow         = (UBYTE)(lba);
+    *unit->drive->error_features = features;
     *unit->drive->status_command = command;
 
     return 0;
@@ -724,10 +727,93 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
  * @param pio pio mode
 */
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
-    
+    BYTE error = 0;
+
     if (pio > 4) return IOERR_BADADDRESS;
     
     if (pio > 0) pio |= 0x08;
+
+    if ((error = write_taskfile_lba(unit,ATA_CMD_SET_FEATURES,0,pio,0x03)) != 0)
+        return error;
+
+    if ((error = ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)))
+        return error;
+
+    if (ata_check_error(unit)) return IOERR_BADLENGTH;
+
+    return 0;
+}
+
+/**
+ * scsi_ata_passthrough
+ * 
+ * Handle SCSI ATA PASSTHROUGH (12) command to send ATA commands to the drive
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param cmd Pointer to a SCSICmd struct
+ * @return non-zero on error
+*/
+BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
+    struct SCSI_CDB_ATA *cdb = (struct SCSI_CDB_ATA *)cmd->scsi_Command;
+
+    bool byt_blok  = (cdb->length & ATA_BYT_BLOK) ? true : false;
+    UBYTE protocol = (cdb->protocol >> 1) & 0x0F;
+    UBYTE t_length = cdb->length & ATA_TLEN_MASK;
+   
+    ULONG lba   = (cdb->lbaHigh << 16 | cdb->lbaMid << 8 | cdb->lbaLow);
+    ULONG count = 0;
+    BYTE  error = 0;
+   
+    UWORD *src  = NULL;
+    UWORD *dest = NULL;
+
+    cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+
+    switch (t_length) {
+        case 0x00: // No Data transferred
+            break;
+        case 0x01: // Transfer length in feature field
+            count = cdb->features;
+            cdb->features = 0;
+            break;
+        case 0x02: // Transfer length in sector_count field
+            count = cdb->sectorCount;
+            cdb->sectorCount = 0;
+            break;
+        default:
+            return IOERR_BADLENGTH;
+    }
+
+    if (byt_blok) count *= unit->blockSize;
+
+    if (count > (512*256)) return IOERR_BADLENGTH; // Can't be bothered supporting larger transfers
+
+    if (count > cmd->scsi_Length) return IOERR_BADLENGTH;
+
+    switch (protocol) {
+        case ATA_NODATA:
+            break;
+
+        case ATA_PIO_IN: // Data to Host
+            if (count < 2) return IOERR_BADLENGTH;
+            src = (UWORD *)unit->drive->data;
+            dest = cmd->scsi_Data;
+            break;
+
+        case ATA_PIO_OUT: // Data to Drive
+            if (count < 2) return IOERR_BADLENGTH;
+            src = cmd->scsi_Data;
+            dest = (UWORD *)unit->drive->data;
+            break;
+
+        default:
+            return IOERR_NOCMD;
+
+    }
+
+    if (protocol < ATA_NODATA || protocol > ATA_PIO_OUT) return IOERR_BADADDRESS;
+
+    count += (count & 1); // Ensure byte count is even
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
 
@@ -738,15 +824,35 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
         return HFERR_SelTimeout;
     }
 
-    *unit->drive->devHead        = drvSel;
-    *unit->drive->sectorCount    = pio;
-    *unit->drive->lbaLow         = 0;
-    *unit->drive->lbaMid         = 0;
-    *unit->drive->lbaHigh        = 0;
-    *unit->drive->error_features = 0x03; // Set Transfer Mode
-    *unit->drive->status_command = ATA_CMD_SET_FEATURES;
+    if ((error = write_taskfile_lba(unit,cdb->command,lba,cdb->sectorCount,cdb->features)) != 0) {
+        ata_save_error(unit);
+        return error;
+    }
 
-    if (ata_check_error(unit)) return IOERR_BADLENGTH;
+    if (protocol == ATA_PIO_IN || protocol == ATA_PIO_OUT) {
+        for (int i = 0; i < count/2; i++) {
+            if (i % 512 == 0) {
+                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+                    ata_save_error(unit);
+                    return IOERR_UNITBUSY;
+                }
+            }
+
+                dest[i] = src[i];
+        }
+    }
+
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+        ata_save_error(unit);
+        return HFERR_BadStatus;
+    }
+
+    if (ata_check_error(unit)){
+        ata_save_error(unit);
+        return IOERR_ABORTED;
+    }
+
+    cmd->scsi_Actual = cmd->scsi_Length;
 
     return 0;
 }

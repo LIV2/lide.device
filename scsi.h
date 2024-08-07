@@ -21,7 +21,7 @@
 #define SCSI_CMD_MODE_SELECT_10   0x55
 #define SCSI_CMD_MODE_SENSE_10    0x5A
 #define SCSI_CMD_START_STOP_UNIT  0x1B
-
+#define SCSI_CMD_ATA_PASSTHROUGH  0xA1
 #define SCSI_CHECK_CONDITION      0x02
 
 #define SZ_CDB_10 10
@@ -112,6 +112,28 @@ struct __attribute__((packed)) SCSI_TRACK_MSF {
     UBYTE second;
     UBYTE frame;
 };
+
+struct __attribute__((packed)) SCSI_CDB_ATA {
+    UBYTE operation;
+    UBYTE protocol; // Bits 7-5: MULTIPLE_COUNT, Bits 4-1: Protocol
+    UBYTE length;
+    UBYTE features;
+    UBYTE sectorCount;
+    UBYTE lbaLow;
+    UBYTE lbaMid;
+    UBYTE lbaHigh;
+    UBYTE devHead;
+    UBYTE command;
+    UBYTE reserved;
+    UBYTE control;
+};
+
+#define ATA_NODATA 3
+#define ATA_PIO_IN 4
+#define ATA_PIO_OUT 5
+
+#define ATA_TLEN_MASK 3
+#define ATA_BYT_BLOK (1<<2)
 
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
 struct SCSICmd * MakeSCSICmd(ULONG cdbSize);

@@ -34,6 +34,8 @@ struct Config* configure(int argc, char *argv[]) {
 
   bool error = false;
 
+  bool cmd_selected = false;
+
   struct Config *config;
   config = (struct Config *)AllocMem(sizeof(struct Config),MEMF_CLEAR);
   
@@ -45,14 +47,21 @@ struct Config* configure(int argc, char *argv[]) {
   config->Pio = -1;
   config->Device = "lide.device";
   config->DumpInfo = false;
+  config->DumpIdent = false;
 
   for (int i=1; i<argc; i++) {
     if (argv[i][0] == '-') {
       switch(argv[i][1]) {
+        case 'I':
+          config->DumpIdent = true;
+          cmd_selected = true;
+          break;
+
         case 'P':
           if (i+1 < argc) {
             config->Pio = (*argv[i+1])-'0';
             i++;
+            cmd_selected = true;
           }
           break;
 
@@ -60,12 +69,15 @@ struct Config* configure(int argc, char *argv[]) {
           if (i+1 < argc) {
             config->Multiple = (*argv[i+1])-'0';
             i++;
+            cmd_selected = true;
           }
           break;
+
         case 'm':
           if (i+1 < argc) {
             config->Mode = (*argv[i+1])-'0';
             i++;
+            cmd_selected = true;
           }
           break;
 
@@ -85,13 +97,14 @@ struct Config* configure(int argc, char *argv[]) {
 
         case 'p':
           config->DumpInfo = true;
+          cmd_selected = true;
           break;
 
       }
     }
   }
 
-  if (config->Unit == -1 || (config->Pio == -1 && config->Mode == -1 && config->DumpInfo == false && config->Multiple < 0)) {
+  if (config->Unit == -1 || cmd_selected == false) {
       error = true;
   }
 
@@ -107,5 +120,5 @@ struct Config* configure(int argc, char *argv[]) {
  * @brief Print the usage information
 */
 void usage() {
-    printf("\nUsage: lidetool -u <unit> -m <method> [-d <device>] [-P <pio mode>] [-p]\n\n");
+    printf("\nUsage: lidetool -u <unit> -m <method> [-d <device>] [-P <pio mode>] [-p] [-I]\n\n");
 }

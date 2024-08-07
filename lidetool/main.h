@@ -43,7 +43,9 @@ struct __attribute__((packed)) SCSI_CDB_10 {
 };
 
 #define SZ_CDB_10 10
+#define SZ_CDB_12 12
 #define SCSI_CMD_INQUIRY 0x12
+#define SCSI_CMD_ATA_PASSTHROUGH 0xA1
 
 #define CMD_XFER 0x1001
 #define CMD_PIO  (CMD_XFER + 1)
