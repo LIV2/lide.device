@@ -432,15 +432,13 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
  * @param buffer destination buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
- * @param actual Pointer to the io requests io_Actual 
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
+BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
-    *actual = 0;
     UBYTE error = 0;
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
@@ -520,15 +518,13 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
  * @param buffer source buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
- * @param actual Pointer to the io requests io_Actual 
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
+BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
-    *actual = 0;
     UBYTE error = 0;
 
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command

@@ -235,9 +235,9 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
 
                 if (direction == READ) {
-                    error = ata_read(data,lba,count,&scsi_command->scsi_Actual,unit);
+                    error = ata_read(data,lba,count,unit);
                 } else {
-                    error = ata_write(data,lba,count,&scsi_command->scsi_Actual,unit);
+                    error = ata_write(data,lba,count,unit);
                 }
                 if (error == 0) {
                     scsi_command->scsi_Actual = scsi_command->scsi_Length;
@@ -479,7 +479,7 @@ static BYTE init_units(struct IDETask *itask) {
             unit->changeInts.mlh_Head     = (struct MinNode *)&unit->changeInts.mlh_Tail;
             unit->changeInts.mlh_TailPred = (struct MinNode *)&unit->changeInts;
 
-            Warn("testing unit %08lx\n",i);
+            Warn("testing unit %ld\n",unit->unitNum);
 
             if (ata_init_unit(unit)) {
                 num_units++;
@@ -692,11 +692,11 @@ transfer:
                         error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
                     } else {
                         if (direction == READ) {
-                            error  = ata_read(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                            error  = ata_read(ioreq->io_Data, lba, count, unit);
                         } else {
-                            error  = ata_write(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit);
+                            error  = ata_write(ioreq->io_Data, lba, count, unit);
                         }
-                        if (error == 0) ioreq->io_Actual = ioreq->io_Length;
+                        ioreq->io_Actual = ioreq->io_Length;
                     }
                     break;
 
