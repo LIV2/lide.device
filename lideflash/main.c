@@ -102,7 +102,7 @@ static void setup_liv2_board(struct ideBoard *board) {
  * @return boolean true / false
  */
 static bool promptUser(struct Config *config) {
-  char c;
+  int c;
   char answer = 'y'; // Default to yes
 
   printf("Update this device? (Y)es/(n)o/(a)ll: ");

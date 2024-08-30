@@ -351,7 +351,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd->scsi_Actual = 0;
 
-    BYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
+    UBYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
@@ -397,7 +397,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     {
         for (int i = cmd->scsi_CmdLength; i < 12; i+=2) {
             *unit->drive->data = 0x00;
-            Trace("ATAPI: CMD Word: %ld\n",0);
+            Trace("ATAPI: CMD Word: 0\n");
         }
     }
 
