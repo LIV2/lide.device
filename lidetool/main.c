@@ -29,6 +29,7 @@
 
 #include "main.h"
 #include "config.h"
+#include "../device.h"
 
 #define CMD_XFER 0x1001
 
@@ -324,8 +325,17 @@ int main(int argc, char *argv[])
           }
 
           if (config->DumpInfo) {
-            doScsiInquiry(req);
-            DumpUnit(req);
+            UWORD driverVersion = req->io_Device->dd_Library.lib_Version;
+            UWORD driverRevision = req->io_Device->dd_Library.lib_Revision;
+
+            if (driverVersion != DEVICE_VERSION ||
+                driverRevision != DEVICE_REVISION) {
+                  printf("Driver version mismatch.\n");
+                  printf("lidetool version: %d.%d lide.device %d.%d\n", DEVICE_VERSION, DEVICE_REVISION, driverVersion, driverRevision);
+            } else {
+              doScsiInquiry(req);
+              DumpUnit(req);
+            }
           }
 
           if (config->Multiple >= 0) {
