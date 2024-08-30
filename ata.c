@@ -78,15 +78,18 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
  * Poll DRQ in the status register until set or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
+ * @param fast More aggressive polling, 1000 tries before timer wait vs 100
 */
-static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries) {
+static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
     struct timerequest *tr = unit->itask->tr;
     Trace("wait_drq enter\n");
     UBYTE status;
 
+    int loops = (fast) ? 1000 : 100;
+
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
-        for (int j=0; j<1000; j++) {
+        for (int j=0; j<loops; j++) {
             status = *unit->drive->status_command;
             if ((status & ata_flag_drq) != 0) return true;
             if (status & (ata_flag_error | ata_flag_df)) return false;
@@ -203,7 +206,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->error_features = 0;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
-    if (ata_check_error(unit) || !ata_wait_drq(unit,500)) {
+    if (ata_check_error(unit) || !ata_wait_drq(unit,500,false)) {
         Warn("ATA: IDENTIFY Status: Error\n");
         Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
         // Save error information
@@ -493,7 +496,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         lba += txn_count;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
@@ -580,7 +583,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         lba += txn_count;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
@@ -828,7 +831,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
     if (protocol == ATA_PIO_IN || protocol == ATA_PIO_OUT) {
         for (int i = 0; i < count/2; i++) {
             if (i % 512 == 0) {
-                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
                     ata_save_error(unit);
                     return IOERR_UNITBUSY;
                 }
