@@ -43,14 +43,20 @@ void matzetk_enable_flash(struct ideBoard *board) {
     *configReg |= CONFIG_FLASH_EN;
 }
 
-bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
-    UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
-    UWORD version = (*fwreg) >> 12;
+bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
+  UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
+  UWORD version = (*fwreg) >> 12;
 
-    if (version < minVersion)
-      printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+  if (cd->cd_Driver == NULL) {
+    // Poke IDE register space to ensure ROM overlay turned off
+    UBYTE *pokeReg = (UBYTE *)(cd->cd_BoardAddr + 0x1200);
+    *pokeReg = 0x00;
+  }
 
-    return (version >= minVersion);
+  if (version < minVersion && !silent)
+    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+
+  return (version >= minVersion);
 }
 
 /**
@@ -103,4 +109,22 @@ bool boardIs68ec020tk(struct ConfigDev *cd) {
       return true;
 
   return false;
+}
+
+/**
+ * boardIsZorroLanIDE
+ *
+ * Returns true the board is a Zorro-LAN-IDE
+*/
+bool boardIsZorroLanIDE(struct ConfigDev *cd) {
+  struct ConfigDev *prevCD1, *prevCD2;
+
+  prevCD1 = (struct ConfigDev *)cd->cd_Node.ln_Pred;
+  if ((prevCD2 = (struct ConfigDev *)prevCD1->cd_Node.ln_Pred) != NULL) {
+    if (prevCD1->cd_Rom.er_Manufacturer == MANUF_ID_A1K && prevCD1->cd_Rom.er_Product == PROD_ID_MATZE_CLOCKPORT &&
+        prevCD2->cd_Rom.er_Manufacturer == MANUF_ID_A1K && prevCD2->cd_Rom.er_Product == PROD_ID_MATZE_LAN)
+      
+      return true;
+  }
+  return false;  
 }

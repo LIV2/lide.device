@@ -92,6 +92,13 @@ static void setup_liv2_board(struct ideBoard *board) {
     // This means we can flash the IDE ROM without having to disable IDE
     board->flashbase += 65536;
   }
+
+  if (board->cd->cd_Driver == NULL) {
+    // Poke IDE register space to ensure ROM overlay turned off
+    UBYTE *pokeReg = (UBYTE *)(board->cd->cd_BoardAddr + 0x1200);
+    *pokeReg = 0x00;
+  }
+
 }
 
 /**
@@ -277,7 +284,7 @@ int main(int argc, char *argv[])
                 if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
-                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER,false)) {
                     continue;
                   }
 
@@ -287,9 +294,18 @@ int main(int argc, char *argv[])
                 } else if (boardIs68ec020tk(cd)) {
                   printf("Found 68EC020-TK");
 
-                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER,false)) {
                     continue;
                   }
+
+                  setup_matzetk_board(&board);
+                  break;
+                } else if (boardIsZorroLanIDE(cd)) {
+                  if (!matzetk_fw_supported(cd,LAN_IDE_MIN_FW_VER,true)) {
+                    continue;
+                  }
+                  
+                  printf("Found Zorro-LAN-IDE");
 
                   setup_matzetk_board(&board);
                   break;
@@ -311,7 +327,7 @@ int main(int argc, char *argv[])
                 if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
-                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER,false)) {
                     continue;
                   }
 
@@ -321,9 +337,18 @@ int main(int argc, char *argv[])
                 } else if (boardIsOlga(cd)) {
                   printf("Found 68EC020-TK");
 
-                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER,false)) {
                     continue;
                   }
+
+                  setup_matzetk_board(&board);
+                  break;
+                } else if (boardIsZorroLanIDE(cd)) {
+                  if (!matzetk_fw_supported(cd,LAN_IDE_MIN_FW_VER,true)) {
+                    continue;
+                  }
+                  
+                  printf("Found Zorro-LAN-IDE");
 
                   setup_matzetk_board(&board);
                   break;
