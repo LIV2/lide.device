@@ -21,6 +21,7 @@
 #include "string.h"
 #include "wait.h"
 #include "blockcopy.h"
+#include "idetask.h"
 
 /**
  * atapi_status_reg_delay

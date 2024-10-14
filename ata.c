@@ -21,6 +21,7 @@
 #include "blockcopy.h"
 #include "move16.h"
 #include "wait.h"
+#include "idetask.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount);
