@@ -280,7 +280,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
                     case 0x02:                       // Unit not ready
                         if (asc == 0x4) {            // Becoming ready
                             ret = TDERR_DiskChanged;
-                            wait(unit->itask->tr,1);   // Wait
+                            wait_s(unit->itask->tr,1);   // Wait
                             continue;                // and try again
                         } else {
                             ret = TDERR_DiskChanged; // No media
@@ -535,7 +535,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (tries > 0) wait(unit->itask->tr,3);
+                            if (tries > 0) wait_s(unit->itask->tr,3);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;

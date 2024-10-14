@@ -9,7 +9,7 @@
 #include <exec/types.h>
 #include <proto/exec.h>
 
-static inline void wait(struct timerequest *tr, ULONG seconds) {
+static inline void wait_s(struct timerequest *tr, ULONG seconds) {
     tr->tr_node.io_Command = TR_ADDREQUEST;
     tr->tr_time.tv_sec     = seconds;
     tr->tr_time.tv_micro   = 0;

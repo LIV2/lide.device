@@ -410,7 +410,7 @@ void __attribute__((noreturn)) diskchange_task () {
         ReleaseSemaphore(&dev->ulSem);
 
         Trace("Wait...\n");
-        wait(TimerReq,CHANGEINT_INTERVAL);
+        wait_s(TimerReq,CHANGEINT_INTERVAL);
     }
 
 die:
