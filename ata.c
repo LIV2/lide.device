@@ -273,7 +273,10 @@ bool ata_init_unit(struct IDEUnit *unit) {
     offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
     unit->drive = (void *)unit->cd->cd_BoardAddr + offset; // Pointer to drive base
 
+    unit->altStatus = (void *)unit->cd->cd_BoardAddr + offset + 0x4C00;
+
     *unit->shadowDevHead = *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    *unit->altStatus = ATA_NIEN;
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
@@ -474,6 +477,9 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         return HFERR_SelTimeout;
     }
 
+    *unit->altStatus &= ~(ATA_NIEN);
+    //*unit->altStatus |= ATA_NIEN;
+
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
      * 
@@ -499,7 +505,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
         lba += txn_count;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT)) {
+            Wait(1 << unit->itask->irqSignal);
+            if (!ata_wait_drq(unit,1)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
@@ -531,7 +538,6 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUni
 BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
-
     *actual = 0;
     UBYTE error = 0;
 
@@ -563,6 +569,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
         return HFERR_SelTimeout;
     }
 
+    *unit->altStatus &= ~(ATA_NIEN);
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
      * 
@@ -599,6 +606,9 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, ULONG *actual, struct IDEUn
                 txn_count--;
                 buffer += unit->blockSize;
             }
+
+            Wait(1 << unit->itask->irqSignal);
+
         }
 
     }

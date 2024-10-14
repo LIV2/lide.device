@@ -368,6 +368,9 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         byte_count = cmd->scsi_Length;
     }
 
+    // *unit->altStatus &= ~(ATA_NIEN);
+    *unit->altStatus |= (ATA_NIEN);
+
     *unit->drive->lbaMid         = byte_count & 0xFF; 
     *unit->drive->lbaHigh        = byte_count >> 8 & 0xFF;
     *unit->drive->error_features = 0;
@@ -401,7 +404,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
             Trace("ATAPI: CMD Word: %ld\n",0);
         }
     }
-
+    // Wait( 1 << unit->itask->irqSignal);
     if (*status & ata_flag_error) goto ata_error;
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
@@ -461,6 +464,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 byte_count -= 2;
             }
         }
+
+        // Wait(1 << unit->itask->irqSignal);
     }
 
     if (unit->SysBase->SoftVer > 36) {

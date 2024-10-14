@@ -8,7 +8,8 @@ CC=m68k-amigaos-gcc
 CFLAGS+=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LDFLAGS=-lamiga -lgcc -lc
-AS=m68k-amigaos-as
+AS=vasmm68k_mot
+ASFLAGS=-I/opt/amiga/m68k-amigaos/ndk-include
 
 ifneq ($(VERSION),)
 DISK=lide-update-$(VERSION).adf
@@ -35,7 +36,7 @@ endif
 LDFLAGS+= -lnix13
 
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
-.INTERMEDIATE: move16.o
+.INTERMEDIATE: move16.o interrupt.o endskip.o
 
 all:	$(ROM) \
 		lideflash \
@@ -51,15 +52,18 @@ OBJ = driver.o \
 	  mounter.o \
 	  debug.o
 
-ASMOBJ = endskip.o
+ASMOBJ = endskip.o \
+		 interrupt.o
 
 SRCS = $(OBJ:%.o=%.c)
-SRCS += $(ASMOBJ:%.o=%.S)
+SRCS += $(ASMOBJ)
 SRCS += move16.o
 
 move16.o: move16.c
 	${CC} -o $@ $(CFLAGS) -c -mcpu=68060 $< $(LDFLAGS)
 
+%.o: %.S
+	$(AS) $(ASFLAGS) -Fhunk -o $@ $<
 
 $(PROJECT): $(SRCS)
 	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)

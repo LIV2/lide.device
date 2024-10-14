@@ -5,10 +5,12 @@
 #include <devices/scsidisk.h>
 #include <devices/trackdisk.h>
 #include <exec/errors.h>
+#include <exec/interrupts.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <string.h>
 #include <proto/expansion.h>
+#include <hardware/intbits.h>
 
 #include "ata.h"
 #include "atapi.h"
@@ -533,6 +535,30 @@ static void cleanup(struct IDETask *itask) {
     Signal(itask->parent, SIGF_SINGLE);
 }
 
+void irq_handler(struct IDETask *itask asm("a1"));
+
+void setupint(struct IDETask *task) {
+    struct Interrupt *irq = AllocMem(sizeof(struct Interrupt),MEMF_ANY|MEMF_CLEAR);
+    struct INTData *intData = AllocMem(sizeof(struct INTData),MEMF_ANY|MEMF_CLEAR);
+
+    task->irqSignal      = AllocSignal(-1);
+    intData->SysBase     = task->dev->SysBase;
+    intData->Task        = task->task;
+    intData->intReg      = task->cd->cd_BoardAddr + 0x8000;
+    intData->driveStatus = task->cd->cd_BoardAddr + ata_reg_status;
+    intData->driveStatus += (task->channel == 0) ? CHANNEL_0 : CHANNEL_1;
+    intData->signalMask  = (1 << task->irqSignal);
+    intData->intmask     = (task->channel == 0) ? 0x80 : 0x40;
+
+    irq->is_Node.ln_Type = NT_INTERRUPT;
+    irq->is_Node.ln_Pri  = 30;
+    irq->is_Data = intData;
+    irq->is_Code = irq_handler;
+    irq->is_Node.ln_Name = task->dev->lib.lib_Node.ln_Name;
+
+    AddIntServer(INTB_PORTS,irq);
+}
+
 /**
  * ide_task
  *
@@ -580,6 +606,8 @@ void __attribute__((noreturn)) ide_task () {
         RemTask(NULL);
         Wait(0);
     }
+
+    setupint(itask);
 
     itask->active = true;
     Signal(itask->parent,SIGF_SINGLE);

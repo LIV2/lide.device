@@ -1,0 +1,10 @@
+    INCLUDE "exec/types.i"
+
+    STRUCTURE INTDATA,0
+        APTR  SYSBASE
+        APTR  TASK
+        APTR  INTREG
+        APTR  DRIVESTATUS
+        ULONG SIGMASK
+        UBYTE INTMASK
+    LABEL INTDATA_SIZE

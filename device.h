@@ -44,6 +44,7 @@ struct IDEUnit {
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct IDETask *itask;
+    volatile UBYTE *altStatus;
     volatile struct Drive *drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE);
     enum  xfer xferMethod;

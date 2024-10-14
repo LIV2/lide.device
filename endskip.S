@@ -1,2 +1,2 @@
-    .globl _endskip
-_endskip:
+    PUBLIC _endskip
+_endskip:   rts
