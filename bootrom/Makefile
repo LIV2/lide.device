@@ -14,10 +14,6 @@ OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
 all:	../$(PROJECT).rom ../$(PROJECT)-atbus.rom ../$(PROJECT)-word.rom
 
-$(OBJDIR)/mungerom: mungerom.c
-	@mkdir -p $(OBJDIR)
-	$(CC) $< -Wall -o $@
-
 # Nibble-wide boot loader with Byte-wide driver
 $(OBJDIR)/%.o: %.S
 	@mkdir -p $(OBJDIR)
@@ -34,9 +30,9 @@ $(OBJDIR)/bootldr:	$(OBJDIR)/bootldr.o
 $(OBJDIR)/bootldr-word:	$(OBJDIR)/bootldr-word.o
 	$(LINKER) $(LINKFLAGS) -o $@ $^
 
-$(OBJDIR)/bootnibbles: $(OBJDIR)/bootldr $(OBJDIR)/mungerom
+$(OBJDIR)/bootnibbles: $(OBJDIR)/bootldr mungerom.py
 	@mkdir -p $(OBJDIR)
-	./obj/mungerom
+	./mungerom.py
 
 $(OBJDIR)/assets.o: assets.S $(OBJDIR)/bootnibbles ../lide.device
 

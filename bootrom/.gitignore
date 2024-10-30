@@ -6,3 +6,4 @@ at
 **/*.device
 **/*.hunk
 **/*.adf
+*.pyc
