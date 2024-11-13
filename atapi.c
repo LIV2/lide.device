@@ -206,7 +206,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
     if (buffer) {
         UWORD read_data;
         for (int i=0; i<256; i++) {
-            read_data = unit->drive->data[i];
+            read_data = *unit->drive->data;
             buffer[i] = ((read_data >> 8) | (read_data << 8));
         }
     }

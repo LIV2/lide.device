@@ -27,14 +27,14 @@ enum xfer {
  * To use this code with other boards you may need to adjust these sizes
 */
 struct Drive {
-    UWORD data[256];
-    UBYTE error_features[512];
-    UBYTE sectorCount[512];
-    UBYTE lbaLow[512];
-    UBYTE lbaMid[512];
-    UBYTE lbaHigh[512];
-    UBYTE devHead[512];
-    UBYTE status_command[512];
+    UWORD* data;
+    UBYTE* error_features;
+    UBYTE* sectorCount;
+    UBYTE* lbaLow;
+    UBYTE* lbaMid;
+    UBYTE* lbaHigh;
+    UBYTE* devHead;
+    UBYTE* status_command;
 };
 
 struct IDEUnit {
@@ -120,7 +120,7 @@ struct IDETask {
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 9
+#define DEVICE_REVISION 10
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
 
 #endif

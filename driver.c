@@ -304,7 +304,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     // Detect if there are 1 or 2 IDE channels on this board 
     // 2 channel boards use the CS2 decode for the second channel 
     volatile UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
-    volatile UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_altStatus;
+    volatile UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1 + ata_reg_altStatus;
 
     // Try a couple of times with a small delay
     // Some drives have been seen to be quite slow at resetting, and interfere with the channel detection unless there's a delay
