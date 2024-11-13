@@ -23,18 +23,16 @@ enum xfer {
 /**
  * Drive struct
  *
- * Each register spaced 512 bytes apart
- * To use this code with other boards you may need to adjust these sizes
 */
 struct Drive {
-    UWORD* data;
-    UBYTE* error_features;
-    UBYTE* sectorCount;
-    UBYTE* lbaLow;
-    UBYTE* lbaMid;
-    UBYTE* lbaHigh;
-    UBYTE* devHead;
-    UBYTE* status_command;
+    volatile UWORD *data;
+    volatile UBYTE *error_features;
+    volatile UBYTE *sectorCount;
+    volatile UBYTE *lbaLow;
+    volatile UBYTE *lbaMid;
+    volatile UBYTE *lbaHigh;
+    volatile UBYTE *devHead;
+    volatile UBYTE *status_command;
 };
 
 struct IDEUnit {
@@ -43,7 +41,7 @@ struct IDEUnit {
     struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct IDETask *itask;
-    volatile struct Drive *drive;
+    struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
     void  (*read_fast)(void *, void *);

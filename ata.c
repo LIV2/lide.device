@@ -40,7 +40,7 @@ static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
         ".endr      \n\t"
         :
-        : "a" (unit->drive->status_command)
+        : "a" (unit->drive.status_command)
         :
     );
 }
@@ -52,12 +52,12 @@ static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *
  *
 */
 static void ata_save_error(struct IDEUnit *unit) {
-    unit->last_error[0] = *unit->drive->error_features;
-    unit->last_error[1] = *unit->drive->lbaHigh;
-    unit->last_error[2] = *unit->drive->lbaMid;
-    unit->last_error[3] = *unit->drive->lbaLow;
-    unit->last_error[4] = *unit->drive->status_command;
-    unit->last_error[5] = *unit->drive->devHead;
+    unit->last_error[0] = *unit->drive.error_features;
+    unit->last_error[1] = *unit->drive.lbaHigh;
+    unit->last_error[2] = *unit->drive.lbaMid;
+    unit->last_error[3] = *unit->drive.lbaLow;
+    unit->last_error[4] = *unit->drive.status_command;
+    unit->last_error[5] = *unit->drive.devHead;
 }
 
 /**
@@ -69,7 +69,7 @@ static void ata_save_error(struct IDEUnit *unit) {
  * @returns True if error is indicated
 */
 static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit) {
-    return (*unit->drive->status_command & (ata_flag_error | ata_flag_df));
+    return (*unit->drive.status_command & (ata_flag_error | ata_flag_df));
 }
 
 /**
@@ -90,7 +90,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<loops; j++) {
-            status = *unit->drive->status_command;
+            status = *unit->drive.status_command;
             if ((status & ata_flag_drq) != 0) return true;
             if (status & (ata_flag_error | ata_flag_df)) return false;
         }
@@ -115,7 +115,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<100; j++) {
-            if ((*unit->drive->status_command & ata_flag_busy) == 0) return true;
+            if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
         }
         wait_us(tr,ATA_BSY_WAIT_LOOP_US);
     }
@@ -137,7 +137,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<1000; j++) {
-            if ((*unit->drive->status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
+            if ((*unit->drive.status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         }
         wait_us(tr,ATA_RDY_WAIT_LOOP_US);
     }
@@ -171,7 +171,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     // Wait for BSY to clear before changing drive unless there's no drive selected
     if (*shadowDevHead != 0 && changed) ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
 
-    *unit->drive->devHead = select;
+    *unit->drive.devHead = select;
 
     if (changed && wait) {
         wait_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_status_reg_delay
@@ -199,13 +199,13 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) return false;
 
-    *unit->drive->sectorCount    = 0;
-    *unit->drive->lbaLow         = 0;
-    *unit->drive->lbaMid         = 0;
-    *unit->drive->lbaHigh        = 0;
-    *unit->drive->error_features = 0;
-    *unit->drive->devHead        = drvSel;
-    *unit->drive->status_command = ATA_CMD_IDENTIFY;
+    *unit->drive.sectorCount    = 0;
+    *unit->drive.lbaLow         = 0;
+    *unit->drive.lbaMid         = 0;
+    *unit->drive.lbaHigh        = 0;
+    *unit->drive.error_features = 0;
+    *unit->drive.devHead        = drvSel;
+    *unit->drive.status_command = ATA_CMD_IDENTIFY;
 
     if (ata_check_error(unit) || !ata_wait_drq(unit,500,false)) {
         Warn("ATA: IDENTIFY Status: Error\n");
@@ -218,7 +218,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     if (buffer) {
         UWORD read_data;
         for (int i=0; i<256; i++) {
-            read_data = *unit->drive->data; //autoincrement on the ide-side
+            read_data = *unit->drive.data; //autoincrement on the ide-side
             // Interface is byte-swapped, so swap the identify data back.
             buffer[i] = ((read_data >> 8) | (read_data << 8));
         }
@@ -272,24 +272,20 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
 
-    if ((unit->drive = AllocMem(sizeof(struct Drive),MEMF_ANY|MEMF_CLEAR)) == NULL) { // Pointerholder for drive base
-        return false;
-    }
+    unit->drive.data           = (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data);
+    unit->drive.error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error);
+    unit->drive.sectorCount    = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount);
+    unit->drive.lbaLow         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow);
+    unit->drive.lbaMid         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid);
+    unit->drive.lbaHigh        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh);
+    unit->drive.devHead        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead);
+    unit->drive.status_command = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status);
 
-    unit->drive->data           = (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data);
-    unit->drive->error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error);
-    unit->drive->sectorCount    = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount);
-    unit->drive->lbaLow         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow);
-    unit->drive->lbaMid         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid);
-    unit->drive->lbaHigh        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh);
-    unit->drive->devHead        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead);
-    unit->drive->status_command = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status);
-
-    *unit->shadowDevHead = *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    *unit->shadowDevHead = *unit->drive.devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
-        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->drive + i) & 0xC0) != 0xC0) {
+        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->cd->cd_BoardAddr + offset  + i) & 0xC0) != 0xC0) {
             dev_found = true;
             Trace("INIT: Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;
@@ -418,18 +414,18 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
 
-    *unit->drive->sectorCount    = multiple;
-    *unit->drive->lbaLow         = 0;
-    *unit->drive->lbaMid         = 0;
-    *unit->drive->lbaHigh        = 0;
-    *unit->drive->error_features = 0;
-    *unit->drive->status_command = ATA_CMD_SET_MULTIPLE;
+    *unit->drive.sectorCount    = multiple;
+    *unit->drive.lbaLow         = 0;
+    *unit->drive.lbaMid         = 0;
+    *unit->drive.lbaHigh        = 0;
+    *unit->drive.error_features = 0;
+    *unit->drive.status_command = ATA_CMD_SET_MULTIPLE;
 
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
         return IOERR_UNITBUSY;
 
     if (ata_check_error(unit)) {
-        if (*unit->drive->error_features & ata_err_flag_aborted) {
+        if (*unit->drive.error_features & ata_err_flag_aborted) {
             return IOERR_ABORTED;
         } else {
             return TDERR_NotSpecified;
@@ -516,7 +512,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer((void *)unit->drive->data,buffer);
+                ata_xfer((void *)unit->drive.data,buffer);
                 txn_count--;
                 buffer += unit->blockSize;
             }
@@ -603,7 +599,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer(buffer,(void *)unit->drive->data);
+                ata_xfer(buffer,(void *)unit->drive.data);
                 txn_count--;
                 buffer += unit->blockSize;
             }
@@ -669,13 +665,13 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
 
     *unit->shadowDevHead         = devHead;
-    *unit->drive->devHead        = devHead;
-    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
-    *unit->drive->lbaLow         = (UBYTE)(sector);
-    *unit->drive->lbaMid         = (UBYTE)(cylinder);
-    *unit->drive->lbaHigh        = (UBYTE)(cylinder >> 8);
-    *unit->drive->error_features = features;
-    *unit->drive->status_command = command;
+    *unit->drive.devHead        = devHead;
+    *unit->drive.sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive.lbaLow         = (UBYTE)(sector);
+    *unit->drive.lbaMid         = (UBYTE)(cylinder);
+    *unit->drive.lbaHigh        = (UBYTE)(cylinder >> 8);
+    *unit->drive.error_features = features;
+    *unit->drive.status_command = command;
 
     return 0;
 }
@@ -695,13 +691,13 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     devHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
     *unit->shadowDevHead         = devHead;
-    *unit->drive->devHead        = devHead;
-    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
-    *unit->drive->lbaLow         = (UBYTE)(lba);
-    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-    *unit->drive->error_features = features;
-    *unit->drive->status_command = command;
+    *unit->drive.devHead        = devHead;
+    *unit->drive.sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive.lbaLow         = (UBYTE)(lba);
+    *unit->drive.lbaMid         = (UBYTE)(lba >> 8);
+    *unit->drive.lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive.error_features = features;
+    *unit->drive.status_command = command;
 
     return 0;
 }
@@ -717,16 +713,16 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
-    *unit->drive->sectorCount    = (sectorCount == 0) ? 1 : 0;
-    *unit->drive->lbaHigh        = 0;
-    *unit->drive->lbaMid         = 0;
-    *unit->drive->lbaLow         = (UBYTE)(lba >> 24);
-    *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
-    *unit->drive->lbaHigh        = (UBYTE)(lba >> 16);
-    *unit->drive->lbaMid         = (UBYTE)(lba >> 8);
-    *unit->drive->lbaLow         = (UBYTE)(lba);
-    *unit->drive->error_features = features;
-    *unit->drive->status_command = command;
+    *unit->drive.sectorCount    = (sectorCount == 0) ? 1 : 0;
+    *unit->drive.lbaHigh        = 0;
+    *unit->drive.lbaMid         = 0;
+    *unit->drive.lbaLow         = (UBYTE)(lba >> 24);
+    *unit->drive.sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
+    *unit->drive.lbaHigh        = (UBYTE)(lba >> 16);
+    *unit->drive.lbaMid         = (UBYTE)(lba >> 8);
+    *unit->drive.lbaLow         = (UBYTE)(lba);
+    *unit->drive.error_features = features;
+    *unit->drive.status_command = command;
 
     return 0;
 }
@@ -808,14 +804,14 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
         case ATA_PIO_IN: // Data to Host
             if (count < 2) return IOERR_BADLENGTH;
-            src = (UWORD *)unit->drive->data;
+            src = (UWORD *)unit->drive.data;
             dest = cmd->scsi_Data;
             break;
 
         case ATA_PIO_OUT: // Data to Drive
             if (count < 2) return IOERR_BADLENGTH;
             src = cmd->scsi_Data;
-            dest = (UWORD *)unit->drive->data;
+            dest = (UWORD *)unit->drive.data;
             break;
 
         default:
