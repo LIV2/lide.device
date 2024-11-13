@@ -42,7 +42,7 @@ all:	$(ROM) \
 		lide-N2630-high.rom \
 		lide-N2630-low.rom
 
-OBJ = driver.o \
+OBJ = device.o \
       ata.o \
 	  atapi.o \
 	  scsi.o \
