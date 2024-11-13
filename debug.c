@@ -17,11 +17,11 @@ void traceCommand(struct IOStdReq *req) {
         case CMD_CLEAR:
             commandName = "CMD_CLEAR";
             break;
-        
+
         case CMD_UPDATE:
             commandName = "CMD_UPDATE";
             break;
-        
+
         case CMD_READ:
             commandName = "CMD_READ";
             break;
@@ -29,23 +29,23 @@ void traceCommand(struct IOStdReq *req) {
         case CMD_WRITE:
             commandName = "CMD_WRITE";
             break;
-        
+
         case TD_REMCHANGEINT:
             commandName = "TD_REMCHANGEINT";
             break;
-        
+
         case TD_PROTSTATUS:
             commandName = "TD_PROTSTATUS";
             break;
-        
+
         case TD_CHANGENUM:
             commandName = "TD_CHANGENUM";
             break;
-        
+
         case TD_CHANGESTATE:
             commandName = "TD_CHANGESTATE";
             break;
-        
+
         case TD_EJECT:
             commandName = "TD_EJECT";
             break;
@@ -223,7 +223,7 @@ void traceCommand(struct IOStdReq *req) {
         case TDERR_PostReset:
             err = "TDERR_PostReset";
             break;
-        
+
         default:
             err = "UNKNOWN";
 

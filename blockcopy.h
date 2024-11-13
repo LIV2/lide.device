@@ -3,17 +3,17 @@
 #pragma GCC optimize ("-fomit-frame-pointer")
 /**
  * ata_read_long_movem
- * 
+ *
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
  * https://github.com/fredrequin/at_apollo_device
- * 
+ *
  * NOTE!
  * The 68000 does an extra memory access at the end of a movem instruction!
  * Source: https://github.com/prb28/m68k-instructions-documentation/blob/master/instructions/movem.md
- * 
+ *
  * With the src of end-52 the error reg will be harmlessly read instead.
- * 
+ *
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
@@ -37,11 +37,11 @@ static inline void ata_read_long_movem (void *source, void *destination) {
 
 /**
  * ata_write_long_movem
- * 
+ *
  * Fast copy of a 512-byte sector using movem
  * Adapted from the open source at_apollo_device by Frédéric REQUIN
  * https://github.com/fredrequin/at_apollo_device
- * 
+ *
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
@@ -62,9 +62,9 @@ static inline void ata_write_long_movem (void *source, void *destination) {
 
 /**
  * ata_read_long_move
- * 
+ *
  * Read a sector using move - faster than movem on 68020+
- * 
+ *
 */
 static inline void ata_read_long_move (void *source, void *destination) {
     asm volatile (
@@ -82,9 +82,9 @@ static inline void ata_read_long_move (void *source, void *destination) {
 
 /**
  * ata_write_long_move
- * 
+ *
  * Write a sector using move - faster than movem on 68020+
- * 
+ *
 */
 static inline void ata_write_long_move (void *source, void *destination) {
     asm volatile (

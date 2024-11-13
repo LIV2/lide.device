@@ -24,11 +24,11 @@
 
 /**
  * atapi_status_reg_delay
- * 
+ *
  * We need a short delay before actually checking the status register to let the drive update the status
  * Reading a CIA register should ensure a consistent delay regardless of CPU speed
  * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
 */
 static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUnit *unit) {
@@ -38,7 +38,7 @@ static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUni
 }
 /**
  * atapi_wait_drq
- * 
+ *
  * Poll DRQ in the status register until set or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -57,7 +57,7 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * atapi_wait_drq_not_bsy
- * 
+ *
  * Poll the status register until DRQ set and BSY clear or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -75,7 +75,7 @@ static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * atapi_wait_not_bsy
- * 
+ *
  * Poll BSY in the status register until clear or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -94,7 +94,7 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * atapi_wait_not_drqbsy
- * 
+ *
  * Poll DRQ & BSY in the status register until clear or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -114,9 +114,9 @@ static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * atapi_check_ir
- * 
+ *
  * Mask the Interrupt Reason register and check against a value
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param mask Mask
  * @param value Expected value after masking
@@ -134,7 +134,7 @@ static bool atapi_check_ir(struct IDEUnit *unit, UBYTE mask, UBYTE value, UWORD 
 
 /**
  * atapi_dev_reset
- * 
+ *
  * Resets the device by sending a DEVICE RESET command to it
  * @param unit Pointer to an IDEUnit struct
 */
@@ -148,12 +148,12 @@ void atapi_dev_reset(struct IDEUnit *unit) {
 
 /**
  * atapi_check_signature
- * 
+ *
  * Resets the device then checks the signature in the LBA High and Mid registers to see if an ATAPI device is present
  * @param unit Pointer to an IDEUnit struct
 */
 bool atapi_check_signature(struct IDEUnit *unit) {
-    
+
     atapi_dev_reset(unit);
     wait_us(unit->itask->tr,10000);
     for (int i=0; i<20; i++) {
@@ -165,9 +165,9 @@ bool atapi_check_signature(struct IDEUnit *unit) {
 
 /**
  * atapi_identify
- * 
+ *
  * Send an "IDENTIFY PACKET DEVICE" command and read the results into a buffer
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param buffer Pointer to the destination buffer
  * @returns True on success, false on failure
@@ -216,9 +216,9 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 
 /**
  * atapi_translate
- * 
+ *
  * Translate TD commands to ATAPI and issue them to the device
- * 
+ *
  * @param io_Data Pointer to the data buffer
  * @param lba LBA to transfer
  * @param count Number of LBAs to transfer
@@ -227,7 +227,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
  * @param direction Transfer direction
  * @returns error
 */
-BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction) 
+BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction)
 {
     Trace("atapi_translate enter\n");
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
@@ -295,7 +295,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
                     case 0x07:                       // Disk is write protected
                         ret = TDERR_WriteProt;
                         goto done;
-                    
+
                     default:                         // Anything else
                         ret = TDERR_NotSpecified;
                         continue;                    // Try again
@@ -312,7 +312,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
 done:
     Trace("atapi_packet returns %ld\n",ret);
     *io_Actual = cmd->scsi_Actual;
-    
+
     DeleteSCSICmd(cmd);
 
     return ret;
@@ -322,9 +322,9 @@ done:
 
 /**
  * atapi_packet
- * 
+ *
  * Send a SCSICmd to an ATAPI device
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct
  * @param unit Pointer to the IDEUnit
  * @returns error, sense key returned in SenseData
@@ -367,7 +367,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         byte_count = cmd->scsi_Length;
     }
 
-    *unit->drive->lbaMid         = byte_count & 0xFF; 
+    *unit->drive->lbaMid         = byte_count & 0xFF;
     *unit->drive->lbaHigh        = byte_count >> 8 & 0xFF;
     *unit->drive->error_features = 0;
     *unit->drive->devHead        = drvSelHead;
@@ -378,7 +378,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         ret = IOERR_UNITBUSY;
         goto end;
     }
-    
+
     if (!atapi_check_ir(unit,IR_STATUS,IR_COMMAND,10)) {
         Trace("ATAPI: Failed command phase\n");
         ret = HFERR_Phase;
@@ -404,7 +404,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     if (*status & ata_flag_error) goto ata_error;
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
-    
+
     ULONG index = 0;
 
     while (1) {
@@ -418,7 +418,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         if (cmd->scsi_Length == 0) break;
 
         if ((atapi_check_ir(unit,0x03,IR_STATUS,1))) break;
-    
+
         if (!(atapi_wait_drq(unit,10))) break;
 
 
@@ -501,9 +501,9 @@ end:
 
 /**
  * atapi_test_unit_ready
- * 
+ *
  * Send a TEST UNIT READY to the unit and update the media change count & presence
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @returns nonzero if there was an error
 */
@@ -572,9 +572,9 @@ done:
 
 /**
  * atapi_request_sense
- * 
+ *
  * Request extended sense data from the ATAPI device
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param senseKey Pointer for the senseKey result
  * @param asc Pointer for the asc result
@@ -587,7 +587,7 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey
     UBYTE *cdb = (UBYTE *)cmd->scsi_Command;
 
     UBYTE *buf;
-    
+
     if ((buf = AllocMem(18,MEMF_CLEAR|MEMF_ANY)) == NULL) {
         DeleteSCSICmd(cmd);
         return TDERR_NoMem;
@@ -619,9 +619,9 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey
 
 /**
  * atapi_get_capacity
- * 
+ *
  * Send a READ CAPACITY (10) to the ATAPI device then update the unit geometry with the returned values
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @return non-zero on error
 */
@@ -656,23 +656,23 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     if ((ret = atapi_packet(cmd,unit)) == 0) {
         unit->logicalSectors  = capacity.logicalSectors + 1;
         unit->blockSize       = capacity.blockSize;
-        
+
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
     }
     Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
-    
+
     DeleteSCSICmd(cmd);
     return ret;
 }
 
 
-/** 
+/**
  * atapi_mode_sense
- * 
+ *
  * Send a MODE SENSE (10) request to the ATAPI device
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param page_code Page code to request
  * @param buffer Pointer to a buffer for the mode sense data response
@@ -714,9 +714,9 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, U
 
 /**
  * atapi_scsi_mode_sense_6
- * 
+ *
  * ATAPI devices do not support MODE SENSE (6) so translate to a MODE SENSE (10)
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
@@ -727,7 +727,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     BYTE ret;
     UBYTE *buf  = NULL;
-    UBYTE *dest = (UBYTE *)cmd->scsi_Data; 
+    UBYTE *dest = (UBYTE *)cmd->scsi_Data;
     ULONG len   = cmd->scsi_Command[4] + 4; // Original allocation length
 
     struct SCSICmd *cmd_sense = NULL;
@@ -783,9 +783,9 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
 /**
  * atapi_scsi_mode_select_6
- * 
+ *
  * ATAPI devices do not support MODE SELECT (6) so translate to a MODE SELECT (10)
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
@@ -817,7 +817,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     }
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
-    cmd_select->scsi_Command[1] = cmd->scsi_Command[1];     // PF / SP 
+    cmd_select->scsi_Command[1] = cmd->scsi_Command[1];     // PF / SP
     cmd_select->scsi_Command[7] = (bufSize >> 8) & 0xFF;    // Parameter list length
     cmd_select->scsi_Command[8] = bufSize;                  // Parameter list length
 
@@ -852,10 +852,10 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
 /**
  * atapi_scsi_read_write_6
- * 
+ *
  * ATAPI devices do not support READ (6) or WRITE (6)
  * Translate these calls to READ (10) / WRITE (10);
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error
@@ -870,7 +870,7 @@ BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
     cdb->operation = oldcdb->operation | 0x20;
     cdb->length    = oldcdb->length;
     cdb->lba       = oldcdb->lba_high << 16 |
-                     oldcdb->lba_mid  << 8  | 
+                     oldcdb->lba_mid  << 8  |
                      oldcdb->lba_low;
 
     if (cdb->length == 0) cdb->length = 256; // for SCSI READ/WRITE 6 a transfer length of 0 specifies that 256 blocks will be transferred
@@ -892,12 +892,12 @@ BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
 
 /**
  * atapi_packet_unaligned
- * 
+ *
  * In the unlikely event that someone has allocated an unaligned data buffer, align the data first by making a copy
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct
  * @param unit Pointer to an IDEUnit struct
- * @returns non-zero on exit 
+ * @returns non-zero on exit
 */
 BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
     BYTE error = 0;
@@ -926,9 +926,9 @@ BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
 /**
  * atapi_start_stop_unit
- * 
+ *
  * send START STOP command to ATAPI drive e.g to eject the disc
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param start Start bit of START STOP
  * @param loej loej bit of START STOP
@@ -943,7 +943,7 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
     if (start) operation |= (1<<0);
 
     if ((cmd = MakeSCSICmd(SZ_CDB_10)) == NULL) return TDERR_NoMem;
-    
+
     cmd->scsi_Command[0] = SCSI_CMD_START_STOP_UNIT;
     cmd->scsi_Command[1] = (1<<0); // Immediate bit set
     cmd->scsi_Command[4] = operation;
@@ -957,9 +957,9 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
 
 /**
  * atapi_check_wp
- * 
+ *
  * Check write-protect status of the disk
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error
 */
@@ -984,7 +984,7 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 
 /**
  * atapi_update_presence
- * 
+ *
  * If the medium has changed state update the unit info, geometry etc
  * @param unit Pointer to an IDEUnit struct
  * @param present Medium present
@@ -1010,7 +1010,7 @@ bool atapi_update_presence(struct IDEUnit *unit, bool present) {
 
 /**
  * atapi_do_defer_tur
- * 
+ *
  * If an access to the medium was successful then we know that it is present.
  * The diskchange task can then skip the next "Test Unit Ready" so it won't interrupt a transfer
  *
@@ -1029,11 +1029,11 @@ void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
 
 /**
  * atapi_adjust_end_msf
- * 
+ *
  * Decrement the MSF by one frame.
  * i.e get the end of the last track by inputting the MSF for the lead-out
- *  
- * @param msf 
+ *
+ * @param msf
  */
 static void atapi_adjust_end_msf(struct SCSI_TRACK_MSF *msf) {
     if (msf->frame > 0) {
@@ -1052,9 +1052,9 @@ static void atapi_adjust_end_msf(struct SCSI_TRACK_MSF *msf) {
 
 /**
  * atapi_read_toc
- * 
+ *
  * Reads the CD TOC into the supplied buffer
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param buf Pointer to the buffer
  * @param bufSize Size of buffer
@@ -1068,9 +1068,9 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
     }
 
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
- 
+
     if (cmd == NULL) return TDERR_NoMem;
-    
+
     cmd->scsi_Data       = (UWORD *)buf;
     cmd->scsi_Length     = bufSize;
     cmd->scsi_Flags      = SCSIF_READ;
@@ -1083,14 +1083,14 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
 
     DeleteSCSICmd(cmd);
 
-    return ret;    
+    return ret;
 }
 
 /**
  *  atapi_get_track_msf
- * 
+ *
  * Find the M/S/F of a Track
- * 
+ *
  * @param toc pointer to a SCSI_CD_TOC struct
  * @param trackNum track number to find
  * @param msf Pointer to a SCSI_TRACK_MSF struct
@@ -1116,14 +1116,14 @@ BOOL atapi_get_track_msf(struct SCSI_CD_TOC *toc, int trackNum, struct SCSI_TRAC
     return false;
 }
 
-/** 
+/**
  * atapi_play_track_index
- * 
+ *
  * Find tracks <start> and <end> in TOC and issue a PLAY AUDIO MSF command
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param start Start track number
- * @param end End track number 
+ * @param end End track number
  * @returns non-zero on error
 */
 BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
@@ -1135,7 +1135,7 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
     if (toc == NULL) return TDERR_NoMem;
 
     ret = atapi_read_toc(unit,(BYTE *)toc,SCSI_TOC_SIZE);
-    
+
     if (ret == 0) {
 
         if (end > toc->lastTrack) end = 0xAA; // Lead out
@@ -1158,9 +1158,9 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
 
 /**
  * atapi_play_audio_msf
- * 
+ *
  * Issue a PLAY AUDIO MSF command to the drive
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param start Pointer to a SCSI_TRACK_MSF struct for the starting position
  * @param end Pointer to a SCSI_TRACK_MSF struct for the ending position
@@ -1170,7 +1170,7 @@ BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, st
     BYTE ret = 0;
 
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    
+
     if (cmd == NULL) return TDERR_NoMem;
 
     cmd->scsi_Command[0] = SCSI_CMD_PLAY_AUDIO_MSF;
@@ -1195,10 +1195,10 @@ BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, st
 
 /**
  * atapi_translate_play_audio_index
- * 
+ *
  * PLAY AUDIO INDEX was deprecated with SCSI-3 and is not supported by ATAPI drives
  * Some software makes use of this, so we translate it to a PLAY AUDIO MSF command
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct for a PLAY AUDIO INDEX command
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error
@@ -1219,9 +1219,9 @@ BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit)
 
 /**
  * atapi_autosense
- * 
+ *
  * Perform a REQUEST SENSE and put the result into scsi_SenseData of a supplied SCSICmd
- * 
+ *
  * @param scsi_command Pointer to a SCSICmd struct
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error

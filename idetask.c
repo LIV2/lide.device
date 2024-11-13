@@ -22,9 +22,9 @@
 
 /**
  * scsi_inquiry_ata
- * 
+ *
  * Handle SCSI-Direct INQUIRY commands for ATA devices
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
@@ -61,9 +61,9 @@ static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command)
 
 /**
  * scsi_read_capaity_ata
- * 
+ *
  * Handle SCSI-Direct READ CAPACITY commands for ATA devices
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
@@ -98,9 +98,9 @@ static BYTE scsi_read_capaity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_com
 
 /**
  * scsi_mode_sense_ata
- * 
+ *
  * Handle SCSI-Direct MODE SENSE (6) commands for ATA devices
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
@@ -259,14 +259,14 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
         }
     } else {
         // SCSI command handling for ATAPI Drives
-        
+
         switch (scsi_command->scsi_Command[0]) {
 
             case SCSI_CMD_INQUIRY:
                 // Fudge the SCSI version number for CD/DVDs
                 // Some software expects version 2 but ATAPI returns version 0
                 error = atapi_packet(scsi_command,unit);
-                
+
                 if (error == 0 && unit->deviceType == DG_CDROM) {
                     if ((scsi_command->scsi_Command[1] & 1) == 0) {
                         ((struct SCSI_Inquiry *)scsi_command->scsi_Data)->version = 2;
@@ -314,7 +314,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 Trace("Auto sense requested\n");
                 // Request sense with retries
                 for (int retry = 0; retry < 3; retry++) {
-                    if ((atapi_autosense(scsi_command,unit)) == 0) 
+                    if ((atapi_autosense(scsi_command,unit)) == 0)
                         break;
 
                     wait_us(unit->itask->tr,250000); // Wait 250ms before retrying
@@ -326,7 +326,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     // SCSI Command complete, handle any errors
 
     Trace("SCSI: return: %02lx\n",error);
-    
+
     scsi_command->scsi_CmdActual = scsi_command->scsi_CmdLength;
 
     if (error != 0) {
@@ -342,7 +342,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 /**
  * diskchange_task
  *
- * This task periodically polls all removable devices for media changes and updates 
+ * This task periodically polls all removable devices for media changes and updates
 */
 void __attribute__((noreturn)) diskchange_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
@@ -386,7 +386,7 @@ void __attribute__((noreturn)) diskchange_task () {
                 PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request dirßsectly to the ide task
                 WaitPort(iomp);
                 GetMsg(iomp);
-                
+
                 present = (ioreq->io_Actual == 0); // Get current state
 
                 if (present != unit->mediumPresentPrev) {
@@ -398,7 +398,7 @@ void __attribute__((noreturn)) diskchange_task () {
                     for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head;
                          intreq->io_Message.mn_Node.ln_Succ != NULL;
                          intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
-                        
+
                         if (intreq->io_Data) {
                             Cause(intreq->io_Data);
                         }
@@ -424,7 +424,7 @@ die:
     if (TimerReq && TimerReq->tr_node.io_Device) CloseDevice((struct IORequest *)TimerReq);
     if (TimerReq) DeleteExtIO((struct IORequest *)TimerReq);
     if (TimerMP) DeletePort(TimerMP);
-    
+
     RemTask(NULL);
     Wait(0);
     while (1);
@@ -432,16 +432,16 @@ die:
 
 /**
  * init_units
- * 
+ *
  * Initialize the IDE Drives and add them to the dev->units list
- * 
+ *
  * @param itask Pointer to an IDETask struct
  * @returns number of drives foun
 */
 static BYTE init_units(struct IDETask *itask) {
     UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
-    
+
     for (BYTE i=0; i < 2; i++) {
         struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
         if (unit != NULL) {
@@ -500,9 +500,9 @@ static BYTE init_units(struct IDETask *itask) {
     return num_units;
 }
 
-/** 
+/**
  * cleanup
- * 
+ *
  * Clean up after the task, freeing resources etc back to the system
 */
 static void cleanup(struct IDETask *itask) {
@@ -673,7 +673,7 @@ transfer:
                         error  = TDERR_DiskChanged;
                         break;
                     }
-                    
+
                     blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
                     lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
                     count = (ioreq->io_Length >> blockShift);
@@ -750,10 +750,10 @@ transfer:
 
 /**
  * direct_changestate
- * 
+ *
  * Send a TD_CHANGESTATE request directly to the IDE Task
  * This will have the side-effect of updating the presence status and geometry of the unit if the status changed
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param dev Pointer to DeviceBase
  * @returns -1 on error, 0 if disk present, >0 if no disk

@@ -22,7 +22,7 @@ enum xfer {
 
 /**
  * Drive struct
- * 
+ *
  * Each register spaced 512 bytes apart
  * To use this code with other boards you may need to adjust these sizes
 */
@@ -120,7 +120,7 @@ struct IDETask {
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 10
+#define DEVICE_REVISION 9
 #define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
 
 #endif

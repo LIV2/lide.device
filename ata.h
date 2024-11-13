@@ -24,7 +24,7 @@
 #define ata_reg_error        1*NEXT_REG + IDE_CSMASK
 #define ata_reg_features     1*NEXT_REG + IDE_CSMASK
 #define ata_reg_sectorCount  2*NEXT_REG + IDE_CSMASK
-#define ata_reg_lbaLow       3*NEXT_REG + IDE_CSMASK 
+#define ata_reg_lbaLow       3*NEXT_REG + IDE_CSMASK
 #define ata_reg_lbaMid       4*NEXT_REG + IDE_CSMASK
 #define ata_reg_lbaHigh      5*NEXT_REG + IDE_CSMASK
 #define ata_reg_devHead      6*NEXT_REG + IDE_CSMASK

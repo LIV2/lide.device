@@ -19,14 +19,14 @@
 
 /**
  * scsi_sense
- * 
+ *
  * Populate sense data based on the error returned by the ATA functions
- * 
+ *
  * @param command A pointer to a SCSICmd
  * @param info Sense data Info long
  * @param specific Sense data Specific long
  * @param error Error code returned from ata_transfer
- * 
+ *
 */
 void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
 {
@@ -77,11 +77,11 @@ void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
 
 /**
  * MakeSCSICmd
- * 
+ *
  * Creates an new SCSICmd struct and CDB
- * 
+ *
  * @param cdbSize Size of CDB to create
- * @returns Pointer to an initialized SCSICmd struct 
+ * @returns Pointer to an initialized SCSICmd struct
 */
 struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
     UBYTE          *cdb = NULL;
@@ -107,9 +107,9 @@ struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
 
 /**
  * DeleteSCSICmd
- * 
+ *
  * Delete a SCSICmd and its CDB
- * 
+ *
  * @param cmd Pointer to a SCSICmd struct to be deleted
 */
 void DeleteSCSICmd(struct SCSICmd *cmd) {

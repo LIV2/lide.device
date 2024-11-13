@@ -91,7 +91,7 @@ char * set_dev_name(struct DeviceBase *dev) {
 
 /**
  * L_CreateTask
- * 
+ *
  * Create a task with tc_UserData populated before it starts
  * @param taskName Pointer to a null-terminated string
  * @param priority Task Priority between -128 and 127
@@ -101,9 +101,9 @@ char * set_dev_name(struct DeviceBase *dev) {
 */
 struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData) {
         stackSize = (stackSize + 3UL) & ~3UL;
-        
+
         struct Task *task;
-        
+
         struct {
             struct Node ml_Node;
             UWORD ml_NumEntries;
@@ -142,12 +142,12 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
 
 /**
  * sleep
- * 
+ *
  * @param seconds Seconds to wait
  * @param microseconds Microseconds to wait
 */
 static void sleep(ULONG seconds, ULONG microseconds) {
-        
+
     struct timerequest *tr = NULL;
     struct MsgPort     *iomp = NULL;
 
@@ -170,9 +170,9 @@ static void sleep(ULONG seconds, ULONG microseconds) {
 #if CDBOOT
 /**
  * FindCDFS
- * 
+ *
  * Look for a CD Filesystem in FileSystem.resource
- * 
+ *
  * @return BOOL True if CDFS found
 */
 static BOOL FindCDFS() {
@@ -228,7 +228,7 @@ static void Cleanup(struct DeviceBase *dev) {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 
     struct IDEUnit *unit;
-    
+
     if (SysBase->SoftVer >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
@@ -260,7 +260,7 @@ static void Cleanup(struct DeviceBase *dev) {
 
 /**
  * detectChannels
- * 
+ *
  * Detect how many IDE Channels this board has
  * @param cd Pointer to the ConfigDev struct for this board
  * @returns number of channels
@@ -283,7 +283,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
         // On a Matze TK the ROM goes away and the board can do 2 channels
         ULONG signature = 0;
         char *romFooter = (char *)cd->cd_BoardAddr + 0xFFF8;
-        
+
         if (cd->cd_Rom.er_InitDiagVec & 1 ||      // If the board has an odd offset then add it
             cd->cd_Rom.er_InitDiagVec == 0x100) { // WinUAE AT-Bus 2008 has DiagVec @ 0x100 but Driver is on odd offset
                 romFooter++;
@@ -301,8 +301,8 @@ static BYTE detectChannels(struct ConfigDev *cd) {
         }
     }
 
-    // Detect if there are 1 or 2 IDE channels on this board 
-    // 2 channel boards use the CS2 decode for the second channel 
+    // Detect if there are 1 or 2 IDE channels on this board
+    // 2 channel boards use the CS2 decode for the second channel
     volatile UBYTE *status     = cd->cd_BoardAddr + CHANNEL_0 + ata_reg_status;
     volatile UBYTE *alt_status = cd->cd_BoardAddr + CHANNEL_1 + ata_reg_altStatus;
 
@@ -348,7 +348,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->isOpen        = FALSE;
     dev->numUnits     = 0;
     dev->numTasks     = 0;
-    
+
     NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
 
@@ -388,7 +388,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
         cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
         cd->cd_Driver = dev;
-        
+
         numBoards++;
         UBYTE channels = detectChannels(cd);
 
@@ -457,12 +457,12 @@ will execute your Expunge at a time. */
 static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
 {
     Trace((CONST_STRPTR) "running expunge()\n");
- 
+
     /**
      * Don't expunge
-     * 
+     *
      * If expunged the driver will be gone until reboot
-     * 
+     *
      * Also need to figure out how to kill the disk change int task cleanly before this can be enabled
     */
 
@@ -523,7 +523,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     */
     UBYTE lun = unitnum / 10;
     unitnum = (unitnum % 10);
-    
+
     if (lun != 0) {
         // No LUNs for IDE drives
         error = TDERR_BadUnitNum;
@@ -557,7 +557,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         error = TDERR_BadUnitNum;
         goto exit;
     }
-    
+
     if (unit->itask->task == NULL || unit->itask->active == false) {
         error = IOERR_OPENFAIL;
         goto exit;
@@ -606,7 +606,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     //     ioreq->io_Error = TDERR_DiskChanged;
     //     return;
     // }
-    
+
     // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
     memset(geometry,0,sizeof(struct DriveGeometry));
 
@@ -690,7 +690,7 @@ static UWORD supported_commands[] =
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     BYTE error = TDERR_NotSpecified;
-    
+
     // Check that the IOReq has a sane Device / Unit pointer first
     if (ioreq_is_valid(dev,(struct IORequest *)ioreq)) {
         /* This makes sure that WaitIO() is guaranteed to work and

@@ -27,11 +27,11 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 
 /**
  * ata_status_reg_delay
- * 
+ *
  * We need a short delay before actually checking the status register to let the drive update the status
  * To get the right delay we read the status register 4 times but just throw away the result
  * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
 */
 static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
@@ -47,9 +47,9 @@ static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *
 
 /**
  * ata_save_error
- * 
+ *
  * Save the contents of the drive registers so that errors can be reported in sense data
- * 
+ *
 */
 static void ata_save_error(struct IDEUnit *unit) {
     unit->last_error[0] = *unit->drive->error_features;
@@ -62,10 +62,10 @@ static void ata_save_error(struct IDEUnit *unit) {
 
 /**
  * ata_check_error
- * 
+ *
  * Check for ATA error / fault
- * 
- * @param unit Pointer to an IDEUnit struct 
+ *
+ * @param unit Pointer to an IDEUnit struct
  * @returns True if error is indicated
 */
 static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit) {
@@ -74,7 +74,7 @@ static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit)
 
 /**
  * ata_wait_drq
- * 
+ *
  * Poll DRQ in the status register until set or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -102,7 +102,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
 
 /**
  * ata_wait_not_busy
- * 
+ *
  * Poll BSY in the status register until clear or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -124,7 +124,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * ata_wait_ready
- * 
+ *
  * Poll RDY in the status register until set or timeout
  * @param unit Pointer to an IDEUnit struct
  * @param tries Tries, sets the timeout
@@ -146,10 +146,10 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
 
 /**
  * ata_select
- * 
+ *
  * Selects the drive by writing to the dev head register
  * If the request would not change the drive select then this will be a no-op to save time
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param select the dev head value to set
  * @param wait whether to wait for the drive to clear BSY after selection
@@ -159,7 +159,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 {
     bool changed = false;
     volatile UBYTE *shadowDevHead = unit->shadowDevHead;
- 
+
     if (!unit->lba) select &= ~(0x40);
 
     if (*shadowDevHead == select) {
@@ -169,7 +169,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     if ((*shadowDevHead & 0xF0) != (select & 0xF0)) changed = true;
 
     // Wait for BSY to clear before changing drive unless there's no drive selected
-    if (*shadowDevHead != 0 && changed) ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT); 
+    if (*shadowDevHead != 0 && changed) ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
 
     *unit->drive->devHead = select;
 
@@ -185,7 +185,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 
 /**
  * ata_identify
- * 
+ *
  * Send an IDENTIFY command to the device and place the results in the buffer
  * @param unit Pointer to an IDEUnit struct
  * @param buffer Pointer to the destination buffer
@@ -194,17 +194,17 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
-    
+
     ata_select(unit,drvSel,false);
 
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) return false;
- 
+
     *unit->drive->sectorCount    = 0;
     *unit->drive->lbaLow         = 0;
     *unit->drive->lbaMid         = 0;
     *unit->drive->lbaHigh        = 0;
     *unit->drive->error_features = 0;
-    *unit->drive->devHead 		 = drvSel;    
+    *unit->drive->devHead        = drvSel;
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
     if (ata_check_error(unit) || !ata_wait_drq(unit,500,false)) {
@@ -251,7 +251,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 
 /**
  * ata_init_unit
- * 
+ *
  * Initialize a unit, check if it is there and responding
  * @param unit Pointer to an IDEUnit struct
  * @returns false on error
@@ -271,20 +271,20 @@ bool ata_init_unit(struct IDEUnit *unit) {
     bool dev_found = false;
 
     offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
-	
-	if ((unit->drive = AllocMem(sizeof(struct Drive),MEMF_ANY|MEMF_CLEAR)) == NULL) { // Pointerholder for drive base
+
+    if ((unit->drive = AllocMem(sizeof(struct Drive),MEMF_ANY|MEMF_CLEAR)) == NULL) { // Pointerholder for drive base
         return false;
     }
-		
-	unit->drive->data 			= (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data); 
-	unit->drive->error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error); 
-	unit->drive->sectorCount 	= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount); 
-	unit->drive->lbaLow 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow); 
-	unit->drive->lbaMid 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid); 
-	unit->drive->lbaHigh 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh); 
-	unit->drive->devHead 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead); 
-	unit->drive->status_command	= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status); 
-    
+
+    unit->drive->data           = (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data);
+    unit->drive->error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error);
+    unit->drive->sectorCount    = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount);
+    unit->drive->lbaLow         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow);
+    unit->drive->lbaMid         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid);
+    unit->drive->lbaHigh        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh);
+    unit->drive->devHead        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead);
+    unit->drive->status_command = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status);
+
     *unit->shadowDevHead = *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
@@ -295,7 +295,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             break;
         }
     }
-    
+
     if (dev_found == false || !ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) {
         return false;
     }
@@ -335,14 +335,14 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
             unit->lba48 = true;
             Info("INIT: Drive supports LBA48 mode \n");
-            unit->logicalSectors = (buf[ata_identify_lba48_sectors + 1] << 16 | 
+            unit->logicalSectors = (buf[ata_identify_lba48_sectors + 1] << 16 |
                                     buf[ata_identify_lba48_sectors]);
             unit->write_taskfile = &write_taskfile_lba48;
- 
+
         } else if (unit->lba == true) {
             // LBA-28 up to 127GB
             unit->write_taskfile = &write_taskfile_lba;
- 
+
         } else {
             // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
@@ -354,7 +354,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
         if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
 
-        if (unit->logicalSectors >= 267382800) { 
+        if (unit->logicalSectors >= 267382800) {
             // For drives larger than 127GB fudge the geometry
             unit->heads           = 63;
             unit->sectorsPerTrack = 255;
@@ -368,7 +368,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
 
-        
+
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
@@ -397,14 +397,14 @@ ident_failed:
     unit->present = true;
 
     Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
-    
+
     if (buf) FreeMem(buf,512);
     return true;
 }
 
 /**
  * ata_set_multiple
- * 
+ *
  * Configure the DRQ block size for READ MULTIPLE and WRITE MULTIPLE
  * @param unit Pointer to an IDEUnit struct
  * @param multiple DRQ Block size
@@ -412,7 +412,7 @@ ident_failed:
 */
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
-    
+
     ata_select(unit,drvSel,true);
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
@@ -427,7 +427,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT))
         return IOERR_UNITBUSY;
-    
+
     if (ata_check_error(unit)) {
         if (*unit->drive->error_features & ata_err_flag_aborted) {
             return IOERR_ABORTED;
@@ -443,7 +443,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 
 /**
  * ata_read
- * 
+ *
  * Read blocks from the unit
  * @param buffer destination buffer
  * @param lba LBA Address
@@ -459,12 +459,12 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
-    
+
     if (unit->lba48) {
         command = ATA_CMD_READ_MULTIPLE_EXT;
     } else {
         command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
-    } 
+    }
 
     void (*ata_xfer)(void *source, void *destination);
 
@@ -486,7 +486,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
-     * 
+     *
      * count:          Number of sectors to transfer for this io request
      * txn_count:      Number of sectors to transfer to/from the drive in one ATA command transaction
      * multiple_count: Max number of sectors that can be transferred before polling DRQ
@@ -498,7 +498,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             txn_count = count;               // Get any remainders
         }
         count -= txn_count;
-        
+
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
         if ((error = unit->write_taskfile(unit,command,lba,txn_count,0)) != 0) {
@@ -529,7 +529,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
 /**
  * ata_write
- * 
+ *
  * Write blocks to the unit
  * @param buffer source buffer
  * @param lba LBA Address
@@ -546,7 +546,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
-    
+
     if (unit->lba48) {
         command = ATA_CMD_WRITE_MULTIPLE_EXT;
     } else {
@@ -573,7 +573,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
     /**
      * Transfer up-to MAX_TRANSFER_SECTORS per ATA command invocation
-     * 
+     *
      * count:          Number of sectors to transfer for this io request
      * txn_count:      Number of sectors to transfer to/from the drive in one ATA command transaction
      * multiple_count: Max number of sectors that can be transferred before polling DRQ
@@ -616,7 +616,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
 /**
  * ata_read_unaligned_long
- * 
+ *
  * Read data to an unaligned buffer
  * @param source Pointer to the drive data port
  * @param destination Pointer to the data buffer
@@ -637,7 +637,7 @@ void ata_read_unaligned_long(void *source, void *destination) {
 
 /**
  * ata_write_unaligned_long
- * 
+ *
  * Write data from an unaligned buffer
  * @param source Pointer to the data buffer
  * @param destination Pointer to the drive data port
@@ -652,7 +652,7 @@ void ata_write_unaligned_long(void *source, void *destination) {
 
 /**
  * write_taskfile_chs
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
@@ -662,12 +662,12 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
 
     BYTE devHead;
-    
+
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
     devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
-    
+
     *unit->shadowDevHead         = devHead;
     *unit->drive->devHead        = devHead;
     *unit->drive->sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
@@ -682,7 +682,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 
 /**
  * write_taskfile_lba
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
@@ -708,7 +708,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
 
 /**
  * write_taskfile_lba48
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
@@ -734,7 +734,7 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
 
 /**
  * ata_set_pio
- * 
+ *
  * @param unit Pointer t oan IDEUnit struct
  * @param pio pio mode
 */
@@ -742,7 +742,7 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
     BYTE error = 0;
 
     if (pio > 4) return IOERR_BADADDRESS;
-    
+
     if (pio > 0) pio |= 0x08;
 
     if ((error = write_taskfile_lba(unit,ATA_CMD_SET_FEATURES,0,pio,0x03)) != 0)
@@ -758,9 +758,9 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
 
 /**
  * scsi_ata_passthrough
- * 
+ *
  * Handle SCSI ATA PASSTHROUGH (12) command to send ATA commands to the drive
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param cmd Pointer to a SCSICmd struct
  * @return non-zero on error
@@ -771,11 +771,11 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
     bool byt_blok  = (cdb->length & ATA_BYT_BLOK) ? true : false;
     UBYTE protocol = (cdb->protocol >> 1) & 0x0F;
     UBYTE t_length = cdb->length & ATA_TLEN_MASK;
-   
+
     ULONG lba   = (cdb->lbaHigh << 16 | cdb->lbaMid << 8 | cdb->lbaLow);
     ULONG count = 0;
     BYTE  error = 0;
-   
+
     UWORD *src  = NULL;
     UWORD *dest = NULL;
 
