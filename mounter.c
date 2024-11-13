@@ -782,9 +782,10 @@ struct ParameterPacket
 
 static UBYTE ToUpper(UBYTE c)
 {
-	if (c >= 'a' || c <= 'z') {
-		c |= 0x20;
+	if (c >= 'a' && c <= 'z') {
+		return c - ('a'-'A');
 	}
+
 	return c;
 }
 

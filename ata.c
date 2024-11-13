@@ -810,8 +810,6 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     }
 
-    if (protocol < ATA_NODATA || protocol > ATA_PIO_OUT) return IOERR_BADADDRESS;
-
     count += (count & 1); // Ensure byte count is even
 
     UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;

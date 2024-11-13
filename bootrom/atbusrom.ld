@@ -2,8 +2,12 @@ SECTIONS {
     rom = .;
     .bootldr 0x00: {
         *(BOOTLDR);
-        RESERVE(0x1000-.);
+        RESERVE(0x800-.);
     } = 0xFFFF
+    .reserved 0x800: {
+        FILL8(0xFF);
+        RESERVE(0x1000-.);
+    }
     .device 0x1000 : {
         *(DEVICE)
     }
