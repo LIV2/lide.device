@@ -52,12 +52,12 @@ static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *
  * 
 */
 static void ata_save_error(struct IDEUnit *unit) {
-    unit->last_error[0] = unit->drive->error_features[0];
-    unit->last_error[1] = unit->drive->lbaHigh[0];
-    unit->last_error[2] = unit->drive->lbaMid[0];
-    unit->last_error[3] = unit->drive->lbaLow[0];
-    unit->last_error[4] = unit->drive->status_command[0];
-    unit->last_error[5] = unit->drive->devHead[0];
+    unit->last_error[0] = *unit->drive->error_features;
+    unit->last_error[1] = *unit->drive->lbaHigh;
+    unit->last_error[2] = *unit->drive->lbaMid;
+    unit->last_error[3] = *unit->drive->lbaLow;
+    unit->last_error[4] = *unit->drive->status_command;
+    unit->last_error[5] = *unit->drive->devHead;
 }
 
 /**
@@ -204,6 +204,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive->lbaMid         = 0;
     *unit->drive->lbaHigh        = 0;
     *unit->drive->error_features = 0;
+    *unit->drive->devHead 		 = drvSel;    
     *unit->drive->status_command = ATA_CMD_IDENTIFY;
 
     if (ata_check_error(unit) || !ata_wait_drq(unit,500,false)) {
@@ -217,7 +218,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     if (buffer) {
         UWORD read_data;
         for (int i=0; i<256; i++) {
-            read_data = unit->drive->data[i];
+            read_data = *unit->drive->data; //autoincrement on the ide-side
             // Interface is byte-swapped, so swap the identify data back.
             buffer[i] = ((read_data >> 8) | (read_data << 8));
         }
@@ -270,8 +271,20 @@ bool ata_init_unit(struct IDEUnit *unit) {
     bool dev_found = false;
 
     offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
-    unit->drive = (void *)unit->cd->cd_BoardAddr + offset; // Pointer to drive base
-
+	
+	if ((unit->drive = AllocMem(sizeof(struct Drive),MEMF_ANY|MEMF_CLEAR)) == NULL) { // Pointerholder for drive base
+        return false;
+    }
+		
+	unit->drive->data 			= (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data); 
+	unit->drive->error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error); 
+	unit->drive->sectorCount 	= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount); 
+	unit->drive->lbaLow 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow); 
+	unit->drive->lbaMid 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid); 
+	unit->drive->lbaHigh 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh); 
+	unit->drive->devHead 		= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead); 
+	unit->drive->status_command	= (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status); 
+    
     *unit->shadowDevHead = *unit->drive->devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {

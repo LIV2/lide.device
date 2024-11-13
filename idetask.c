@@ -527,6 +527,7 @@ static void cleanup(struct IDETask *itask) {
                 ObtainSemaphore(&itask->dev->ulSem);
                 Remove((struct Node *)unit);
                 ReleaseSemaphore(&itask->dev->ulSem);
+                FreeMem(unit->drive,sizeof(struct Drive));
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }

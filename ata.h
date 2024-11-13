@@ -14,22 +14,23 @@
 #error "MAX_TRANSFER_SECTORS cannot be larger than 256"
 #endif
 
-#define CHANNEL_0 0x1000
-#define CHANNEL_1 0x2000
+#define CHANNEL_0  0x1000
+#define CHANNEL_1  0x2000
+#define IDE_CSMASK 0x0000
 #define NEXT_REG   0x200
 
 // BYTE Offsets
-#define ata_reg_data         0x000
-#define ata_reg_error        0x200
-#define ata_reg_features     0x200
-#define ata_reg_sectorCount  0x400
-#define ata_reg_lbaLow       0x600
-#define ata_reg_lbaMid       0x800
-#define ata_reg_lbaHigh      0xA00
-#define ata_reg_devHead      0xC00
-#define ata_reg_status       0xE00
-#define ata_reg_command      0xE00
-#define ata_reg_altStatus    0x1C00
+#define ata_reg_data         0*NEXT_REG + IDE_CSMASK
+#define ata_reg_error        1*NEXT_REG + IDE_CSMASK
+#define ata_reg_features     1*NEXT_REG + IDE_CSMASK
+#define ata_reg_sectorCount  2*NEXT_REG + IDE_CSMASK
+#define ata_reg_lbaLow       3*NEXT_REG + IDE_CSMASK 
+#define ata_reg_lbaMid       4*NEXT_REG + IDE_CSMASK
+#define ata_reg_lbaHigh      5*NEXT_REG + IDE_CSMASK
+#define ata_reg_devHead      6*NEXT_REG + IDE_CSMASK
+#define ata_reg_status       7*NEXT_REG + IDE_CSMASK
+#define ata_reg_command      7*NEXT_REG + IDE_CSMASK
+#define ata_reg_altStatus    6*NEXT_REG + IDE_CSMASK
 
 #define drv_sel_secondary (1<<4)
 
