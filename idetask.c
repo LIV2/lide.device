@@ -471,6 +471,7 @@ static BYTE init_units(struct IDETask *itask) {
             if (SysBase->AttnFlags & (AFF_68040 | AFF_68060)) {
                 unit->xferMethod = longword_move;
             } else {
+                // Note: longword_movem requires a register spacing of 512 bytes
                 unit->xferMethod = longword_movem;
             }
 
