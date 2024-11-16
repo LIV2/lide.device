@@ -375,8 +375,9 @@ int main(int argc, char *argv[])
           config->rebootRequired = true;
 
         UBYTE manufId,devId;
-        if (board.flash_init(&manufId,&devId,board.flashbase)) {
+        UWORD sectorSize;
 
+        if (board.flash_init(&manufId,&devId,board.flashbase,&sectorSize)) {
           if (config->eraseFlash) {
             printf("Erasing flash.\n");
             board.flash_erase_chip();
@@ -388,9 +389,9 @@ int main(int argc, char *argv[])
             }
 
             if (config->eraseFlash == false) {
-              if (board.flash_erase_bank != NULL) {
+              if (board.flash_erase_bank != NULL && sectorSize > 0) {
                 printf("Erasing IDE bank...\n");
-                board.flash_erase_bank();
+                board.flash_erase_bank(sectorSize);
               } else {
                 printf("Erasing IDE flash...\n");
                 board.flash_erase_chip();
@@ -411,7 +412,7 @@ int main(int argc, char *argv[])
               board.bankSelect(1,cd->cd_BoardAddr);
               if (config->eraseFlash == false) {
                 printf("Erasing CDFS bank...\n");
-                board.flash_erase_bank();
+                board.flash_erase_bank(sectorSize);
               }
               printf("Writing CDFS.\n");
               writeBufToFlash(&board,cdfs_buffer,board.flashbase,cdfsSize);

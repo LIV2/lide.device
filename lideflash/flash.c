@@ -56,6 +56,31 @@ static bool flash_is_supported(UBYTE manufacturer, UBYTE device) {
   return false;
 }
 
+/** flash_get_sectorSize
+ * 
+ * @brief return the sector size for this device type if known
+ * @param manufacturer the manufacturer ID
+ * @param device the device id
+ * @returns UWORD sector size in bytes
+ */
+static UWORD flash_get_sectorSize(UBYTE manufacturer, UBYTE device) {
+    ULONG deviceId = (manufacturer << 8) | device;
+    UWORD sectorSize;
+
+    switch (deviceId) {
+      case 0xBFB5: // SST 39SF010
+        sectorSize = 4096;
+        break;
+      case 0x0120: // AMD AM29F010
+        sectorSize = 16384;
+        break;
+      default:     // Unknown/Unsupported
+        sectorSize = 0;
+    }
+
+    return sectorSize;
+}
+
 /** flash_writeByte
  *
  * @brief Write a byte to the Flash
@@ -114,9 +139,12 @@ void flash_erase_chip() {
  * Erase the currently selected 32KB bank
  *
 */
-void flash_erase_bank() {
-  for (int i=0; i < 8; i++) {
-    flash_erase_sector(i<<12);
+void flash_erase_bank(UWORD sectorSize) {
+  if (sectorSize > 0) {
+    int count = 32768 / sectorSize;
+    for (int i=0; i < count; i++) {
+      flash_erase_sector(i * sectorSize);
+    }
   }
 }
 
@@ -157,7 +185,7 @@ static inline void flash_poll(ULONG address) {
  * @param flashbase Pointer to the Flash base address
  * @return True if the manufacturer ID matches the expected value
 */
-bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base) {
+bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base, UWORD *sectorSize) {
   bool ret = false;
   UBYTE manufId;
   UBYTE deviceId;
@@ -175,9 +203,12 @@ bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base) {
   if (manuf) *manuf = manufId;
   if (devid) *devid = deviceId;
 
-  if (flash_is_supported(manufId,deviceId) && flashbase) {
+
+  if (flash_is_supported(*manuf,*devid) && flashbase) {
     ret = true;
   }
+
+  if (sectorSize) *sectorSize = flash_get_sectorSize(manufId,deviceId);
 
   return (ret);
 }

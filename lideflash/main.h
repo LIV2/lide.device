@@ -41,9 +41,9 @@ struct ideBoard {
   enum BOOTROM bootrom;
   void *flashbase;
   bool rebootRequired;
-  bool (*flash_init)(UBYTE *, UBYTE *, ULONG *);
+  bool (*flash_init)(UBYTE *, UBYTE *, ULONG *, UWORD *);
   void (*flash_erase_chip)();
-  void (*flash_erase_bank)();
+  void (*flash_erase_bank)(UWORD);
   void (*flash_writeByte)(ULONG, UBYTE);
   void (*bankSelect)(UBYTE, UBYTE *);
   void (*writeEnable)(struct ideBoard *);
