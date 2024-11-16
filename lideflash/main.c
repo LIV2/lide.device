@@ -332,7 +332,7 @@ int main(int argc, char *argv[])
                   setup_matzetk_board(&board);
                   break;
 
-                } else if (boardIsOlga(cd)) {
+                } else if (boardIs68ec020tk(cd)) {
                   printf("Found 68EC020-TK");
 
                   if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER,false)) {
