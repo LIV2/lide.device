@@ -67,10 +67,6 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
 void setup_matzetk_board(struct ideBoard *board) {
   board->bootrom          = ATBUS;
   board->bankSelect       = NULL;
-  board->flash_init       = &flash_init;
-  board->flash_erase_bank = &flash_erase_bank;
-  board->flash_erase_chip = &flash_erase_chip;
-  board->flash_writeByte  = &flash_writeByte;
   board->writeEnable      = &matzetk_enable_flash;
   board->rebootRequired   = true; // write enable turns off IDE so we must reboot afterwards
 

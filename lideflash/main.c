@@ -78,10 +78,6 @@ static void _ColdReboot() {
 static void setup_liv2_board(struct ideBoard *board) {
   board->bootrom          = CIDER;
   board->bankSelect       = &bankSelect;
-  board->flash_init       = &flash_init;
-  board->flash_erase_bank = &flash_erase_bank;
-  board->flash_erase_chip = &flash_erase_chip;
-  board->flash_writeByte  = &flash_writeByte;
   board->writeEnable      = NULL;
   board->rebootRequired   = false;
 
@@ -377,10 +373,10 @@ int main(int argc, char *argv[])
         UBYTE manufId,devId;
         UWORD sectorSize;
 
-        if (board.flash_init(&manufId,&devId,board.flashbase,&sectorSize)) {
+        if (flash_init(&manufId,&devId,board.flashbase,&sectorSize)) {
           if (config->eraseFlash) {
             printf("Erasing flash.\n");
-            board.flash_erase_chip();
+            flash_erase_chip();
           }
 
           if (config->ide_rom_filename) {
@@ -389,12 +385,12 @@ int main(int argc, char *argv[])
             }
 
             if (config->eraseFlash == false) {
-              if (board.flash_erase_bank != NULL && sectorSize > 0) {
+              if (sectorSize > 0) {
                 printf("Erasing IDE bank...\n");
-                board.flash_erase_bank(sectorSize);
+                flash_erase_bank(sectorSize);
               } else {
                 printf("Erasing IDE flash...\n");
-                board.flash_erase_chip();
+                flash_erase_chip();
               }
             }
             printf("Writing IDE ROM.\n");
@@ -412,7 +408,7 @@ int main(int argc, char *argv[])
               board.bankSelect(1,cd->cd_BoardAddr);
               if (config->eraseFlash == false) {
                 printf("Erasing CDFS bank...\n");
-                board.flash_erase_bank(sectorSize);
+                flash_erase_bank(sectorSize);
               }
               printf("Writing CDFS.\n");
               writeBufToFlash(&board,cdfs_buffer,board.flashbase,cdfsSize);
@@ -569,7 +565,7 @@ BOOL writeBufToFlash(struct ideBoard *board, UBYTE *source, UBYTE *dest, ULONG s
       lastProgress = progress;
     }
     sourcePtr = ((void *)source + i);
-    board->flash_writeByte(i,*sourcePtr);
+    flash_writeByte(i,*sourcePtr);
 
   }
 
