@@ -204,7 +204,7 @@ bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base, UWORD *sectorSize) {
   if (devid) *devid = deviceId;
 
 
-  if (flash_is_supported(*manuf,*devid) && flashbase) {
+  if (flash_is_supported(manufId,deviceId) && flashbase) {
     ret = true;
   }
 
