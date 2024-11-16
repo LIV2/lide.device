@@ -34,6 +34,7 @@
 #define SERIAL_MATZE 0xB16B00B5
 
 bool matzetk_fw_supported(struct ConfigDev *, ULONG, bool);
+void matzetk_bankSelect(UBYTE bank, struct ideBoard *board);
 void setup_matzetk_board(struct ideBoard *);
 bool boardIsOlga(struct ConfigDev *);
 bool boardIs68ec020tk(struct ConfigDev *);

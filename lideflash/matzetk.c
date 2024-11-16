@@ -60,18 +60,40 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
 }
 
 /**
+ * matzetk_bankSelect
+ * 
+ * @param bank the bank number to select
+ * @param boardBase base address of the IDE board
+*/
+void matzetk_bankSelect(UBYTE bank, struct ideBoard *board) {
+  if (board->cd->cd_BoardSize > 65536) {
+    if (bank == 1) {
+      board->flashbase = board->cd->cd_BoardAddr + 65537;
+    } else {
+      board->flashbase = board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
+    }
+  }
+}
+
+/**
  * setup_matzetk_board
  *
  * Setup the ideBoard struct
 */
 void setup_matzetk_board(struct ideBoard *board) {
   board->bootrom          = ATBUS;
-  board->bankSelect       = NULL;
   board->writeEnable      = &matzetk_enable_flash;
   board->rebootRequired   = true; // write enable turns off IDE so we must reboot afterwards
 
+  if (boardIs68ec020tk(board->cd)) {
+    board->bankSelect    = &matzetk_bankSelect;
+    board->cdfsSupported = true;
+  } else {
+    board->bankSelect    = NULL;
+    board->cdfsSupported = false; // TODO: Support writing 2nd bank of 68020-TK2
+  }
 
-  board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
+  board->flashbase = board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
 }
 
 /**

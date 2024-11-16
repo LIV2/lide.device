@@ -41,7 +41,8 @@ struct ideBoard {
   enum BOOTROM bootrom;
   void *flashbase;
   bool rebootRequired;
-  void (*bankSelect)(UBYTE, UBYTE *);
+  bool cdfsSupported;
+  void (*bankSelect)(UBYTE, struct ideBoard *);
   void (*writeEnable)(struct ideBoard *);
 };
 

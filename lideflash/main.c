@@ -45,7 +45,7 @@ struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;
 struct Config *config;
 
-void bankSelect(UBYTE bank, UBYTE *boardBase);
+void bankSelect(UBYTE bank, struct ideBoard *board);
 
 /**
  * _ColdReboot()
@@ -94,6 +94,8 @@ static void setup_liv2_board(struct ideBoard *board) {
     UBYTE *pokeReg = (UBYTE *)(board->cd->cd_BoardAddr + 0x1200);
     *pokeReg = 0x00;
   }
+
+  board->cdfsSupported = (board->cd->cd_Rom.er_Product == PROD_ID_RIPPLE) ? true : false;
 
 }
 
@@ -381,7 +383,7 @@ int main(int argc, char *argv[])
 
           if (config->ide_rom_filename) {
             if (board.bankSelect != NULL) {
-              board.bankSelect(0,cd->cd_BoardAddr);
+              board.bankSelect(0,&board);
             }
 
             if (config->eraseFlash == false) {
@@ -401,11 +403,11 @@ int main(int argc, char *argv[])
 
           if (config->cdfs_filename) {
 
-            if (cd->cd_Rom.er_Manufacturer == MANUF_ID_OAHR &&
-                cd->cd_Rom.er_Product == PROD_ID_RIPPLE &&
-                board.bankSelect != NULL) {
+            if (board.cdfsSupported && sectorSize > 0) {
 
-              board.bankSelect(1,cd->cd_BoardAddr);
+              if (board.bankSelect != NULL)
+                board.bankSelect(1,&board);
+
               if (config->eraseFlash == false) {
                 printf("Erasing CDFS bank...\n");
                 flash_erase_bank(sectorSize);
@@ -530,7 +532,8 @@ BOOL readFileToBuf(char *filename, void *buffer) {
  * @param bank the bank number to select
  * @param boardBase base address of the IDE board
 */
-void bankSelect(UBYTE bank, UBYTE *boardBase) {
+void bankSelect(UBYTE bank, struct ideBoard *board) {
+  UBYTE *boardBase = board->cd->cd_BoardAddr;
   *(boardBase + BANK_SEL_REG) = (bank << 6);
 }
 
