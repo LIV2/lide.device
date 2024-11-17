@@ -23,7 +23,7 @@
 #include "flash.h"
 #include "flash_constants.h"
 
-ULONG flashbase;
+volatile ULONG flashbase;
 
 static inline void flash_command(UBYTE);
 static inline void flash_poll(ULONG);

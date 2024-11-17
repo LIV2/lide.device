@@ -30,6 +30,8 @@
 
 #define CONFIG_FLASH_EN   0x4000
 
+extern ULONG flashbase;
+
 /**
  * matzetk_enable_flash
  *
@@ -68,10 +70,11 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
 void matzetk_bankSelect(UBYTE bank, struct ideBoard *board) {
   if (board->cd->cd_BoardSize > 65536) {
     if (bank == 1) {
-      board->flashbase = board->cd->cd_BoardAddr + 65537;
+      flashbase = (ULONG)board->cd->cd_BoardAddr + 65537;
     } else {
-      board->flashbase = board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
+      flashbase = (ULONG)board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
     }
+    board->flashbase = (void *)flashbase;
   }
 }
 

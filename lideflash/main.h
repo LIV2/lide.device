@@ -39,7 +39,7 @@ enum BOOTROM {
 struct ideBoard {
   struct ConfigDev *cd;
   enum BOOTROM bootrom;
-  void *flashbase;
+  void * volatile flashbase;
   bool rebootRequired;
   bool cdfsSupported;
   void (*bankSelect)(UBYTE, struct ideBoard *);
