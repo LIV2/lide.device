@@ -465,16 +465,6 @@ static BYTE init_units(struct IDETask *itask) {
             *unit->shadowDevHead    = 0;
             unit->deferTUR          = false;
 
-            // This controls which transfer routine is selected for the device by ata_init_unit
-            //
-            // See ata_init_unit and device.h for more info
-            if (SysBase->AttnFlags & (AFF_68040 | AFF_68060)) {
-                unit->xferMethod = longword_move;
-            } else {
-                // Note: longword_movem requires a register spacing of 512 bytes
-                unit->xferMethod = longword_movem;
-            }
-
             // Initialize the change int list
             unit->changeInts.mlh_Tail     = NULL;
             unit->changeInts.mlh_Head     = (struct MinNode *)&unit->changeInts.mlh_Tail;
