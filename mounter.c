@@ -35,7 +35,6 @@
 #include <libraries/expansion.h>
 #include <libraries/expansionbase.h>
 #include <libraries/configvars.h>
-#include <clib/alib_protos.h>
 #include <dos/dos.h>
 #include <dos/dosextens.h>
 #include <dos/doshunks.h>
@@ -50,6 +49,7 @@
 #include "ndkcompat.h"
 #include "mounter.h"
 #include "scsi.h"
+#include "lide_alib.h"
 
 #if TRACE
 #define dbg Trace
@@ -64,8 +64,6 @@
 extern UBYTE entrypoint, entrypoint_end;
 extern UBYTE bootblock, bootblock_end;
 #endif
-
-struct ExecBase *SysBase;
 
 struct MountData
 {
@@ -94,6 +92,7 @@ struct MountData
 
 // Get Block size of unit by sending a SCSI READ CAPACITY 10 command
 int GetBlockSize(struct IOStdReq *req) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 	struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
 
 	if (cmd == NULL) return 0;
@@ -139,6 +138,7 @@ int GetBlockSize(struct IOStdReq *req) {
 // CheckPVD
 // Check for "CDTV" or "AMIGA BOOT" as the System ID in the PVD
 bool CheckPVD(struct IOStdReq *ior) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 	const char sys_id_1[] = "CDTV";
 	const char sys_id_2[] = "AMIGA BOOT";
 	const char iso_id[]   = "CD001";
@@ -220,7 +220,7 @@ struct MsgPort *W_CreateMsgPort(struct ExecBase *SysBase)
 		{
 			ret->mp_Flags = PA_SIGNAL;
 			ret->mp_Node.ln_Type = NT_MSGPORT;
-  			NewList(&ret->mp_MsgList);
+  			L_NewList(&ret->mp_MsgList);
 			ret->mp_SigBit = sb;
 			ret->mp_SigTask = FindTask(NULL);
 			return ret;
@@ -629,7 +629,7 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 			//char *CreatorStr = (char *)AllocMem(strlen(creator)+1,MEMF_PUBLIC|MEMF_CLEAR);
 			//char *FsResName = (char *)AllocMem(strlen(resourceName)+1,MEMF_PUBLIC|MEMF_CLEAR);
 
-			NewList(&fsr->fsr_FileSysEntries);
+			L_NewList(&fsr->fsr_FileSysEntries);
 			fsr->fsr_Node.ln_Type = NT_RESOURCE;
 			strcpy(FsResName, resourceName);
 			fsr->fsr_Node.ln_Name = FsResName;
@@ -809,6 +809,29 @@ static BOOL CompareBSTRNoCase(const UBYTE *src1, const UBYTE *src2)
 }
 
 // Check for duplicate device names
+static bool CheckDevName(struct MountData *md, UBYTE *bname) {
+	struct ExecBase *SysBase = md->SysBase;
+	bool found = false;
+
+	Forbid();
+	struct BootNode *bn;
+	for (bn = (struct BootNode*)md->ExpansionBase->MountList.lh_Head;
+		 bn->bn_Node.ln_Succ != NULL;
+		 bn = (struct BootNode*)bn->bn_Node.ln_Succ)
+	{
+		struct DeviceNode *dn = bn->bn_DeviceNode;
+		const UBYTE *bname2 = BADDR(dn->dn_Name);
+		if (CompareBSTRNoCase(bname, bname2)) {
+		 	found = true;
+		}
+	}
+
+	Permit();
+	return found;
+
+}
+
+// Check for duplicate device names and fix
 static void CheckAndFixDevName(struct MountData *md, UBYTE *bname)
 {
 	struct ExecBase *SysBase = md->SysBase;
@@ -989,6 +1012,7 @@ static LONG ScanRDSK(struct MountData *md)
 #if CDBOOT
 static struct FileSysEntry *scan_filesystems(void)
 {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 	struct FileSysResource *FileSysResBase = NULL;
 	struct FileSysEntry *fse, *cdfs=NULL;
 
@@ -1037,8 +1061,7 @@ static LONG ScanCDROM(struct MountData *md)
 {
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct FileSysEntry *fse=NULL;
-	char dosName[] = "CD0";
-	static unsigned int cnt = 0;
+	char dosName[] = "\3CD0"; // BCPL String
 	LONG bootPri;
 
 	// "CDTV" or "AMIGA BOOT"?
@@ -1052,7 +1075,7 @@ static LONG ScanCDROM(struct MountData *md)
 
 	memset(&pp,0,sizeof(struct ParameterPacket));
 
-	pp.dosname              = dosName;
+	pp.dosname              = dosName + 1;
 	pp.execname             = md->devicename;
 	pp.unitnum              = md->unitnum;
 	pp.de.de_TableSize      = sizeof(struct DosEnvec);
@@ -1073,7 +1096,14 @@ static LONG ScanCDROM(struct MountData *md)
 		return -1;
 	}
 
-	dosName[2]='0' + cnt;
+	for (int i=0; i<9; i++) {
+		if (CheckDevName(md,dosName)) {
+			dosName[3] += 1;
+		} else {
+			break;
+		}
+	}
+
 	struct DeviceNode *node = MakeDosNode(&pp);
 	if (!node) {
 		// printf("Could not create DosNode\n");
@@ -1099,7 +1129,6 @@ static LONG ScanCDROM(struct MountData *md)
 	}
 
 	AddBootNode(bootPri, ADNF_STARTPROC, node, md->configDev);
-	cnt++;
 
 	return 1;
 }

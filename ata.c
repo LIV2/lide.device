@@ -7,7 +7,6 @@
 #include <devices/trackdisk.h>
 #include <inline/timer.h>
 #include <proto/exec.h>
-#include <proto/alib.h>
 #include <proto/expansion.h>
 #include <exec/errors.h>
 #include <stdbool.h>
@@ -20,6 +19,7 @@
 #include "string.h"
 #include "blockcopy.h"
 #include "wait.h"
+#include "lide_alib.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
@@ -239,6 +239,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  * 
  */
 static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
+    struct ExecBase *SysBase = unit->SysBase;
     struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
     struct EClockVal *startTime;
     struct EClockVal *endTime;
@@ -275,6 +276,7 @@ static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
  * @return transfer method
  */
 static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
     ULONG ticks;
     void *buf;
 
@@ -341,6 +343,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
  * @returns false on error
 */
 bool ata_init_unit(struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
     unit->cylinders       = 0;
     unit->heads           = 0;
     unit->sectorsPerTrack = 0;

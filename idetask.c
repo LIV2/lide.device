@@ -5,7 +5,6 @@
 #include <devices/scsidisk.h>
 #include <devices/trackdisk.h>
 #include <exec/errors.h>
-#include <proto/alib.h>
 #include <proto/exec.h>
 #include <string.h>
 #include <proto/expansion.h>
@@ -19,6 +18,7 @@
 #include "scsi.h"
 #include "td64.h"
 #include "wait.h"
+#include "lide_alib.h"
 
 /**
  * scsi_inquiry_ata
@@ -29,6 +29,8 @@
  * @param scsi_command Pointer to a SCSICmd struct
 */
 static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
     BYTE error;
 
@@ -356,8 +358,8 @@ void __attribute__((noreturn)) diskchange_task () {
     while (task->tc_UserData == NULL); // Wait for Task Data to be populated
     struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
 
-    if ((TimerMP = CreatePort(NULL,0)) == NULL || (TimerReq = (struct timerequest *)CreateExtIO(TimerMP, sizeof(struct timerequest))) == NULL) goto die;
-    if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
+    if ((TimerMP = L_CreatePort(NULL,0)) == NULL || (TimerReq = (struct timerequest *)L_CreateExtIO(TimerMP, sizeof(struct timerequest))) == NULL) goto die;
+    if ((iomp = L_CreatePort(NULL,0)) == NULL || (ioreq = L_CreateStdIO(iomp)) == NULL) goto die;
     if (OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)TimerReq,0) != 0) goto die;
 
     ioreq->io_Command = TD_CHANGESTATE; // Run TD_CHANGESTATE to update medium presence, this should be replaced with a TUR call
@@ -419,11 +421,11 @@ void __attribute__((noreturn)) diskchange_task () {
 
 die:
     Info("Change task dying...\n");
-    if (ioreq) DeleteStdIO(ioreq);
-    if (iomp) DeletePort(iomp);
+    if (ioreq) L_DeleteStdIO(ioreq);
+    if (iomp) L_DeletePort(iomp);
     if (TimerReq && TimerReq->tr_node.io_Device) CloseDevice((struct IORequest *)TimerReq);
-    if (TimerReq) DeleteExtIO((struct IORequest *)TimerReq);
-    if (TimerMP) DeletePort(TimerMP);
+    if (TimerReq) L_DeleteExtIO((struct IORequest *)TimerReq);
+    if (TimerMP) L_DeletePort(TimerMP);
 
     RemTask(NULL);
     Wait(0);
@@ -439,6 +441,7 @@ die:
  * @returns number of drives foun
 */
 static BYTE init_units(struct IDETask *itask) {
+    struct ExecBase *SysBase = itask->dev->SysBase;
     UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
 
@@ -497,16 +500,17 @@ static BYTE init_units(struct IDETask *itask) {
  * Clean up after the task, freeing resources etc back to the system
 */
 static void cleanup(struct IDETask *itask) {
+    struct ExecBase *SysBase = itask->dev->SysBase;
     if (itask->iomp)
-        DeletePort(itask->iomp);
+        L_DeletePort(itask->iomp);
 
     if (itask->tr) {
         if (itask->tr->tr_node.io_Device)
             CloseDevice((struct IORequest *)itask->tr);
 
-        DeleteExtIO((struct IORequest *)itask->tr);
+        L_DeleteExtIO((struct IORequest *)itask->tr);
     }
-    if (itask->timermp) DeletePort(itask->timermp);
+    if (itask->timermp) L_DeletePort(itask->timermp);
 
     struct IDEUnit *unit;
 
@@ -551,13 +555,14 @@ void __attribute__((noreturn)) ide_task () {
 
     Trace("IDE Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
-    if ((itask->iomp = CreatePort(NULL,0)) == NULL) {
+    if ((itask->iomp = L_CreatePort(NULL,0)) == NULL) {
         cleanup(itask);
         RemTask(NULL);
         Wait(0);
     }
+    Trace("IDE Task: CreatePort() ok\n");
 
-    if ((itask->timermp = CreatePort(NULL,0)) != NULL && (itask->tr = (struct timerequest *)CreateExtIO(itask->timermp, sizeof(struct timerequest))) != NULL) {
+    if ((itask->timermp = L_CreatePort(NULL,0)) != NULL && (itask->tr = (struct timerequest *)L_CreateExtIO(itask->timermp, sizeof(struct timerequest))) != NULL) {
         if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)itask->tr,0)) {
             cleanup(itask);
             RemTask(NULL);
@@ -749,11 +754,13 @@ transfer:
  * @returns -1 on error, 0 if disk present, >0 if no disk
 */
 BYTE direct_changestate (struct IDEUnit *unit, struct DeviceBase *dev) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     BYTE ret = -1;
     struct MsgPort *iomp = NULL;
     struct IOStdReq *ioreq = NULL;
 
-    if ((iomp = CreatePort(NULL,0)) == NULL || (ioreq = CreateStdIO(iomp)) == NULL) goto die;
+    if ((iomp = L_CreatePort(NULL,0)) == NULL || (ioreq = L_CreateStdIO(iomp)) == NULL) goto die;
 
     ioreq->io_Command = TD_CHANGESTATE;
     ioreq->io_Data    = NULL;
@@ -770,8 +777,8 @@ BYTE direct_changestate (struct IDEUnit *unit, struct DeviceBase *dev) {
         ret = -1;
     }
 die:
-    if (ioreq) DeleteStdIO(ioreq);
-    if (iomp)  DeletePort(iomp);
+    if (ioreq) L_DeleteStdIO(ioreq);
+    if (iomp)  L_DeletePort(iomp);
 
     return ret;
 }

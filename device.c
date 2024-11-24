@@ -8,7 +8,6 @@
 #include <exec/errors.h>
 #include <exec/execbase.h>
 #include <exec/resident.h>
-#include <proto/alib.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <resources/filesysres.h>
@@ -24,8 +23,7 @@
 #include "td64.h"
 #include "mounter.h"
 #include "debug.h"
-
-struct ExecBase *SysBase;
+#include "lide_alib.h"
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
@@ -105,6 +103,7 @@ char * set_dev_name(struct DeviceBase *dev) {
  * @param userData Pointer to User Data
 */
 struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData) {
+        struct ExecBase *SysBase = *(struct ExecBase **)4UL;
         stackSize = (stackSize + 3UL) & ~3UL;
 
         struct Task *task;
@@ -137,7 +136,7 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         task->tc_Node.ln_Name = taskName;
         task->tc_Node.ln_Type = NT_TASK;
         task->tc_Node.ln_Pri  = priority;
-        NewList(&task->tc_MemEntry);
+        L_NewList(&task->tc_MemEntry);
         AddHead(&task->tc_MemEntry,(struct Node *)ml);
 
         AddTask(task,funcEntry,NULL);
@@ -152,13 +151,14 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
  * @param microseconds Microseconds to wait
 */
 static void sleep(ULONG seconds, ULONG microseconds) {
+    struct ExecBase *SysBase = *(struct ExecBase**)4UL;
 
     struct timerequest *tr = NULL;
     struct MsgPort     *iomp = NULL;
 
 
-    if ((iomp = CreatePort(NULL,0))) {
-        if ((tr = (struct timerequest *)CreateExtIO(iomp, sizeof(struct timerequest)))) {
+    if ((iomp = L_CreatePort(NULL,0))) {
+        if ((tr = (struct timerequest *)L_CreateExtIO(iomp, sizeof(struct timerequest)))) {
             if ((OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)tr,0)) == 0) {
                 tr->tr_node.io_Command = TR_ADDREQUEST;
                 tr->tr_time.tv_sec = seconds;
@@ -166,9 +166,9 @@ static void sleep(ULONG seconds, ULONG microseconds) {
                 DoIO((struct IORequest *)tr);
                 CloseDevice((struct IORequest *)tr);
             }
-            DeleteExtIO((struct IORequest *)tr);
+            L_DeleteExtIO((struct IORequest *)tr);
         }
-        DeletePort(iomp);
+        L_DeletePort(iomp);
     }
 }
 
@@ -181,6 +181,7 @@ static void sleep(ULONG seconds, ULONG microseconds) {
  * @return BOOL True if CDFS found
 */
 static BOOL FindCDFS() {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct FileSysResource *fsr = OpenResource(FSRNAME);
     struct FileSysEntry *fse;
 
@@ -195,6 +196,7 @@ static BOOL FindCDFS() {
 #endif
 
 static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
+    struct ExecBase *SysBase = dev->SysBase;
     bool found = false;
 
     struct IDEUnit *unit;
@@ -354,10 +356,10 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->numUnits     = 0;
     dev->numTasks     = 0;
 
-    NewList((struct List *)&dev->units);
+    L_NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
 
-    NewList((struct List *)&dev->ideTasks);
+    L_NewList((struct List *)&dev->ideTasks);
 
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
@@ -515,6 +517,7 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
     bool found = false;
@@ -694,6 +697,8 @@ const UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
+
     BYTE error = TDERR_NotSpecified;
 
     // Check that the IOReq has a sane Device / Unit pointer first
@@ -849,6 +854,8 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 */
 static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
+
     Trace((CONST_STRPTR) "running abort_io()\n");
 
     struct IORequest *io;
@@ -899,7 +906,7 @@ static const ULONG device_vectors[] =
 */
 static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
-    SysBase = *(struct ExecBase **)4UL;
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
     struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors

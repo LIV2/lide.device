@@ -5,9 +5,9 @@ VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
 GIT_REF := "$(shell git branch --show-current)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
 CC=m68k-amigaos-gcc
-CFLAGS+=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
+CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
-LDFLAGS=-lamiga -lgcc -lc
+LDFLAGS=-lgcc -lc
 AS=m68k-amigaos-as
 
 ifneq ($(VERSION),)
@@ -18,7 +18,7 @@ endif
 
 ifdef DEBUG
 CFLAGS+= -DDEBUG=$(DEBUG)
-LDFLAGS+= -ldebug
+LDFLAGS+= -mcrt=clib2 -ldebug
 .PHONY: $(PROJECT)
 endif
 
@@ -31,8 +31,6 @@ ifdef SLOWXFER
 CFLAGS+= -DSLOWXFER=1
 .PHONY: $(PROJECT)
 endif
-
-LDFLAGS+= -lnix13
 
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
 
@@ -47,6 +45,7 @@ OBJ = device.o \
 	  atapi.o \
 	  scsi.o \
 	  idetask.o \
+	  lide_alib.o \
 	  mounter.o \
 	  debug.o
 

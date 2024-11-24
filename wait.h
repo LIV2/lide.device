@@ -10,6 +10,7 @@
 #include <proto/exec.h>
 
 static inline void wait(struct timerequest *tr, ULONG seconds) {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     tr->tr_node.io_Command = TR_ADDREQUEST;
     tr->tr_time.tv_sec     = seconds;
     tr->tr_time.tv_micro   = 0;
@@ -17,6 +18,7 @@ static inline void wait(struct timerequest *tr, ULONG seconds) {
 }
 
 static inline void wait_us(struct timerequest *tr, ULONG micros) {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     tr->tr_node.io_Command = TR_ADDREQUEST;
     tr->tr_time.tv_sec     = 0;
     tr->tr_time.tv_micro   = micros;
