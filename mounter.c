@@ -66,7 +66,6 @@ extern UBYTE bootblock, bootblock_end;
 #endif
 
 struct ExecBase *SysBase;
-struct FileSysResource *FileSysResBase = NULL;
 
 struct MountData
 {
@@ -990,6 +989,7 @@ static LONG ScanRDSK(struct MountData *md)
 #if CDBOOT
 static struct FileSysEntry *scan_filesystems(void)
 {
+	struct FileSysResource *FileSysResBase = NULL;
 	struct FileSysEntry *fse, *cdfs=NULL;
 
 	/* NOTE - you should actually be in a Forbid while accessing any

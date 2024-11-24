@@ -111,9 +111,9 @@ struct IDETask {
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
 #ifndef LIDE_IS_SCSI
-#define DEVICE_NAME "    lide.device"
+#define DEVICE_NAME "lide.device"
 #else
-#define DEVICE_NAME "    scsi.device"
+#define DEVICE_NAME "scsi.device"
 #endif
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)

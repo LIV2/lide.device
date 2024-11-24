@@ -45,12 +45,12 @@ asm("romtag:                                \n"
     "       dc.b    "XSTR(DEVICE_VERSION)"  \n"
     "       dc.b    "XSTR(NT_DEVICE)"       \n"
     "       dc.b    "XSTR(DEVICE_PRIORITY)" \n"
-    "       dc.l    _device_name+4          \n"
+    "       dc.l    _device_name            \n"
     "       dc.l    _device_id_string       \n"
     "       dc.l    _init                   \n");
 
-char device_name[] = DEVICE_NAME;
-char const device_id_string[] = DEVICE_ID_STRING;
+const char device_name[] = DEVICE_NAME;
+const char device_id_string[] = DEVICE_ID_STRING;
 
 /**
  * set_dev_name
@@ -61,13 +61,18 @@ char const device_id_string[] = DEVICE_ID_STRING;
 char * set_dev_name(struct DeviceBase *dev) {
     struct ExecBase *SysBase = dev->SysBase;
 
-    ULONG device_prefix[] = {' nd.', ' rd.', ' th.'};
-    char * devName = (device_name + 4); // Start with just the base device name, no prefix
+    const ULONG device_prefix[] = {' nd.', ' rd.', ' th.'};
+    char * devName = (char *)device_name;
 
     /* Prefix the device name if a device with the same name already exists */
     for (int i=0; i<8; i++) {
         if (FindName(&SysBase->DeviceList,devName)) {
-            if (i==0) devName = device_name;
+            if (i == 0) {
+                devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
+                if (devName == NULL) return NULL;
+                strncpy(devName + 4,device_name,sizeof(device_name));
+            }
+            
             switch (i) {
                 case 0:
                     *(ULONG *)devName = device_prefix[0];
@@ -648,7 +653,7 @@ static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6")
     return 0;
 }
 
-static UWORD supported_commands[] =
+const UWORD supported_commands[] =
 {
     CMD_CLEAR,
     CMD_UPDATE,
@@ -811,7 +816,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                     result->SizeAvailable     = sizeof(struct NSDeviceQueryResult);
                     result->DeviceType        = NSDEVTYPE_TRACKDISK;
                     result->DeviceSubType     = 0;
-                    result->SupportedCommands = supported_commands;
+                    result->SupportedCommands = (UWORD *)supported_commands;
 
                     ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
                     error = 0;
