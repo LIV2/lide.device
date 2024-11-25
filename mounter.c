@@ -1130,6 +1130,12 @@ static LONG ScanCDROM(struct MountData *md)
 		dstPatch++;
 	}
 
+#if NO_CONFIGDEV
+	if (!md->configDev && !md->DOSBase) {
+		CreateFakeConfigDev(md);
+	}
+#endif
+
 	AddBootNode(bootPri, ADNF_STARTPROC, node, md->configDev);
 
 	return 1;
