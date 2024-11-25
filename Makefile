@@ -49,7 +49,8 @@ OBJ = device.o \
 	  mounter.o \
 	  debug.o
 
-ASMOBJ = endskip.o
+ASMOBJ = bootblock.o \
+		 endskip.o
 
 SRCS = $(OBJ:%.o=%.c)
 SRCS += $(ASMOBJ:%.o=%.S)
