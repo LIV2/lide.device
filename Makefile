@@ -75,6 +75,9 @@ rename/renamelide:
 lideflash/bootblock/obj/bootblock.o:
 	make -C lideflash/bootblock
 
+loadlide/loadlide:
+	make -C loadlide
+
 disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/bootblock/obj/bootblock.o
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
@@ -91,7 +94,6 @@ disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/b
 	                            write info/Expansion.info Expansion.info + \
 	                            write info/lide.device.info Expansion/lide.device.info + \
 	                            write lide.device Expansion/lide.device
-
 
 $(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info
 	@mkdir -p $(BUILDDIR)
@@ -123,3 +125,4 @@ clean:
 	-rm -rf *.rom
 	-rm -rf $(BUILDDIR)
 	make -C lideflash/bootblock clean
+	make -C loadlide clean
