@@ -59,7 +59,7 @@ start:          movem.l D2-D7/A2-A4/A6,-(SP)
                 jsr     _LVOInitResident(A6)
                 tst.l   D0
                 bne     exit
-                moveq.l #0,D7
+                move.l  #0,RESIDENT(A5)
                 bra     exit
 
 .notrt          addq.l  #2,A1
@@ -83,7 +83,7 @@ exit:
                 jsr     _LVOFreeMem(A6)
 .nohunklist:
                 move.l  RESIDENT(A5),D0
-                unlk A5
+                unlk    A5
                 movem.l (SP)+,D2-D7/A2-A4/A6
                 tst.l   D0                      // Did the driver load?
                 bne     bootLide
@@ -183,11 +183,9 @@ relocate:       moveq.l #0,D7                   // No error
                 sub.l   #1,D2
                 bsr     .getlong        // Get hunk number the offsets point to
                 lsl.l   #2,D0
-                move.l  (A4,D0),D4      // Hunk base into D4
+                move.l  (A4,D0.L),D4    // Hunk base into D4
 .doreloc32:     bsr     .getlong
-                move.l  A3,A1           // Current hunk base
-                add.l   D0,A1           // Point to offset
-                add.l   D4,(A1)         // Add destination hunk base
+                add.l   D4,(A3,D0.L)    // Add destination hunk base
                 dbra    D2,.doreloc32
                 bra     .H_RELOC32
 
@@ -228,6 +226,7 @@ relocate:       moveq.l #0,D7                   // No error
                 move.l  NUM_HUNKS(A5),D0
                 lsl.l   #2,D0
                 jsr     _LVOFreeMem(A6)
+                move.l  #0,NUM_HUNKS(A5)
 .nohunklist     tst.l   D7
                 beq     .ok
                 moveq.l #0,D2
