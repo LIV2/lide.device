@@ -92,16 +92,17 @@ exit:
 
 ; D3 = Remaining bytes, D6 = Sector number, D5 = Curr Hunk
 ; A4 = Hunk list, A3 = Curr hunk Addr, A2 Pointer into disk buffer
-relocate:       moveq.l #0,D7                   // No error
+relocate:       movem.l D2-D7/A2-A4,-(SP)
+                moveq.l #0,D7                   // No error
                 moveq.l #0,D3                   // Buffer is empty
                 moveq.l #2,D6                   // Start with Sector #2
-.start:         bsr     .getlong
+.start:         bsr     getLong
                 cmp.l   #HUNK_HEADER,D0
                 bne     .relocbadhdr
-                bsr     .getlong                // Strings
+                bsr     getLong                 // Strings
                 tst.l   D0
                 bne     .relocbadhunk           // Not supported
-                bsr     .getlong
+                bsr     getLong
                 move.l  D0,NUM_HUNKS(A5)
                 addi.l  #1,D0
                 lsl     #2,D0                   // Allocate Hunk List
@@ -111,13 +112,13 @@ relocate:       moveq.l #0,D7                   // No error
                 beq     .relocnomem
                 move.l  D0,A4
                 move.l  D0,HUNK_LIST(A5)        // Hunk list
-                bsr     .getlong
+                bsr     getLong
                 move.l  D0,FIRST_HUNK(A5)
-                bsr     .getlong
+                bsr     getLong
                 move.l  D0,LAST_HUNK(A5)
 ; Allocate memory for all Hunks
                 moveq.l #0,D5
-.allocate:      bsr     .getlong
+.allocate:      bsr     getLong
                 move.l  D0,-(SP)                // Save for later
                 lsl.l   #2,D0
                 add.l   #8,D0                   // Add space for SegList
@@ -149,76 +150,95 @@ relocate:       moveq.l #0,D7                   // No error
 .hunkloop:      move.l  D5,D0
                 lsl.l   #2,D0
                 move.l  (A4,D0),A3              // Load Hunk address
-                bsr     .getlong
+                bsr     getLong
                 cmp.l   #HUNK_CODE,D0
-                beq     .H_CODE
+                beq     .h_code
                 cmp.l   #HUNK_DATA,D0
-                beq     .H_DATA
+                beq     .h_data
                 cmp.l   #HUNK_BSS,D0
-                beq     .H_BSS
+                beq     .h_bss
                 cmp.l   #HUNK_RELOC32,D0
-                beq     .H_RELOC32
+                beq     .h_reloc32
+                cmp.l   #HUNK_RELOC32SHORT,D0
+                beq     .h_reloc32short
+                cmp.l   #HUNK_DREL32,D0
+                beq     .h_drel32
+                cmp.l   #HUNK_SYMBOL,D0
+                beq     .h_symbol
                 cmp.l   #HUNK_END,D0
-                beq     .H_END
-.H_UNKNOWN:     move.l  #ALERT_BADHUNK,D7
+                beq     .hunk_end
+.hunk_unknown:  move.l  #ALERT_BADHUNK,D7
                 bra     .relocbadhunk
-
-.H_DATA:
-.H_CODE:        
-                bsr     .getlong        // Longword count
+.h_data:
+.h_code:        
+                bsr     getLong            // Longword count
                 move.l  D0,D2
                 subi.l  #1,D2
-.copyloop:      bsr     .getlong
+.copyloop:      bsr     getLong
                 move.l  D0,(A3)+
                 dbra    D2,.copyloop
                 bra     .hunkloop
 
-.H_BSS:         bsr     .getlong        // BSS already allocated and zeroed
+.h_bss:         bsr     getLong            // BSS already allocated and zeroed
                 bra     .hunkloop
 
-.H_RELOC32:     bsr     .getlong        // Number of offsets to relocate
-                tst.l   D0              // None?
-                beq     .hunkloop       // Exit
+.h_reloc32:     bsr     getLong            // Number of offsets to relocate
+                tst.l   D0                 // None?
+                beq     .hunkloop          // Exit
                 move.l  D0,D2
                 sub.l   #1,D2
-                bsr     .getlong        // Get hunk number the offsets point to
+                bsr     getLong            // Get hunk number the offsets point to
                 lsl.l   #2,D0
-                move.l  (A4,D0.L),D4    // Hunk base into D4
-.doreloc32:     bsr     .getlong
-                add.l   D4,(A3,D0.L)    // Add destination hunk base
+                move.l  (A4,D0.L),D4       // Hunk base into D4
+.doreloc32:     bsr     getLong
+                add.l   D4,(A3,D0.L)       // Add destination hunk base
                 dbra    D2,.doreloc32
-                bra     .H_RELOC32
+                bra     .h_reloc32
 
-.H_END:         cmp.l   LAST_HUNK(A5),D5
-                beq     .relocdone
+.h_drel32:
+.h_reloc32short:
+                bsr     getWord            // Number of offsets to relocate
+                tst.l   D0                 // None?
+                beq     .reloc32salign     // Exit
+                move.l  D0,D2
+                sub.l   #1,D2
+                bsr     getWord            // Get hunk number the offsets point to
+                lsl.l   #2,D0
+                move.l  (A4,D0.L),D4       // Hunk base into D4
+.doreloc32s:    bsr     getWord
+                add.l   D4,(A3,D0.L)       // Add destination hunk base
+                dbra    D2,.doreloc32s
+                bra     .h_reloc32short
+.reloc32salign: move.l  A2,D0              // Ensure the buf pointer is still long-aligned
+                andi.l  #3,D0
+                beq     .hunkloop
+                bsr     getWord            // Get the padding word
+                bra     .hunkloop
+
+
+.h_symbol:      bsr     getLong            // Symbol type + name length
+                andi.l  #$FFFFFF,D0        // Mask off type
+                beq     .hunkloop
+                move.l  D0,D2
+                sub.l   #1,D2
+.symbol_loop:   bsr     getLong            // Consume symbol name
+                dbra    D2,.symbol_loop
+                bsr     getLong            // Consume symbol value
+                bra     .h_symbol
+
+.hunk_end:      cmp.l   LAST_HUNK(A5),D5
+                beq     .done
                 addi.l  #1,D5
                 bra     .hunkloop
 
-.getlong:
-                tst.l   D3
-                beq     .fill
-                move.l  (A2)+,D0
-                sub     #4,D3
-                rts
-.fill:  
-                move.l  BUFFER(A5),A2   // Point A2 to start of Buffer again
-                bsr     getSector
-                tst.l   D0
-                bne     .relocioerror
-                add     #1,D6           // Increment Sector counter
-                move.l  #512,D3         // Reset Bytes Remaining
-                bra     .getlong
-
 .relocbadhdr    move.l  #ALERT_BADHEAD,D7
-                bra     .relocerror
+                bra     .error
 .relocnomem:    move.l  #ALERT_NOMEM,D7
-                bra     .relocerror
+                bra     .error
 .relocbadhunk:  move.l  #ALERT_BADHUNK,D7
-                bra     .relocerror
-.relocioerror:  move.l  #ALERT_IOERROR,D7
-                bra     .relocerror
-.relocerror:    jsr     _LVOAlert(A6)
-.relocdone:     move.l  HUNK_LIST(A5),D0
+                bra     .error
+.error:         jsr     _LVOAlert(A6)
+.done:          move.l  HUNK_LIST(A5),D0
                 tst.l   D0
                 beq     .nohunklist
                 move.l  D0,A1
@@ -231,6 +251,29 @@ relocate:       moveq.l #0,D7                   // No error
                 beq     .ok
                 moveq.l #0,D2
 .ok:            move.l  D2,D0
+                movem.l (SP)+,D2-D7/A2-A4
+                rts
+
+getLong:        tst.l   D3
+                bne     .ok
+                bsr     fill
+.ok             move.l  (A2)+,D0
+                sub.l   #4,D3
+                rts
+
+getWord:        tst.l   D3
+                bne     .ok
+                bsr     fill
+.ok:            clr.l   D0
+                move.w  (A2)+,D0
+                subi.l  #2,D3
+                rts
+
+fill:  
+                move.l  BUFFER(A5),A2   // Point A2 to start of Buffer again
+                bsr     getSector
+                add.l   #1,D6           // Increment Sector counter
+                move.l  #512,D3         // Reset Bytes Remaining
                 rts
 
 ; D6 = Sector
