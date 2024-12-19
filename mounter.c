@@ -60,7 +60,6 @@
 #define MAX_BLOCKSIZE 2048
 #define LSEG_DATASIZE (512 / 4 - 5)
 
-#define NO_CONFIGDEV 1
 #if NO_CONFIGDEV
 extern UBYTE bootblock, bootblock_end;
 #endif

@@ -344,6 +344,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 */
 bool ata_init_unit(struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
+
     unit->cylinders       = 0;
     unit->heads           = 0;
     unit->sectorsPerTrack = 0;

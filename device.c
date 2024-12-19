@@ -25,6 +25,10 @@
 #include "debug.h"
 #include "lide_alib.h"
 
+#ifdef NO_AUTOCONFIG
+extern UBYTE bootblock, bootblock_end;
+#endif
+
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
 safely return an error if a user tries to execute the file), followed by a
@@ -91,6 +95,42 @@ char * set_dev_name(struct DeviceBase *dev) {
     Info("Couldn't set device name.\n");
     return NULL;
 }
+
+#ifdef NO_AUTOCONFIG
+/**
+ * CreateFakeConfigDev
+ * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
+ * Adapted from mounter.c by Toni Wilen
+ * 
+ * @param SysBase Pointer to SysBase
+ * @param ExpansionBase Pointer to ExpansionBase
+ * @returns Pointer to a ConfigDev struct
+ */
+struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *ExpansionBase)
+{
+	struct ConfigDev *cd;
+
+	cd = AllocConfigDev();
+	if (cd) {
+		cd->cd_BoardAddr = NULL;
+		cd->cd_BoardSize = 0;
+		cd->cd_Rom.er_Type = ERTF_DIAGVALID;
+		ULONG bbSize = &bootblock_end - &bootblock;
+		ULONG daSize = sizeof(struct DiagArea) + bbSize;
+		struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
+		if (diagArea) {
+			diagArea->da_Config     = DAC_CONFIGTIME;
+			diagArea->da_BootPoint  = sizeof(struct DiagArea);
+			diagArea->da_Size       = (UWORD)daSize;
+            CopyMem(&bootblock, diagArea+1, bbSize);
+			// cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
+			ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
+			*da_Pointer = (ULONG)diagArea;
+		}
+	}
+    return cd;
+}
+#endif
 
 /**
  * L_CreateTask
@@ -368,6 +408,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->ExpansionBase = ExpansionBase;
     }
 
+    struct IDETask *itask;
+    struct ConfigDev *cd;
+    struct Task *self = FindTask(NULL);
+
+#ifndef NO_AUTOCONFIG
+
     struct CurrentBinding cb;
 
     if (GetCurrentBinding(&cb,sizeof(struct CurrentBinding)) == 0) {
@@ -375,9 +421,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    struct ConfigDev *cd = cb.cb_ConfigDev;
-    struct IDETask *itask;
-    struct Task *self = FindTask(NULL);
+    cd = cb.cb_ConfigDev;
 
     // Add an IDE Task for each board
     // When loaded from Autoconfig ROM this will still only attach to one board.
@@ -397,6 +441,17 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         cd->cd_Driver = dev;
 
         numBoards++;
+#else
+        /**
+         * A ConfigDev is needed for Autoboot
+         * If we are booting a non-autoconfig device we need to create a ConfigDev struct
+         * This could also be done in mounter.c but that would create a new ConfigDev for each unit
+         */
+        cd = CreateFakeConfigDev(SysBase,ExpansionBase);
+        cd->cd_BoardAddr = (APTR)BOARD_BASE;
+        cd->cd_BoardSize = 0x1000;
+        numBoards = 1;
+#endif
         UBYTE channels = detectChannels(cd);
 
         for (int c=0; c < channels; c++) {
@@ -423,7 +478,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
             if (itask->task == NULL) {
                 Info("IDE Task %ld failed\n",itask->taskNum);
-                    continue;
+                continue;
             } else {
                 Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
             }
@@ -441,8 +496,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             AddTail((struct List *)&dev->ideTasks,(struct Node *)&itask->mn_Node);
             dev->numTasks++;
         }
+#ifndef NO_AUTOCONFIG
     }
-
+#endif
     Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->numUnits, numBoards);
 
     if (dev->numTasks == 0) {
