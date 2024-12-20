@@ -23,7 +23,7 @@ void checksumBlock(uint32_t *block, uint32_t size) {
 
 // Patch the FFS Bitmap to show the blocks occupied by LIDE as being used
 int main () {
-	FILE *fh = fopen("loadlide.adf","rb+");
+	FILE *fh = fopen("aide-boot.adf","rb+");
 
 	if (!fh) {
 		printf("Error opening file\n");

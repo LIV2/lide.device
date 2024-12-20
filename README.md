@@ -5,6 +5,7 @@
 * [Supported hardware](#suported-hardware)
 * [Downloads](#downloads)
     * [lide-update.adf](#lide-updateadf)
+    * [AIDE-boot.adf](#aide-bootadf)
     * [ROM images](#rom-images)
 * [Boot from CDROM](#boot-from-cdrom)
     * [Loading BootCDFileSystem from Board ROM](#loading-bootcdfilesystem-from-board-rom)
@@ -37,6 +38,7 @@ lide.device supports the following devices:
 * [Zorro-LAN-IDE](https://gitlab.com/MHeinrichs/Zorro-LAN-IDE)
 * [Zorro-LAN-IDE-SATA](https://gitlab.com/Hamag/zorrolanidesata)
 * [CDTV-RAM-IDE](https://gitlab.com/MHeinrichs/CDTV-RAM-IDE)
+* [AIDE](https://gitlab.com/MHeinrichs/AIDE)
 * AT-Bus 2008 and clones
 
 This list is not exhaustive, lide may also support other devices that implement the same IDE interface as Matzes TKs  
@@ -53,6 +55,11 @@ ROM downloads are available under [releases](https://github.com/LIV2/lide.device
 * [Dicke Olga](https://www.amibay.com/threads/dicke-olga-030-cpu-64-128mb-accelerator-card-for-a2000-amiga-official-host.2443695/)
 * [68EC020-TK](https://gitlab.com/MHeinrichs/68EC020-TK)
 * [Zorro-LAN-IDE-SATA](https://gitlab.com/Hamag/zorrolanidesata)
+
+## AIDE-boot.adf
+`aide-boot-<version>.adf` is a boot disk for the AIDE interface by Matze.  
+This interface has no boot rom so the driver must first be loaded from disk or added to a custom kickstart.  
+lide-update.lha contains the AIDE-lide.device file which can be used with `LoadModule` or added to a custom ROM.
 
 ## ROM images
 Releases contain the following builds

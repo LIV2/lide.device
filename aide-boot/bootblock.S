@@ -131,7 +131,7 @@ relocate:       movem.l D2-D7/A2-A4,-(SP)
                 move    D5,D1                   // Hunk number
                 lsl.l   #2,D1                   // To HUNK_LIST index
                 add.l   #8,D0                   // Skip Seglist Header
-                move.l  D0,0(A4,D1)             // Store Hunk data location
+                move.l  D0,(A4,D1)              // Store Hunk data location
                 add.l   #1,D5
                 cmp.l   LAST_HUNK(A5),D5
                 ble     .allocate
