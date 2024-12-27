@@ -88,6 +88,7 @@ struct DeviceBase {
     struct MinList         units;
     struct SignalSemaphore ulSem;
     struct MinList         ideTasks;
+    volatile bool          hasRemovables; // modified by IDETask(s), Start the diskChange task? 
 };
 
 struct IDETask {
@@ -119,6 +120,6 @@ struct IDETask {
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 #define DEVICE_VERSION 40
 #define DEVICE_REVISION 9
-#define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
+#define DEVICE_PRIORITY 10
 
 #endif

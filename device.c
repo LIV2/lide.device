@@ -393,8 +393,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->lib.lib_IdString     = (APTR)device_id_string;
 
     dev->isOpen        = FALSE;
-    dev->numUnits     = 0;
-    dev->numTasks     = 0;
+    dev->numUnits      = 0;
+    dev->numTasks      = 0;
+    dev->hasRemovables = false;
 
     L_NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
@@ -506,7 +507,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
+    if (dev->hasRemovables) dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;

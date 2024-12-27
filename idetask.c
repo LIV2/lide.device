@@ -476,6 +476,7 @@ static BYTE init_units(struct IDETask *itask) {
             Warn("testing unit %ld\n",unit->unitNum);
 
             if (ata_init_unit(unit)) {
+                if (unit->atapi) dev->hasRemovables = true;
                 num_units++;
                 itask->dev->numUnits++;
                 dev->highestUnit = unit->unitNum;
