@@ -26,9 +26,12 @@
 // NDK 1.3 definition of FindConfigDev is incorrect which causes "makes pointer from integer without a cast" warning
 struct ConfigDev* FindConfigDev(struct ConfigDev*, LONG, LONG);
 
-// NDK 1.3 lacks ColdReboot, so define it
-#ifndef ColdReboot
+// NDK 1.3 includes lacks these, so define them here
+#ifdef __KICK13__
 void ColdReboot();
+struct DosList *LockDosList(ULONG);
+struct DosList *NextDosEntry(struct DosList *, ULONG);
+void *UnLockDosList(ULONG);
 #endif
 
 enum BOOTROM {
@@ -44,6 +47,12 @@ struct ideBoard {
   bool cdfsSupported;
   void (*bankSelect)(UBYTE, struct ideBoard *);
   void (*writeEnable)(struct ideBoard *);
+};
+
+struct dosDev {
+  struct MinNode mn;
+  struct MsgPort *handler;
+  char *name;
 };
 
 ULONG getFileSize(char *);

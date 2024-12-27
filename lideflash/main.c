@@ -24,6 +24,8 @@
 #include <stdbool.h>
 #include <proto/dos.h>
 #include <dos/dos.h>
+#include <proto/alib.h>
+#include <dos/dosextens.h>
 
 #include "flash.h"
 #include "main.h"
@@ -44,6 +46,7 @@ struct Library *DosBase;
 struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;
 struct Config *config;
+bool devsInhibited = false;
 
 void bankSelect(UBYTE bank, struct ideBoard *board);
 
@@ -67,6 +70,116 @@ static void _ColdReboot() {
       "subq.l  #2,(a0)            \n\t" // Points to second RESET
       "reset                      \n\t"
       "jmp     (a0)");
+}
+
+/**
+ * inhibitDosDevs
+ * 
+ * inhibit/uninhibit all drives
+ * Some boards lock out IDE when flash mode is enabled
+ * Send an ACTION_INHIBIT packet to all devices to flush the buffers to disk first
+ * 
+ * @param inhibit (bool) True: inhibit, False: uninhibit 
+ */
+bool inhibitDosDevs(bool inhibit) {
+  bool success = true;
+  struct MsgPort *mp = CreatePort(NULL,0);
+  struct Message msg;
+  struct DosPacket __aligned packet;
+  struct DosList *dl;
+  struct dosDev *dd;
+
+  struct MinList devs;
+  NewList((struct List *)&devs);
+
+  if (mp) {
+    packet.dp_Port = mp;
+    packet.dp_Link = &msg;
+    msg.mn_Node.ln_Name = (char *)&packet;
+
+    if (SysBase->SoftVer >= 36) {
+
+      dl = LockDosList(LDF_DEVICES|LDF_READ);
+      // Build a list of dos devices to inhibit
+      // We need to send a packet to the FS to do the inhibit after releasing the lock
+      // So build a list of devs to be (un)-inhibited
+      while (dl = NextDosEntry(dl,LDF_DEVICES)) {
+        dd = AllocMem(sizeof(struct dosDev),MEMF_ANY|MEMF_CLEAR);
+        if (dd) {
+          if (dl->dol_Task) { // Device has a FS process?
+            dd->handler = dl->dol_Task;
+            AddTail((struct List *)&devs,(struct Node *)dd);
+          }
+        }
+      }
+      UnLockDosList(LDF_DEVICES|LDF_READ);
+
+    } else {
+      // For Kickstart 1.3
+      // Build a list of dos devices the old fashioned way
+      struct RootNode *rn = DOSBase->dl_Root;
+      struct DosInfo *di = BADDR(rn->rn_Info);
+
+      Forbid();
+      // Build a list of dos devices to inhibit
+      // We need to send a packet to the FS but that can't be done while in Forbid()
+      // So build a list of devs to be (un)-inhibited
+      for (dl = BADDR(di->di_DevInfo); dl; dl = BADDR(dl->dol_Next)) {
+        if (dl->dol_Type == DLT_DEVICE && dl->dol_Task) {
+          dd = AllocMem(sizeof(struct dosDev),MEMF_ANY|MEMF_CLEAR);
+          if (dd) {
+            if (dl->dol_Task) { // Device has a FS process?
+              dd->handler = dl->dol_Task;
+              AddTail((struct List *)&devs,(struct Node *)dd);
+            }
+          }
+        }
+      }
+      Permit();
+    }
+
+    struct dosDev *next = NULL;
+    // Send an ACTION_INHIBIT packet directly to the FS
+    for (dd = (struct dosDev *)devs.mlh_Head; dd->mn.mln_Succ; dd = next) {
+      if (inhibit) {
+        packet.dp_Port = mp;
+        packet.dp_Type = ACTION_FLUSH;
+        PutMsg(dd->handler,&msg);
+        WaitPort(mp);
+        GetMsg(mp);
+      }
+
+      for (int t=0; t < 3; t++) {
+        packet.dp_Port = mp;
+        packet.dp_Type = ACTION_INHIBIT;
+        packet.dp_Arg1 = (inhibit) ? DOSTRUE : DOSFALSE;
+        PutMsg(dd->handler,&msg);
+        WaitPort(mp);
+        GetMsg(mp);
+
+        if (packet.dp_Res1 == DOSTRUE || packet.dp_Res2 == ERROR_ACTION_NOT_KNOWN)
+          break;
+
+        Delay(1*TICKS_PER_SECOND);
+      }
+
+      if (packet.dp_Res1 == DOSFALSE && packet.dp_Res2 != ERROR_ACTION_NOT_KNOWN) {
+        success = false;
+      }
+
+      next = (struct dosDev *)dd->mn.mln_Succ;
+      Remove((struct Node *)dd);
+      FreeMem(dd,sizeof(struct dosDev));
+
+    }
+
+    DeletePort(mp);
+
+  } else {
+    success = false;
+  }
+
+  return success;
 }
 
 /**
@@ -251,6 +364,15 @@ int main(int argc, char *argv[])
         goto exit;
       }
     }
+    
+    if (!inhibitDosDevs(true)) {
+      printf("Failed to inhibit AmigaDOS volumes, wait for disk activity to stop and try again.\n");
+      rc = 5;
+      inhibitDosDevs(false);
+      goto exit;
+    };
+
+    devsInhibited = true;
 
     if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
 
@@ -445,6 +567,9 @@ int main(int argc, char *argv[])
         _ColdReboot();
       }
     }
+
+    if (devsInhibited)
+      inhibitDosDevs(false);
 
   } else {
     usage();
