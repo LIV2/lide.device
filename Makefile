@@ -2,7 +2,8 @@ PROJECT=lide.device
 BUILDDIR=build
 ROM=lide.rom
 VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
-GIT_REF := "$(shell git branch --show-current)-$(shell git rev-parse --short HEAD)"
+GIT_REF_NAME = $(shell git branch --show-current)
+GIT_REF := "$(GIT_REF_NAME)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
 CC=m68k-amigaos-gcc
 CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
