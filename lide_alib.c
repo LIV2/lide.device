@@ -92,7 +92,7 @@ struct IORequest* L_CreateExtIO(struct MsgPort *mp, ULONG size) {
 
     if (mp) {
         if ((ior=AllocMem(size,MEMF_PUBLIC|MEMF_CLEAR))) {
-            ior->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
+            ior->io_Message.mn_Node.ln_Type = NT_MESSAGE;
             ior->io_Message.mn_Length       = size;
             ior->io_Message.mn_ReplyPort    = mp;
         }
