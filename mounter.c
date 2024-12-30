@@ -48,7 +48,6 @@
 
 #include "ndkcompat.h"
 #include "mounter.h"
-#include "scsi.h"
 #include "lide_alib.h"
 
 #if TRACE
@@ -90,47 +89,14 @@ struct MountData
 };
 
 // Get Block size of unit by sending a SCSI READ CAPACITY 10 command
-int GetBlockSize(struct IOStdReq *req) {
+BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-	struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+	
+	req->iotd_Req.io_Command = TD_GETGEOMETRY;
+	req->iotd_Req.io_Data    = geometry;
+	req->iotd_Req.io_Length  = sizeof(struct DriveGeometry);
 
-	if (cmd == NULL) return 0;
-
-	struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)cmd->scsi_Command;
-	BYTE err;
-	int ret = -1;
-
-	struct SCSI_CAPACITY_10 *result = AllocMem(sizeof(struct SCSI_CAPACITY_10),MEMF_CLEAR|MEMF_ANY);
-
-	if (!result) {
-		DeleteSCSICmd(cmd);
-		return -1;
-	}
-
-	cdb->operation   = SCSI_CMD_READ_CAPACITY_10;
-	cmd->scsi_Length = sizeof(struct SCSI_CAPACITY_10);
-	cmd->scsi_Data   = (UWORD *)result;
-	cmd->scsi_Flags  = SCSIF_READ;
-	cdb->lba         = 0;
-
-	req->io_Command = HD_SCSICMD;
-	req->io_Data    = cmd;
-	req->io_Length  = sizeof(struct SCSICmd);
-
-	for (int retry = 0; retry < 3; retry++) {
-		if ((err = DoIO((struct IORequest *)req)) == 0) break;
-	}
-
-	if (err == 0 && req->io_Length > 0) {
-		ret = result->block_size;
-	} else {
-		ret = -1;
-	}
-
-	if (cmd)    DeleteSCSICmd(cmd);
-	if (result) FreeMem(result,sizeof(struct SCSI_CAPACITY_10));
-
-	return ret;
+	return DoIO((struct IORequest *)req);
 }
 
 #if CDBOOT
@@ -1147,12 +1113,12 @@ LONG MountDrive(struct MountStruct *ms)
 {
 	LONG  ret = -1;
 	ULONG uidx = 0;
-	int   blockSize = 0;
 	struct UnitStruct *unit;
 	struct MsgPort *port = NULL;
 	struct IOExtTD *request = NULL;
 	struct ExpansionBase *ExpansionBase;
 	struct ExecBase *SysBase = ms->SysBase;
+	struct DriveGeometry geom;
 
 	dbg("Starting..\n");
 	ExpansionBase = (struct ExpansionBase*)OpenLibrary("expansion.library", 34);
@@ -1174,15 +1140,15 @@ LONG MountDrive(struct MountStruct *ms)
 						dbg("OpenDevice('%s', %"PRId32", %p, 0)\n", ms->deviceName, unit->unitNum, request);
 						UBYTE err = OpenDevice(ms->deviceName, unit->unitNum, (struct IORequest*)request, 0);
 						if (err == 0) {
-							if ((blockSize = GetBlockSize((struct IOStdReq *)request)) > 0) {
+							if ((err = GetGeometry(request,&geom)) == 0) {
 								ret = -1;
 								md->request    = request;
 								md->devicename = ms->deviceName;
 								md->unitnum    = unit->unitNum;
-								md->blocksize  = blockSize;
+								md->blocksize  = geom.dg_SectorSize;
 								md->configDev  = unit->configDev;
 #if CDBOOT
-								if (unit->deviceType == DG_CDROM) {
+								if (geom.dg_DeviceType == DG_CDROM) {
 									ret = ScanCDROM(md);
 								} else {
 									ret = ScanRDSK(md);

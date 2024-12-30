@@ -29,6 +29,11 @@
 extern UBYTE bootblock, bootblock_end;
 #endif
 
+// VSCode C/C++ extension doesn't like the asm("<reg>") syntax
+#ifdef __INTELLISENSE__
+#define asm(x)
+#endif
+
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
 safely return an error if a user tries to execute the file), followed by a
@@ -1006,7 +1011,6 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                 if (unit->deviceType == DG_CDROM && !CDBoot) continue;
 #endif
                 ms->Units[index].unitNum    = unit->unitNum;
-                ms->Units[index].deviceType = unit->deviceType;
                 ms->Units[index].configDev  = unit->cd;
                 index++;
             }
