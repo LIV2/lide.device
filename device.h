@@ -118,8 +118,13 @@ struct IDETask {
 #endif
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
+
+// The build process will define the version/revision based on the latest git tag
+#ifndef DEVICE_VERSION
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 9
+#define DEVICE_REVISION 0
+#endif
+
 #define DEVICE_PRIORITY 10
 
 #endif

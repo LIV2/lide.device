@@ -2,6 +2,7 @@ PROJECT=lide.device
 BUILDDIR=build
 ROM=lide.rom
 VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
+
 GIT_REF_NAME = $(shell git branch --show-current)
 GIT_REF := "$(GIT_REF_NAME)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
@@ -11,8 +12,17 @@ CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LDFLAGS=-lgcc -lc
 AS=m68k-amigaos-as
 
+ifneq ($(shell uname),Linux)
+GREP=ggrep
+else
+GREP=grep
+endif
+
 ifneq ($(VERSION),)
 DISK=lide-update-$(VERSION).adf
+DEVICE_VERSION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\K\d+')
+DEVICE_REVISION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\d+\.\K\d+')
+CFLAGS+=-DDEVICE_VERSION=$(DEVICE_VERSION) -DDEVICE_REVISION=$(DEVICE_REVISION)
 else
 DISK=lide-update.adf
 endif
