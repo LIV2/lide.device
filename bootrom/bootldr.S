@@ -2,7 +2,7 @@
     include libraries/configvars.i
     include exec/resident.i
     include lvo/exec_lib.i
-
+    include boards.i
 
 VERSION      = 1
 REVISION     = 1
@@ -63,14 +63,12 @@ DiagEntry
 
         ; Patch up Romtag Resident Structure in memory
         lea.l   Romtag(pc),a4                       ; find Romtag in memory
-        move.l  a4,RT_MATCHTAG(a4)                  ; pointer to itself
-        lea.l   EndCopy(pc),a1
-        move.l  a1,RT_ENDSKIP(a4)
-        lea.l   DevName(pc),a1
-        move.l  a1,RT_NAME(a4)
-        move.l  a1,RT_IDSTRING(a4)
-        lea.l   Init(pc),a1
-        move.l  a1,RT_INIT(a4)
+        move.l  a2,d0
+        add.l   d0,RT_MATCHTAG(a4)                  ; pointer to itself
+        add.l   d0,RT_ENDSKIP(a4)
+        add.l   d0,RT_NAME(a4)
+        add.l   d0,RT_IDSTRING(a4)
+        add.l   d0,RT_INIT(a4)
         move.l  a0,BoardBase-Romtag(a4)             ; Save board base for later
         move.l  a3,MyConfigDev-Romtag(a4)           ; Save ConfigDev for later
         cmp.w   #$082c,cd_Rom+er_Manufacturer(a3)
@@ -104,21 +102,20 @@ BootEntry
 **********************************************************************
 Romtag
         dc.w    RTC_MATCHWORD      ; UWORD RT_MATCHWORD
-        dc.l    0                  ; APTR  RT_MATCHTAG
-        dc.l    0                  ; APTR  RT_ENDSKIP
+        dc.l    Romtag             ; APTR  RT_MATCHTAG
+        dc.l    EndCopy            ; APTR  RT_ENDSKIP
         dc.b    RTF_COLDSTART      ; UBYTE RT_FLAGS
         dc.b    VERSION            ; UBYTE RT_VERSION
         dc.b    0                  ; UBYTE RT_TYPE
         dc.b    0                  ; BYTE  RT_PRI
-        dc.l    0                  ; APTR  RT_NAME
-        dc.l    0                  ; APTR  RT_IDSTRING
-        dc.l    0                  ; APTR  RT_INIT
+        dc.l    DevName            ; APTR  RT_NAME
+        dc.l    DevName            ; APTR  RT_IDSTRING
+        dc.l    Init               ; APTR  RT_INIT
 
 BoardBase:   dc.l 0
 MyConfigDev: dc.l 0
 
 Init:   movem.l d2-d7/a2-a6,-(sp)
-
         move.l  MyConfigDev(PC),a1
         move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
         moveq   #0,d2
@@ -131,21 +128,19 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         and.l   #$F000,d1                     ; Add any other offset
         add.l   d1,d2
         cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
-        bne     .skipcdfs
+        bne     .loaddriver
 .loadcdfs
         move.l  BoardBase(PC),a0
         move.l  a0,a1
         add.l   d2,a1
         add.l   #$1FFF8,a1                    ; Point to the end of the second bank
-        move.b  (a1),d1
-        lsl.w   #8,d1                         ; Look for the ROM trailer which should not be on the second bank
-        move.b  2(a1),d1
-        swap    d1
-        move.b  4(a1),d1
-        lsl.w   #8,d1
-        move.b  6(a1),d1
-        cmp.l   #'LIDE',d1                    ; If bank switched this will not match
-        beq     .skipcdfs
+        moveq.l #3,d3
+.getid: lsl.l   #8,d0                         ; Look for the ROM trailer which should not be on the second bank
+        move.b  (a1),d0
+        add.l   #2,a1
+        dbra    d3,.getid
+        cmp.l   #'LIDE',d0 
+        beq     .loaddriver
 
         IFND WORDWIDE
 
@@ -165,12 +160,43 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         bsr     InitRT
 
 .skipcdfs:
+
+        IFND WORDWIDE
+        ; Load romtags from other banks if supported (currently only RIDE)
+        move.l  MyConfigDev(PC),a1
+        cmp.w   #OAHR_MFR_ID,cd_Rom+er_Manufacturer(a1)
+        bne     .loaddriver
+        cmp.b   #RIDE_PRD_ID,cd_Rom+er_Product(a1)
+        bne     .loaddriver
+        moveq.l #1,d3
+        move.b  #$C0,d4             ; Start with Bank #4
+.bank:  move.l  BoardBase(PC),a1
+        move.l  a1,a0               ; BoardBase for _reloc
+        add.l   #RIDE_BANKREG,a1
+        move.b  (a1),d1
+        and.b   #$3F,d1             ; Preserve other bits
+        or.b    d4,d1
+        move.b  d1,(a1)             ; Select bank, the rom will dissapear from the lower 64K window now
+        move.l  #$10000,d0          ; So point to the upper 64K window where the ROM is always mapped
+        bsr     _relocate           ; A0 = Base, D0 = Offset (Must be non-zero)
+        tst.l   d0
+        beq.s   .nort
+        bsr     InitRT
+.nort:  sub.l   #$40,d4
+        dbra    d3,.bank
+        move.l  BoardBase(PC),a1
+        add.l   #RIDE_BANKREG,a1
+        and.b   #$3F,(a1)           ; Point back at Bank #0
+        add.l   #$10000,d2          ; Set Offset to upper window
+        ENDIF
+
+.loaddriver:
         move.l  BoardBase(PC),a0
 
         IFND WORDWIDE
 
         move.l  #DRIVEROFFSET,d0
-        add.l   d2,d0                         ; Add offset if AT-Bus with odd address
+        add.l   d2,d0               ; Add offset if AT-Bus with odd address
 
         ELSE
 
