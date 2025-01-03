@@ -524,6 +524,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     return 0;
 }
 
+#pragma GCC push_options
 #pragma GCC optimize ("-O3")
 
 /**
@@ -816,6 +817,7 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
     return 0;
 }
 
+#pragma GCC pop_options
 
 /**
  * ata_set_pio

@@ -1,5 +1,6 @@
 #ifndef _BLOCK_COPY_H
 #define _BLOCK_COPY_H
+#pragma GCC push_options
 #pragma GCC optimize ("-fomit-frame-pointer")
 /**
  * ata_read_long_movem
@@ -68,7 +69,7 @@ static inline void ata_write_long_movem (void *source, void *destination) {
 */
 static inline void ata_read_long_move (void *source, void *destination) {
     asm volatile (
-        "move.l #3,d0           \n\t"
+        "moveq.l #3,d0          \n\t"
         ".l1:                   \n\t"
         ".rept  32              \n\t"
         "move.l (%0),(%1)+      \n\t"
@@ -100,5 +101,5 @@ static inline void ata_write_long_move (void *source, void *destination) {
     );
 }
 
-#pragma GCC reset_options
+#pragma GCC pop_options
 #endif
