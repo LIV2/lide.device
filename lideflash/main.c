@@ -35,8 +35,9 @@
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
 
-#define PROD_ID_CIDER     0x05
-#define PROD_ID_RIPPLE    0x07
+#define PROD_ID_CIDER  0x05
+#define PROD_ID_RIPPLE 0x07
+#define PROD_ID_RIDE   0x09
 
 #define SERIAL_LIV2  0x4C495632
 
@@ -208,8 +209,17 @@ static void setup_liv2_board(struct ideBoard *board) {
     *pokeReg = 0x00;
   }
 
-  board->cdfsSupported = (board->cd->cd_Rom.er_Product == PROD_ID_RIPPLE) ? true : false;
-
+  switch (board->cd->cd_Rom.er_Product) {
+    case PROD_ID_RIPPLE:
+      board->banks = 2;
+      break;
+    case PROD_ID_RIDE:
+      board->banks = 4;
+      break;
+    default:
+      board->banks = 1;
+      break;
+  }
 }
 
 /**
@@ -288,10 +298,10 @@ int main(int argc, char *argv[])
 
   void *driver_buffer = NULL;
   void *driver_buffer2 = NULL;
-  void *cdfs_buffer   = NULL;
+  void *misc_buffer   = NULL;
 
   ULONG romSize    = 0;
-  ULONG cdfsSize   = 0;
+  ULONG miscSize   = 0;
 
   if (DosBase == NULL) {
     return(rc);
@@ -337,24 +347,24 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (config->cdfs_filename) {
+    if (config->misc_filename) {
 
-      cdfsSize = getFileSize(config->cdfs_filename);
+      miscSize = getFileSize(config->misc_filename);
 
-      if (cdfsSize == 0) {
+      if (miscSize == 0) {
         rc = 5;
         goto exit;
       }
 
-      if (cdfsSize > 32768) {
-        printf("CDFS too large!\n");
+      if (miscSize > 32768) {
+        printf("File too large!\n");
         rc = 5;
         goto exit;
       }
 
-      cdfs_buffer = AllocMem(cdfsSize,MEMF_ANY|MEMF_CLEAR);
-      if (cdfs_buffer) {
-        if (readFileToBuf(config->cdfs_filename,cdfs_buffer) == false) {
+      misc_buffer = AllocMem(miscSize,MEMF_ANY|MEMF_CLEAR);
+      if (misc_buffer) {
+        if (readFileToBuf(config->misc_filename,misc_buffer) == false) {
           rc = 5;
           goto exit;
         }
@@ -391,6 +401,10 @@ int main(int argc, char *argv[])
               break;
             } else if (cd->cd_Rom.er_Product == PROD_ID_RIPPLE) {
               printf("Found RIPPLE IDE");
+              setup_liv2_board(&board);
+              break;
+            } else if (cd->cd_Rom.er_Product == PROD_ID_RIDE) {
+              printf("Found RIDE IDE");
               setup_liv2_board(&board);
               break;
             } else {
@@ -523,21 +537,21 @@ int main(int argc, char *argv[])
             printf("\n");
           }
 
-          if (config->cdfs_filename) {
+          if (config->misc_filename) {
 
-            if (board.cdfsSupported && sectorSize > 0) {
+            if (config->misc_bank < board.banks && sectorSize > 0) {
 
               if (board.bankSelect != NULL)
-                board.bankSelect(1,&board);
+                board.bankSelect(config->misc_bank,&board);
 
               if (config->eraseFlash == false) {
-                printf("Erasing CDFS bank...\n");
+                printf("Erasing bank %d...\n",config->misc_bank);
                 flash_erase_bank(sectorSize);
               }
-              printf("Writing CDFS.\n");
-              writeBufToFlash(&board,cdfs_buffer,board.flashbase,cdfsSize);
+              printf("Writing bank %d.\n",config->misc_bank);
+              writeBufToFlash(&board,misc_buffer,board.flashbase,miscSize);
             } else {
-              printf("This board does not support flashing CDFS.\n");
+              printf("This board does not support flashing bank %d.\n",config->misc_bank);
             }
           }
 
@@ -578,7 +592,7 @@ int main(int argc, char *argv[])
 exit:
   if (driver_buffer2) FreeMem(driver_buffer2,romSize);
   if (driver_buffer)  FreeMem(driver_buffer,romSize);
-  if (cdfs_buffer)    FreeMem(cdfs_buffer,cdfsSize);
+  if (misc_buffer)    FreeMem(misc_buffer,miscSize);
   if (config)         FreeMem(config,sizeof(struct Config));
   if (ExpansionBase)  CloseLibrary((struct Library *)ExpansionBase);
   if (DosBase)        CloseLibrary((struct Library *)DosBase);
@@ -658,8 +672,12 @@ BOOL readFileToBuf(char *filename, void *buffer) {
  * @param boardBase base address of the IDE board
 */
 void bankSelect(UBYTE bank, struct ideBoard *board) {
-  UBYTE *boardBase = board->cd->cd_BoardAddr;
-  *(boardBase + BANK_SEL_REG) = (bank << 6);
+  UBYTE *bankReg = board->cd->cd_BoardAddr + BANK_SEL_REG;
+  UBYTE regbits = *bankReg;
+  // Preserve the other bits
+  regbits &= 0x3F;
+  regbits |= (bank << 6);
+  *bankReg = regbits;
 }
 
 
