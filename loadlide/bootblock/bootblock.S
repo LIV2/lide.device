@@ -319,9 +319,12 @@ bootLide:       lea     (expansion,PC),A1
                 jsr     _LVOOpenLibrary(A6)
                 tst.l   D0
                 beq     .error
+                move.l  D0,A2
+                cmp.w   #37,LIB_VERSION(A2)
+                bcs     .fixbootpri
+                bset.b  #EBB_SILENTSTART,eb_Flags(A2)
 .fixbootpri:    ; Move the floppy to a lower bootPri than the HDD
                 ; This will cause the system to boot from the HDD when we start DOS
-                move.l  D0,A2
                 jsr     _LVOForbid(A6)
                 lea.l   eb_MountList(A2),A0
                 jsr     _LVORemHead(A6)         // Pop our BootNode from the mountlist
