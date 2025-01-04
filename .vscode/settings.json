@@ -24,7 +24,8 @@
         "device.h": "c",
         "config.h": "c",
         "main.h": "c",
-        "ata.h": "c"
+        "ata.h": "c",
+        "stddef.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled",
     "m68k.includePaths": [

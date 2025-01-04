@@ -18,5 +18,5 @@ struct IORequest* L_CreateExtIO(struct MsgPort *mp, ULONG size);
 struct IOStdReq* L_CreateStdIO(struct MsgPort *mp);
 void L_DeleteExtIO(struct IORequest *ior);
 void L_DeleteStdIO(struct IOStdReq *ior);
-
+struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData);
 #endif
