@@ -8,7 +8,7 @@ OBJDIR=obj
 SRCS = bootblock.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
-all: ${OBJDIR}/bootblock.o loadlide.adf
+all: ${OBJDIR}/bootblock.o aide-boot.adf
 
 clean:
 	-rm -rf $(OBJDIR)
@@ -21,8 +21,8 @@ obj/patchdisk: patchdisk.c
 	gcc -o $@ $<
 	chmod +x $@
 
-loadlide.adf:	$(OBJDIR)/bootblock.o ../../lide.device	obj/patchdisk
+aide-boot.adf:	$(OBJDIR)/bootblock.o ../AIDE-lide.device	obj/patchdisk
 	rm -f $@
-	xdftool	$@ create + format lide + boot write obj/bootblock.o
-	dd if=../../lide.device of=$@ bs=512 oseek=2 conv=notrunc
+	xdftool	$@ create + format lide + boot write obj/bootblock.o + write ../AIDE-lide.device AIDE-lide.device
+	dd if=../AIDE-lide.device of=$@ bs=512 oseek=2 conv=notrunc
 	./obj/patchdisk

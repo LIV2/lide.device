@@ -14,10 +14,24 @@
 #error "MAX_TRANSFER_SECTORS cannot be larger than 256"
 #endif
 
+#ifdef SIMPLE_IDE
+
+#define NO_AUTOCONFIG
+
+#define BOARD_BASE 0xEF0000
+#define CHANNEL_0  0x2000
+#define CHANNEL_1  0x1000
+#define IDE_CSMASK 0x0000
+#define NEXT_REG   0x4
+
+#else
+
 #define CHANNEL_0  0x1000
 #define CHANNEL_1  0x2000
 #define IDE_CSMASK 0x0000
 #define NEXT_REG   0x200
+
+#endif
 
 // BYTE Offsets
 #define ata_reg_data         0*NEXT_REG + IDE_CSMASK
