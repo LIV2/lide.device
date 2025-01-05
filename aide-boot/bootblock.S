@@ -335,7 +335,7 @@ bootLide:       lea     (expansion,PC),A1
                 move.l  D0,A1
                 move.b  #-127,LN_PRI(A1)        // Lower the bootNode priority
                 
-                ; Change bootPri to -1
+                ; Change bootPri to -127
                 move.l  bn_DeviceNode(A1),A3    
                 move.l  dn_Startup(A3),D2       // FileSystemStartupMessage
                 lsl.l   #2,D2                   // Convert from BPTR
@@ -343,7 +343,7 @@ bootLide:       lea     (expansion,PC),A1
                 move.l  fssm_Environ(A3),D2     // DosEnvVec
                 lsl.l   #2,D2                   // Convert from BPTR
                 move.l  D2,A3
-                move.l  #-1,de_BootPri(A3)
+                move.l  #-127,de_BootPri(A3)
 
                 lea.l   eb_MountList(A2),A0
                 jsr     _LVOEnqueue(A6)         // Enqueue our boot node
