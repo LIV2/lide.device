@@ -36,6 +36,7 @@ start:          movem.l D2-D7/A2-A4/A6,-(SP)
                 move.l  D0,HUNK_LIST(A5)
                 move.l  D0,RESIDENT(A5)
                 move.l  A1,IOREQ(A5) // Stash ioreq
+
 .allocbuf:      ; Allocate the IO Buffer
                 move.l  #ALERT_NOMEM,D7
                 move.l  #512,D0
@@ -86,8 +87,11 @@ exit:
                 unlk    A5
                 movem.l (SP)+,D2-D7/A2-A4/A6
                 tst.l   D0                      // Did the driver load?
-                bne     bootLide
-                moveq.l #-1,D0
+                bne     .boot
+                moveq.l #-1,D0                  // Signal failure to strap
+                rts
+.boot:          moveq.l #0,D0
+                lea.l   bootLide(PC),A0
                 rts
 
 ; D3 = Remaining bytes, D6 = Sector number, D5 = Curr Hunk
@@ -329,7 +333,7 @@ bootLide:       lea     (expansion,PC),A1
                 lea.l   eb_MountList(A2),A0
                 jsr     _LVORemHead(A6)         // Pop our BootNode from the mountlist
                 move.l  D0,A1
-                move.b  #-1,LN_PRI(A1)          // Lower the bootNode priority
+                move.b  #-127,LN_PRI(A1)        // Lower the bootNode priority
                 
                 ; Change bootPri to -1
                 move.l  bn_DeviceNode(A1),A3    
