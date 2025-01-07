@@ -6,6 +6,10 @@ VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
 GIT_REF_NAME = $(shell git branch --show-current)
 GIT_REF := "$(GIT_REF_NAME)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
+
+export BUILD_DATE
+export GIT_REF
+
 CC=m68k-amigaos-gcc
 CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
@@ -23,6 +27,10 @@ DISK=lide-update-$(VERSION).adf
 DEVICE_VERSION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\K\d+')
 DEVICE_REVISION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\d+\.\K\d+')
 CFLAGS+=-DDEVICE_VERSION=$(DEVICE_VERSION) -DDEVICE_REVISION=$(DEVICE_REVISION)
+
+export DEVICE_REVISION
+export DEVICE_VERSION
+
 else
 DISK=lide-update.adf
 endif
@@ -142,6 +150,7 @@ clean:
 	-rm -f AIDE-$(PROJECT)
 	make -C bootrom clean
 	make -C lideflash clean
+	make -C lidetool clean
 	make -C rename clean
 	-rm -rf *.rom
 	-rm -rf $(BUILDDIR)

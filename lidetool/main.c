@@ -33,6 +33,8 @@
 
 #define CMD_XFER 0x1001
 
+const char ver[] = VERSION_STRING;
+
 struct ExecBase *SysBase;
 struct Config *config;
 

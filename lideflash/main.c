@@ -43,6 +43,8 @@
 
 #define ROMSIZE 32768
 
+const char ver[] = VERSION_STRING;
+
 struct Library *DosBase;
 struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;

@@ -19,6 +19,12 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
+                          if invoked from a macro, macro arguments are expanded). */
+#define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
+
+#define VERSION_STRING "$VER: lideflash " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
+
 // Bank Sel register of RIPPLE
 #define BANK_SEL_REG 0x8000
 
