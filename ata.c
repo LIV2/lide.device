@@ -545,6 +545,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
+    UBYTE multipleCount = unit->multipleCount;
+    volatile void *dataRegister = unit->drive.data;
 
     if (unit->lba48) {
         command = ATA_CMD_READ_MULTIPLE_EXT;
@@ -601,8 +603,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer((void *)unit->drive.data,buffer);
+            for (int i = 0; i < multipleCount && txn_count; i++) {
+                ata_xfer((void *)dataRegister,buffer);
                 txn_count--;
                 buffer += 512;
             }
@@ -632,6 +634,8 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
+    UBYTE multipleCount = unit->multipleCount;
+    volatile void *dataRegister = unit->drive.data;
 
     if (unit->lba48) {
         command = ATA_CMD_WRITE_MULTIPLE_EXT;
@@ -688,8 +692,8 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer(buffer,(void *)unit->drive.data);
+            for (int i = 0; i < multipleCount && txn_count; i++) {
+                ata_xfer(buffer,(void *)dataRegister);
                 txn_count--;
                 buffer += 512;
             }
