@@ -604,7 +604,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_xfer((void *)unit->drive.data,buffer);
                 txn_count--;
-                buffer += unit->blockSize;
+                buffer += 512;
             }
         }
 
@@ -691,7 +691,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             for (int i = 0; i < unit->multipleCount && txn_count; i++) {
                 ata_xfer(buffer,(void *)unit->drive.data);
                 txn_count--;
-                buffer += unit->blockSize;
+                buffer += 512;
             }
         }
 
