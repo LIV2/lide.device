@@ -115,6 +115,6 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit);
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 
-void ata_read_unaligned_long(void *source, void *destination);
-void ata_write_unaligned_long(void *source, void *destination);
+void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
+void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
 #endif

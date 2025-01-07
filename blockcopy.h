@@ -18,7 +18,7 @@
  * @param source Pointer to drive data port
  * @param destination Pointer to source buffer
 */
-static inline void ata_read_long_movem (void *source, void *destination) {
+static inline void ata_read_long_movem (void *source asm("a0"), void *destination asm("a1")) {
 
     asm volatile (
     "lea.l   460(%0),%0                 \n\t"
@@ -46,7 +46,7 @@ static inline void ata_read_long_movem (void *source, void *destination) {
  * @param source Pointer to source buffer
  * @param destination Pointer to drive data port
 */
-static inline void ata_write_long_movem (void *source, void *destination) {
+static inline void ata_write_long_movem (void *source asm("a0"), void *destination asm("a1")) {
 
     asm volatile (
     ".rep 9                       \n\t"
@@ -67,7 +67,7 @@ static inline void ata_write_long_movem (void *source, void *destination) {
  * Read a sector using move - faster than movem on 68020+
  *
 */
-static inline void ata_read_long_move (void *source, void *destination) {
+static inline void ata_read_long_move (void *source asm("a0"), void *destination asm("a1")) {
     asm volatile (
         "moveq.l #3,d0          \n\t"
         ".l1:                   \n\t"
@@ -87,7 +87,7 @@ static inline void ata_read_long_move (void *source, void *destination) {
  * Write a sector using move - faster than movem on 68020+
  *
 */
-static inline void ata_write_long_move (void *source, void *destination) {
+static inline void ata_write_long_move (void *source asm("a0"), void *destination asm("a1")) {
     asm volatile (
         "moveq.l #3,d0          \n\t"
         ".l2:                   \n\t"

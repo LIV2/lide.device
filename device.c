@@ -29,10 +29,6 @@
 extern UBYTE bootblock, bootblock_end;
 #endif
 
-// VSCode C/C++ extension doesn't like the asm("<reg>") syntax
-#ifdef __INTELLISENSE__
-#define asm(x)
-#endif
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to

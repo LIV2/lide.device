@@ -248,7 +248,7 @@ static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
     if (TimerBase->dd_Library.lib_Version < 36) return 0;
 
     if (buffer) {
-        void (*do_xfer)(void *source, void *destination) = xfer_routine;
+        void (*do_xfer)(void *source asm("a0"), void *destination asm("a1")) = xfer_routine;
         if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
             if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
                 ReadEClock(startTime);
@@ -552,7 +552,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     }
 
-    void (*ata_xfer)(void *source, void *destination);
+    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if (((ULONG)buffer) & 0x01) {
@@ -639,7 +639,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
 
-    void (*ata_xfer)(void *source, void *destination);
+    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if ((ULONG)buffer & 0x01) {
@@ -707,7 +707,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
  * @param source Pointer to the drive data port
  * @param destination Pointer to the data buffer
 */
-void ata_read_unaligned_long(void *source, void *destination) {
+void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1")) {
     ULONG readLong;
     UBYTE *dest = (UBYTE *)destination;
 
@@ -728,7 +728,7 @@ void ata_read_unaligned_long(void *source, void *destination) {
  * @param source Pointer to the data buffer
  * @param destination Pointer to the drive data port
 */
-void ata_write_unaligned_long(void *source, void *destination) {
+void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1")) {
     UBYTE *src = (UBYTE *)source;
     for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
         *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);

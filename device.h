@@ -15,6 +15,11 @@
 
 #define MAX_UNITS 4
 
+// VSCode C/C++ extension doesn't like the asm("<reg>") syntax
+#ifdef __INTELLISENSE__
+#define asm(x)
+#endif
+
 enum xfer {
     longword_movem,
     longword_move
@@ -44,10 +49,10 @@ struct IDEUnit {
     struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
-    void  (*read_fast)(void *, void *);
-    void  (*write_fast)(void *, void *);
-    void  (*read_unaligned)(void *, void *);
-    void  (*write_unaligned)(void *, void *);
+    void  (*read_fast)(void * asm("a0"), void * asm("a1"));
+    void  (*write_fast)(void * asm("a0"), void * asm("a1"));
+    void  (*read_unaligned)(void * asm("a0"), void * asm("a1"));
+    void  (*write_unaligned)(void * asm("a0"), void * asm("a1"));
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
     volatile bool  deferTUR;
