@@ -29,7 +29,7 @@ endif
 
 ifdef DEBUG
 CFLAGS+= -DDEBUG=$(DEBUG)
-LDFLAGS+= -mcrt=clib2 -ldebug
+LDFLAGS=-ldebug -lgcc -lc
 .PHONY: $(PROJECT)
 endif
 
