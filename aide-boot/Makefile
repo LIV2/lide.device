@@ -24,5 +24,5 @@ obj/patchdisk: patchdisk.c
 aide-boot.adf:	$(OBJDIR)/bootblock.o ../AIDE-lide.device	obj/patchdisk
 	rm -f $@
 	xdftool	$@ create + format lide + boot write obj/bootblock.o + write ../AIDE-lide.device AIDE-lide.device
-	dd if=../AIDE-lide.device of=$@ bs=512 oseek=2 conv=notrunc
+	dd if=../AIDE-lide.device of=$@ bs=512 seek=2 conv=notrunc
 	./obj/patchdisk
