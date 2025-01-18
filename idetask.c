@@ -371,7 +371,7 @@ void __attribute__((noreturn)) diskchange_task () {
         ioreq->io_Data   = NULL;
         ioreq->io_Length = 0;
 
-        if (SysBase->SoftVer >= 36) {
+        if (SysBase->LibNode.lib_Version >= 36) {
             ObtainSemaphoreShared(&dev->ulSem);
         } else {
             ObtainSemaphore(&dev->ulSem);

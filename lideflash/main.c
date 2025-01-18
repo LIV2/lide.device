@@ -100,7 +100,7 @@ bool inhibitDosDevs(bool inhibit) {
     packet.dp_Link = &msg;
     msg.mn_Node.ln_Name = (char *)&packet;
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
 
       dl = LockDosList(LDF_DEVICES|LDF_READ);
       // Build a list of dos devices to inhibit
@@ -577,7 +577,7 @@ int main(int argc, char *argv[])
     if (config->rebootRequired) {
       printf("Press return to reboot.\n");
       getchar();
-      if (SysBase->SoftVer >= 36) {
+      if (SysBase->LibNode.lib_Version >= 36) {
         ColdReboot();
       } else {
         _ColdReboot();

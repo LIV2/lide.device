@@ -190,7 +190,7 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
 
     struct IDEUnit *unit;
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -225,7 +225,7 @@ static void Cleanup(struct DeviceBase *dev) {
 
     struct IDEUnit *unit;
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -549,7 +549,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         goto exit;
     }
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -939,7 +939,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 #endif
         struct IDEUnit *unit;
 
-        if (SysBase->SoftVer >= 36) {
+        if (SysBase->LibNode.lib_Version >= 36) {
             ObtainSemaphoreShared(&mydev->ulSem);
         } else {
             ObtainSemaphore(&mydev->ulSem);

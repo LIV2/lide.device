@@ -465,7 +465,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         }
     }
 
-    if (unit->SysBase->SoftVer > 36) {
+    if (unit->SysBase->LibNode.lib_Version > 36) {
         CacheClearE(cmd->scsi_Data,cmd->scsi_Length,CACRF_ClearI);
     }
 
