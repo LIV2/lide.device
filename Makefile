@@ -16,7 +16,7 @@ CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LDFLAGS=-lgcc -lc
 AS=m68k-amigaos-as
 
-ifneq ($(shell uname),Linux)
+ifeq ($(shell uname),Darwin)
 GREP=ggrep
 else
 GREP=grep
