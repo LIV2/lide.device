@@ -7,7 +7,6 @@
 #include <devices/trackdisk.h>
 #include <inline/timer.h>
 #include <proto/exec.h>
-#include <proto/alib.h>
 #include <proto/expansion.h>
 #include <exec/errors.h>
 #include <exec/execbase.h>
@@ -21,6 +20,7 @@
 #include "string.h"
 #include "wait.h"
 #include "blockcopy.h"
+#include "lide_alib.h"
 
 /**
  * atapi_status_reg_delay
@@ -318,6 +318,7 @@ done:
     return ret;
 }
 
+#pragma GCC push_options
 #pragma GCC optimize ("-O3")
 
 /**
@@ -330,6 +331,8 @@ done:
  * @returns error, sense key returned in SenseData
 */
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     Trace("atapi_packet\n");
     LONG byte_count = 0;
     LONG remaining;
@@ -462,7 +465,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         }
     }
 
-    if (unit->SysBase->SoftVer > 36) {
+    if (unit->SysBase->LibNode.lib_Version > 36) {
         CacheClearE(cmd->scsi_Data,cmd->scsi_Length,CACRF_ClearI);
     }
 
@@ -497,7 +500,7 @@ end:
     Trace("exit atapi_packet\n");
     return ret;
 }
-#pragma GCC reset_options
+#pragma GCC pop_options
 
 /**
  * atapi_test_unit_ready
@@ -582,6 +585,8 @@ done:
  * @return non-zero on error
 */
 BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey, UBYTE *asc, UBYTE *asq) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     UBYTE *cdb = (UBYTE *)cmd->scsi_Command;
@@ -722,6 +727,7 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, U
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
 */
 BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
 
     if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
 
@@ -791,6 +797,8 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
 */
 BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     BYTE ret;
     UBYTE *buf = NULL;
     UBYTE *src = NULL;
@@ -861,6 +869,8 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
  * @returns non-zero on error
 */
 BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     BYTE ret;
     struct SCSI_CDB_10 *cdb = AllocMem(sizeof(struct SCSI_CDB_10),MEMF_ANY|MEMF_CLEAR);
     if (!cdb) return TDERR_NoMem;
@@ -900,6 +910,7 @@ BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
  * @returns non-zero on exit
 */
 BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
     BYTE error = 0;
 
     // Some bozo with an unaligned data buffer... (lookin' at you HDToolbox!)
@@ -964,6 +975,8 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
  * @returns non-zero on error
 */
 BYTE atapi_check_wp(struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     UBYTE ret  = 0;
     UBYTE *buf = NULL;
 
@@ -1127,6 +1140,7 @@ BOOL atapi_get_track_msf(struct SCSI_CD_TOC *toc, int trackNum, struct SCSI_TRAC
  * @returns non-zero on error
 */
 BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
+    struct ExecBase *SysBase = unit->SysBase;
     BYTE ret = 0;
     struct SCSI_TRACK_MSF startmsf, endmsf;
 

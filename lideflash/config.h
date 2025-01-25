@@ -20,10 +20,11 @@
 
 struct Config {
   char *ide_rom_filename;
-  char *cdfs_filename;
+  char *misc_filename;
   bool eraseFlash;
   bool rebootRequired;
   bool assumeYes;
+  BYTE misc_bank;
 };
 
 struct Config* configure(int, char* []);

@@ -19,7 +19,11 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
+                          if invoked from a macro, macro arguments are expanded). */
+#define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
+#define VERSION_STRING "$VER: lidetool " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 struct __attribute__((packed)) SCSI_Inquiry {
     UBYTE peripheral_type;
     UBYTE removable_media;

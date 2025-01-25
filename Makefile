@@ -2,23 +2,42 @@ PROJECT=lide.device
 BUILDDIR=build
 ROM=lide.rom
 VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
-GIT_REF := "$(shell git branch --show-current)-$(shell git rev-parse --short HEAD)"
+
+GIT_REF_NAME = $(shell git branch --show-current)
+GIT_REF := "$(GIT_REF_NAME)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
+
+export BUILD_DATE
+export GIT_REF
+
 CC=m68k-amigaos-gcc
-CFLAGS+=-nostartfiles -nostdlib -noixemul -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
+CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
-LDFLAGS=-lamiga -lgcc -lc
+LDFLAGS=-lgcc -lc
 AS=m68k-amigaos-as
+
+ifeq ($(shell uname),Darwin)
+GREP=ggrep
+else
+GREP=grep
+endif
 
 ifneq ($(VERSION),)
 DISK=lide-update-$(VERSION).adf
+DEVICE_VERSION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\K\d+')
+DEVICE_REVISION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\d+\.\K\d+')
+CFLAGS+=-DDEVICE_VERSION=$(DEVICE_VERSION) -DDEVICE_REVISION=$(DEVICE_REVISION)
+
+export DEVICE_REVISION
+export DEVICE_VERSION
+
 else
 DISK=lide-update.adf
 endif
 
 ifdef DEBUG
 CFLAGS+= -DDEBUG=$(DEBUG)
-LDFLAGS+= -ldebug
+LDFLAGS=-ldebug -lgcc -lc
 .PHONY: $(PROJECT)
 endif
 
@@ -32,7 +51,10 @@ CFLAGS+= -DSLOWXFER=1
 .PHONY: $(PROJECT)
 endif
 
-LDFLAGS+= -lnix13
+ifdef SIMPLE_IDE
+CFLAGS+= -DSIMPLE_IDE=1
+.PHONY: $(PROJECT)
+endif
 
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
 
@@ -40,13 +62,15 @@ all:	$(ROM) \
 		lideflash \
 		rename/renamelide \
 		lide-N2630-high.rom \
-		lide-N2630-low.rom
+		lide-N2630-low.rom \
+		AIDE-$(PROJECT)
 
-OBJ = driver.o \
+OBJ = device.o \
       ata.o \
 	  atapi.o \
 	  scsi.o \
 	  idetask.o \
+	  lide_alib.o \
 	  mounter.o \
 	  debug.o
 
@@ -61,6 +85,9 @@ $(PROJECT): $(SRCS)
 $(ROM): $(PROJECT)
 	make -C bootrom
 
+AIDE-$(PROJECT): $(SRCS)
+	${CC} -o $@ $(CFLAGS) -DSIMPLE_IDE=1 $(SRCS) bootblock.S $(LDFLAGS)
+
 lideflash/lideflash:
 	make -C lideflash
 
@@ -72,15 +99,18 @@ lidetool/lidetool:
 rename/renamelide:
 	make -C rename
 
-lideflash/bootblock/obj/bootblock.o:
-	make -C lideflash/bootblock
+$(BUILDDIR)/AIDE-boot-$(VERSION).adf: AIDE-$(PROJECT)
+	@make -C aide-boot
+	@mv aide-boot/aide-boot.adf $@
 
-disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/bootblock/obj/bootblock.o
+disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
+
+$(BUILDDIR)/$(DISK): $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool AIDE-lide.device
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
 	xdftool $(BUILDDIR)/$(DISK) format lide-update + \
-	                            boot write lideflash/bootblock/obj/bootblock.o + \
+	                            boot install + \
 	                            write $(ROM) + \
 	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
@@ -90,10 +120,10 @@ disk: $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool lideflash/b
 	                            makedir Expansion + \
 	                            write info/Expansion.info Expansion.info + \
 	                            write info/lide.device.info Expansion/lide.device.info + \
-	                            write lide.device Expansion/lide.device
+	                            write lide.device Expansion/lide.device + \
+	                            write AIDE-lide.device AIDE-lide.device
 
-
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info AIDE-lide.device
 	@mkdir -p $(BUILDDIR)
 	cp $^ $(BUILDDIR)
 	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
@@ -116,10 +146,12 @@ lide-tk-29F040.rom: lide-tk-29F020.rom
 	@cat $< $< > $@
 
 clean:
-	-rm $(PROJECT)
+	-rm -f $(PROJECT)
+	-rm -f AIDE-$(PROJECT)
 	make -C bootrom clean
 	make -C lideflash clean
+	make -C lidetool clean
 	make -C rename clean
 	-rm -rf *.rom
 	-rm -rf $(BUILDDIR)
-	make -C lideflash/bootblock clean
+	make -C aide-boot clean

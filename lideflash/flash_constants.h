@@ -22,7 +22,6 @@
 #define FLASH_MANUF      0xBF
 #define FLASH_DEV        0xB5
 #define FLASH_SIZE       0x8000 // Actually a 128K ROM but only 32K mapped
-#define FLASH_SECTORSIZE 0x2000
 
 // Command addresses left-shifted because Flash A0 = CPU A1
 #define ADDR_CMD_STEP_1  (0x5555 << 1)

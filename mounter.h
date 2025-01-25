@@ -4,7 +4,6 @@
 struct UnitStruct
 {
 	ULONG unitNum;
-	UBYTE deviceType;
 	struct ConfigDev *configDev;
 };
 

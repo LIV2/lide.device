@@ -30,6 +30,8 @@
 
 #define CONFIG_FLASH_EN   0x4000
 
+extern ULONG flashbase;
+
 /**
  * matzetk_enable_flash
  *
@@ -43,14 +45,37 @@ void matzetk_enable_flash(struct ideBoard *board) {
     *configReg |= CONFIG_FLASH_EN;
 }
 
-bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
-    UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
-    UWORD version = (*fwreg) >> 12;
+bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
+  UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
+  UWORD version = (*fwreg) >> 12;
 
-    if (version < minVersion)
-      printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+  if (cd->cd_Driver == NULL) {
+    // Poke IDE register space to ensure ROM overlay turned off
+    UBYTE *pokeReg = (UBYTE *)(cd->cd_BoardAddr + 0x1200);
+    *pokeReg = 0x00;
+  }
 
-    return (version >= minVersion);
+  if (version < minVersion && !silent)
+    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+
+  return (version >= minVersion);
+}
+
+/**
+ * matzetk_bankSelect
+ * 
+ * @param bank the bank number to select
+ * @param boardBase base address of the IDE board
+*/
+void matzetk_bankSelect(UBYTE bank, struct ideBoard *board) {
+  if (board->cd->cd_BoardSize > 65536) {
+    if (bank == 1) {
+      flashbase = (ULONG)board->cd->cd_BoardAddr + 65537;
+    } else {
+      flashbase = (ULONG)board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
+    }
+    board->flashbase = (void *)flashbase;
+  }
 }
 
 /**
@@ -60,16 +85,18 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion) {
 */
 void setup_matzetk_board(struct ideBoard *board) {
   board->bootrom          = ATBUS;
-  board->bankSelect       = NULL;
-  board->flash_init       = &flash_init;
-  board->flash_erase_bank = NULL;
-  board->flash_erase_chip = &flash_erase_chip;
-  board->flash_writeByte  = &flash_writeByte;
   board->writeEnable      = &matzetk_enable_flash;
   board->rebootRequired   = true; // write enable turns off IDE so we must reboot afterwards
+  board->banks            = 1;
 
+  if (boardIs68ec020tk(board->cd)) {
+    board->bankSelect    = &matzetk_bankSelect;
+    board->banks         = 2;
+  } else {
+    board->bankSelect    = NULL;
+  }
 
-  board->flashbase = board->cd->cd_BoardAddr + 1; // Olga BootROM is on odd addresses
+  board->flashbase = board->cd->cd_BoardAddr + 1; // BootROM is on odd addresses
 }
 
 /**
@@ -103,4 +130,22 @@ bool boardIs68ec020tk(struct ConfigDev *cd) {
       return true;
 
   return false;
+}
+
+/**
+ * boardIsZorroLanIDE
+ *
+ * Returns true the board is a Zorro-LAN-IDE
+*/
+bool boardIsZorroLanIDE(struct ConfigDev *cd) {
+  struct ConfigDev *prevCD1, *prevCD2;
+
+  prevCD1 = (struct ConfigDev *)cd->cd_Node.ln_Pred;
+  if ((prevCD2 = (struct ConfigDev *)prevCD1->cd_Node.ln_Pred) != NULL) {
+    if (prevCD1->cd_Rom.er_Manufacturer == MANUF_ID_A1K && prevCD1->cd_Rom.er_Product == PROD_ID_MATZE_CLOCKPORT &&
+        prevCD2->cd_Rom.er_Manufacturer == MANUF_ID_A1K && prevCD2->cd_Rom.er_Product == PROD_ID_MATZE_LAN)
+      
+      return true;
+  }
+  return false;  
 }

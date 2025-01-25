@@ -19,6 +19,12 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
+                          if invoked from a macro, macro arguments are expanded). */
+#define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
+
+#define VERSION_STRING "$VER: lideflash " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
+
 // Bank Sel register of RIPPLE
 #define BANK_SEL_REG 0x8000
 
@@ -26,9 +32,12 @@
 // NDK 1.3 definition of FindConfigDev is incorrect which causes "makes pointer from integer without a cast" warning
 struct ConfigDev* FindConfigDev(struct ConfigDev*, LONG, LONG);
 
-// NDK 1.3 lacks ColdReboot, so define it
-#ifndef ColdReboot
+// NDK 1.3 includes lacks these, so define them here
+#ifdef __KICK13__
 void ColdReboot();
+struct DosList *LockDosList(ULONG);
+struct DosList *NextDosEntry(struct DosList *, ULONG);
+void *UnLockDosList(ULONG);
 #endif
 
 enum BOOTROM {
@@ -39,14 +48,17 @@ enum BOOTROM {
 struct ideBoard {
   struct ConfigDev *cd;
   enum BOOTROM bootrom;
-  void *flashbase;
+  void * volatile flashbase;
   bool rebootRequired;
-  bool (*flash_init)(UBYTE *, UBYTE *, ULONG *);
-  void (*flash_erase_chip)();
-  void (*flash_erase_bank)();
-  void (*flash_writeByte)(ULONG, UBYTE);
-  void (*bankSelect)(UBYTE, UBYTE *);
+  uint8_t banks;
+  void (*bankSelect)(UBYTE, struct ideBoard *);
   void (*writeEnable)(struct ideBoard *);
+};
+
+struct dosDev {
+  struct MinNode mn;
+  struct MsgPort *handler;
+  char *name;
 };
 
 ULONG getFileSize(char *);

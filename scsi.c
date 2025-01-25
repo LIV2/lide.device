@@ -84,6 +84,7 @@ void scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error)
  * @returns Pointer to an initialized SCSICmd struct
 */
 struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     UBYTE          *cdb = NULL;
     struct SCSICmd *cmd = NULL;
 
@@ -113,6 +114,8 @@ struct SCSICmd * MakeSCSICmd(ULONG cdbSize) {
  * @param cmd Pointer to a SCSICmd struct to be deleted
 */
 void DeleteSCSICmd(struct SCSICmd *cmd) {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+
     if (cmd) {
         UBYTE *cdb = cmd->scsi_Command;
         if (cdb) FreeMem(cdb,(ULONG)cmd->scsi_CmdLength);

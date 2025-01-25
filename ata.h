@@ -14,10 +14,24 @@
 #error "MAX_TRANSFER_SECTORS cannot be larger than 256"
 #endif
 
+#ifdef SIMPLE_IDE
+
+#define NO_AUTOCONFIG
+
+#define BOARD_BASE 0xEF0000
+#define CHANNEL_0  0x2000
+#define CHANNEL_1  0x1000
+#define IDE_CSMASK 0x0000
+#define NEXT_REG   0x4
+
+#else
+
 #define CHANNEL_0  0x1000
 #define CHANNEL_1  0x2000
 #define IDE_CSMASK 0x0000
 #define NEXT_REG   0x200
+
+#endif
 
 // BYTE Offsets
 #define ata_reg_data         0*NEXT_REG + IDE_CSMASK
@@ -101,6 +115,6 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit);
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 
-void ata_read_unaligned_long(void *source, void *destination);
-void ata_write_unaligned_long(void *source, void *destination);
+void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
+void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
 #endif

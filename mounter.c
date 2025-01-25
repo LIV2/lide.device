@@ -35,7 +35,6 @@
 #include <libraries/expansion.h>
 #include <libraries/expansionbase.h>
 #include <libraries/configvars.h>
-#include <clib/alib_protos.h>
 #include <dos/dos.h>
 #include <dos/dosextens.h>
 #include <dos/doshunks.h>
@@ -49,7 +48,7 @@
 
 #include "ndkcompat.h"
 #include "mounter.h"
-#include "scsi.h"
+#include "lide_alib.h"
 
 #if TRACE
 #define dbg Trace
@@ -61,12 +60,8 @@
 #define LSEG_DATASIZE (512 / 4 - 5)
 
 #if NO_CONFIGDEV
-extern UBYTE entrypoint, entrypoint_end;
 extern UBYTE bootblock, bootblock_end;
 #endif
-
-struct ExecBase *SysBase;
-struct FileSysResource *FileSysResBase = NULL;
 
 struct MountData
 {
@@ -94,52 +89,21 @@ struct MountData
 };
 
 // Get Block size of unit by sending a SCSI READ CAPACITY 10 command
-int GetBlockSize(struct IOStdReq *req) {
-	struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+	
+	req->iotd_Req.io_Command = TD_GETGEOMETRY;
+	req->iotd_Req.io_Data    = geometry;
+	req->iotd_Req.io_Length  = sizeof(struct DriveGeometry);
 
-	if (cmd == NULL) return 0;
-
-	struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)cmd->scsi_Command;
-	BYTE err;
-	int ret = -1;
-
-	struct SCSI_CAPACITY_10 *result = AllocMem(sizeof(struct SCSI_CAPACITY_10),MEMF_CLEAR|MEMF_ANY);
-
-	if (!result) {
-		DeleteSCSICmd(cmd);
-		return -1;
-	}
-
-	cdb->operation   = SCSI_CMD_READ_CAPACITY_10;
-	cmd->scsi_Length = sizeof(struct SCSI_CAPACITY_10);
-	cmd->scsi_Data   = (UWORD *)result;
-	cmd->scsi_Flags  = SCSIF_READ;
-	cdb->lba         = 0;
-
-	req->io_Command = HD_SCSICMD;
-	req->io_Data    = cmd;
-	req->io_Length  = sizeof(struct SCSICmd);
-
-	for (int retry = 0; retry < 3; retry++) {
-		if ((err = DoIO((struct IORequest *)req)) == 0) break;
-	}
-
-	if (err == 0 && req->io_Length > 0) {
-		ret = result->block_size;
-	} else {
-		ret = -1;
-	}
-
-	if (cmd)    DeleteSCSICmd(cmd);
-	if (result) FreeMem(result,sizeof(struct SCSI_CAPACITY_10));
-
-	return ret;
+	return DoIO((struct IORequest *)req);
 }
 
 #if CDBOOT
 // CheckPVD
 // Check for "CDTV" or "AMIGA BOOT" as the System ID in the PVD
 bool CheckPVD(struct IOStdReq *ior) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 	const char sys_id_1[] = "CDTV";
 	const char sys_id_2[] = "AMIGA BOOT";
 	const char iso_id[]   = "CD001";
@@ -221,7 +185,7 @@ struct MsgPort *W_CreateMsgPort(struct ExecBase *SysBase)
 		{
 			ret->mp_Flags = PA_SIGNAL;
 			ret->mp_Node.ln_Type = NT_MSGPORT;
-  			NewList(&ret->mp_MsgList);
+  			L_NewList(&ret->mp_MsgList);
 			ret->mp_SigBit = sb;
 			ret->mp_SigTask = FindTask(NULL);
 			return ret;
@@ -630,7 +594,7 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 			//char *CreatorStr = (char *)AllocMem(strlen(creator)+1,MEMF_PUBLIC|MEMF_CLEAR);
 			//char *FsResName = (char *)AllocMem(strlen(resourceName)+1,MEMF_PUBLIC|MEMF_CLEAR);
 
-			NewList(&fsr->fsr_FileSysEntries);
+			L_NewList(&fsr->fsr_FileSysEntries);
 			fsr->fsr_Node.ln_Type = NT_RESOURCE;
 			strcpy(FsResName, resourceName);
 			fsr->fsr_Node.ln_Name = FsResName;
@@ -752,8 +716,8 @@ static void CreateFakeConfigDev(struct MountData *md)
 
 	configDev = AllocConfigDev();
 	if (configDev) {
-		configDev->cd_BoardAddr = (void*)&entrypoint;
-		configDev->cd_BoardSize = (UBYTE*)&entrypoint_end - (UBYTE*)&entrypoint;
+		configDev->cd_BoardAddr = NULL;
+		configDev->cd_BoardSize = 0;
 		configDev->cd_Rom.er_Type = ERTF_DIAGVALID;
 		ULONG bbSize = &bootblock_end - &bootblock;
 		ULONG daSize = sizeof(struct DiagArea) + bbSize;
@@ -763,7 +727,9 @@ static void CreateFakeConfigDev(struct MountData *md)
 			diagArea->da_BootPoint = sizeof(struct DiagArea);
 			diagArea->da_Size = (UWORD)daSize;
 			copymem(diagArea + 1, &bootblock, bbSize);
-			*((ULONG*)&configDev->cd_Rom.er_Reserved0c) = (ULONG)diagArea;
+			// cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
+			ULONG *da_Pointer = (ULONG *)&configDev->cd_Rom.er_Reserved0c;
+			*da_Pointer = (ULONG)diagArea;
 			cacheclear(md);
 		}
 		md->configDev = configDev;
@@ -810,6 +776,29 @@ static BOOL CompareBSTRNoCase(const UBYTE *src1, const UBYTE *src2)
 }
 
 // Check for duplicate device names
+static bool CheckDevName(struct MountData *md, UBYTE *bname) {
+	struct ExecBase *SysBase = md->SysBase;
+	bool found = false;
+
+	Forbid();
+	struct BootNode *bn;
+	for (bn = (struct BootNode*)md->ExpansionBase->MountList.lh_Head;
+		 bn->bn_Node.ln_Succ != NULL;
+		 bn = (struct BootNode*)bn->bn_Node.ln_Succ)
+	{
+		struct DeviceNode *dn = bn->bn_DeviceNode;
+		const UBYTE *bname2 = BADDR(dn->dn_Name);
+		if (CompareBSTRNoCase(bname, bname2)) {
+		 	found = true;
+		}
+	}
+
+	Permit();
+	return found;
+
+}
+
+// Check for duplicate device names and fix
 static void CheckAndFixDevName(struct MountData *md, UBYTE *bname)
 {
 	struct ExecBase *SysBase = md->SysBase;
@@ -990,6 +979,8 @@ static LONG ScanRDSK(struct MountData *md)
 #if CDBOOT
 static struct FileSysEntry *scan_filesystems(void)
 {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+	struct FileSysResource *FileSysResBase = NULL;
 	struct FileSysEntry *fse, *cdfs=NULL;
 
 	/* NOTE - you should actually be in a Forbid while accessing any
@@ -1037,8 +1028,7 @@ static LONG ScanCDROM(struct MountData *md)
 {
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct FileSysEntry *fse=NULL;
-	char dosName[] = "CD0";
-	static unsigned int cnt = 0;
+	char dosName[] = "\3CD0"; // BCPL String
 	LONG bootPri;
 
 	// "CDTV" or "AMIGA BOOT"?
@@ -1052,7 +1042,7 @@ static LONG ScanCDROM(struct MountData *md)
 
 	memset(&pp,0,sizeof(struct ParameterPacket));
 
-	pp.dosname              = dosName;
+	pp.dosname              = dosName + 1;
 	pp.execname             = md->devicename;
 	pp.unitnum              = md->unitnum;
 	pp.de.de_TableSize      = sizeof(struct DosEnvec);
@@ -1073,7 +1063,14 @@ static LONG ScanCDROM(struct MountData *md)
 		return -1;
 	}
 
-	dosName[2]='0' + cnt;
+	for (int i=0; i<9; i++) {
+		if (CheckDevName(md,dosName)) {
+			dosName[3] += 1;
+		} else {
+			break;
+		}
+	}
+
 	struct DeviceNode *node = MakeDosNode(&pp);
 	if (!node) {
 		// printf("Could not create DosNode\n");
@@ -1098,8 +1095,13 @@ static LONG ScanCDROM(struct MountData *md)
 		dstPatch++;
 	}
 
+#if NO_CONFIGDEV
+	if (!md->configDev && !md->DOSBase) {
+		CreateFakeConfigDev(md);
+	}
+#endif
+
 	AddBootNode(bootPri, ADNF_STARTPROC, node, md->configDev);
-	cnt++;
 
 	return 1;
 }
@@ -1111,12 +1113,12 @@ LONG MountDrive(struct MountStruct *ms)
 {
 	LONG  ret = -1;
 	ULONG uidx = 0;
-	int   blockSize = 0;
 	struct UnitStruct *unit;
 	struct MsgPort *port = NULL;
 	struct IOExtTD *request = NULL;
 	struct ExpansionBase *ExpansionBase;
 	struct ExecBase *SysBase = ms->SysBase;
+	struct DriveGeometry geom;
 
 	dbg("Starting..\n");
 	ExpansionBase = (struct ExpansionBase*)OpenLibrary("expansion.library", 34);
@@ -1138,15 +1140,15 @@ LONG MountDrive(struct MountStruct *ms)
 						dbg("OpenDevice('%s', %"PRId32", %p, 0)\n", ms->deviceName, unit->unitNum, request);
 						UBYTE err = OpenDevice(ms->deviceName, unit->unitNum, (struct IORequest*)request, 0);
 						if (err == 0) {
-							if ((blockSize = GetBlockSize((struct IOStdReq *)request)) > 0) {
+							if ((err = GetGeometry(request,&geom)) == 0) {
 								ret = -1;
 								md->request    = request;
 								md->devicename = ms->deviceName;
 								md->unitnum    = unit->unitNum;
-								md->blocksize  = blockSize;
+								md->blocksize  = geom.dg_SectorSize;
 								md->configDev  = unit->configDev;
 #if CDBOOT
-								if (unit->deviceType == DG_CDROM) {
+								if (geom.dg_DeviceType == DG_CDROM) {
 									ret = ScanCDROM(md);
 								} else {
 									ret = ScanRDSK(md);

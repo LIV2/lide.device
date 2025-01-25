@@ -8,7 +8,6 @@
 #include <exec/errors.h>
 #include <exec/execbase.h>
 #include <exec/resident.h>
-#include <proto/alib.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <resources/filesysres.h>
@@ -24,8 +23,12 @@
 #include "td64.h"
 #include "mounter.h"
 #include "debug.h"
+#include "lide_alib.h"
 
-struct ExecBase *SysBase;
+#ifdef NO_AUTOCONFIG
+extern UBYTE bootblock, bootblock_end;
+#endif
+
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
@@ -45,12 +48,12 @@ asm("romtag:                                \n"
     "       dc.b    "XSTR(DEVICE_VERSION)"  \n"
     "       dc.b    "XSTR(NT_DEVICE)"       \n"
     "       dc.b    "XSTR(DEVICE_PRIORITY)" \n"
-    "       dc.l    _device_name+4          \n"
+    "       dc.l    _device_name            \n"
     "       dc.l    _device_id_string       \n"
     "       dc.l    _init                   \n");
 
-char device_name[] = DEVICE_NAME;
-char const device_id_string[] = DEVICE_ID_STRING;
+const char device_name[] = DEVICE_NAME;
+const char device_id_string[] = DEVICE_ID_STRING;
 
 /**
  * set_dev_name
@@ -61,13 +64,18 @@ char const device_id_string[] = DEVICE_ID_STRING;
 char * set_dev_name(struct DeviceBase *dev) {
     struct ExecBase *SysBase = dev->SysBase;
 
-    ULONG device_prefix[] = {' nd.', ' rd.', ' th.'};
-    char * devName = (device_name + 4); // Start with just the base device name, no prefix
+    const ULONG device_prefix[] = {' nd.', ' rd.', ' th.'};
+    char * devName = (char *)device_name;
 
     /* Prefix the device name if a device with the same name already exists */
     for (int i=0; i<8; i++) {
         if (FindName(&SysBase->DeviceList,devName)) {
-            if (i==0) devName = device_name;
+            if (i == 0) {
+                devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
+                if (devName == NULL) return NULL;
+                strncpy(devName + 4,device_name,sizeof(device_name));
+            }
+            
             switch (i) {
                 case 0:
                     *(ULONG *)devName = device_prefix[0];
@@ -89,56 +97,41 @@ char * set_dev_name(struct DeviceBase *dev) {
     return NULL;
 }
 
+#ifdef NO_AUTOCONFIG
 /**
- * L_CreateTask
- *
- * Create a task with tc_UserData populated before it starts
- * @param taskName Pointer to a null-terminated string
- * @param priority Task Priority between -128 and 127
- * @param funcEntry Pointer to the first executable instruction of the Task code
- * @param stackSize Size in bytes of stack for the task
- * @param userData Pointer to User Data
-*/
-struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData) {
-        stackSize = (stackSize + 3UL) & ~3UL;
+ * CreateFakeConfigDev
+ * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
+ * Adapted from mounter.c by Toni Wilen
+ * 
+ * @param SysBase Pointer to SysBase
+ * @param ExpansionBase Pointer to ExpansionBase
+ * @returns Pointer to a ConfigDev struct
+ */
+struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *ExpansionBase)
+{
+	struct ConfigDev *cd;
 
-        struct Task *task;
-
-        struct {
-            struct Node ml_Node;
-            UWORD ml_NumEntries;
-            struct MemEntry ml_ME[2];
-        } alloc_ml = {
-            .ml_NumEntries = 2,
-            .ml_ME[0].me_Un.meu_Reqs = MEMF_PUBLIC|MEMF_CLEAR,
-            .ml_ME[1].me_Un.meu_Reqs = MEMF_ANY|MEMF_CLEAR,
-            .ml_ME[0].me_Length = sizeof(struct Task),
-            .ml_ME[1].me_Length = stackSize
-        };
-
-        memset(&alloc_ml.ml_Node,0,sizeof(struct Node));
-
-        struct MemList *ml = AllocEntry((struct MemList *)&alloc_ml);
-        if ((ULONG)ml & 1<<31) {
-            Info("Couldn't allocate memory for task\n");
-            return NULL;
-        }
-
-        task                  = ml->ml_ME[0].me_Un.meu_Addr;
-        task->tc_SPLower      = ml->ml_ME[1].me_Un.meu_Addr;
-        task->tc_SPUpper      = ml->ml_ME[1].me_Un.meu_Addr + stackSize;
-        task->tc_SPReg        = task->tc_SPUpper;
-        task->tc_UserData     = userData;
-        task->tc_Node.ln_Name = taskName;
-        task->tc_Node.ln_Type = NT_TASK;
-        task->tc_Node.ln_Pri  = priority;
-        NewList(&task->tc_MemEntry);
-        AddHead(&task->tc_MemEntry,(struct Node *)ml);
-
-        AddTask(task,funcEntry,NULL);
-
-        return task;
+	cd = AllocConfigDev();
+	if (cd) {
+		cd->cd_BoardAddr = NULL;
+		cd->cd_BoardSize = 0;
+		cd->cd_Rom.er_Type = ERTF_DIAGVALID;
+		ULONG bbSize = &bootblock_end - &bootblock;
+		ULONG daSize = sizeof(struct DiagArea) + bbSize;
+		struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
+		if (diagArea) {
+			diagArea->da_Config     = DAC_CONFIGTIME;
+			diagArea->da_BootPoint  = sizeof(struct DiagArea);
+			diagArea->da_Size       = (UWORD)daSize;
+            CopyMem(&bootblock, diagArea+1, bbSize);
+			// cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
+			ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
+			*da_Pointer = (ULONG)diagArea;
+		}
+	}
+    return cd;
 }
+#endif
 
 /**
  * sleep
@@ -147,13 +140,14 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
  * @param microseconds Microseconds to wait
 */
 static void sleep(ULONG seconds, ULONG microseconds) {
+    struct ExecBase *SysBase = *(struct ExecBase**)4UL;
 
     struct timerequest *tr = NULL;
     struct MsgPort     *iomp = NULL;
 
 
-    if ((iomp = CreatePort(NULL,0))) {
-        if ((tr = (struct timerequest *)CreateExtIO(iomp, sizeof(struct timerequest)))) {
+    if ((iomp = L_CreatePort(NULL,0))) {
+        if ((tr = (struct timerequest *)L_CreateExtIO(iomp, sizeof(struct timerequest)))) {
             if ((OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)tr,0)) == 0) {
                 tr->tr_node.io_Command = TR_ADDREQUEST;
                 tr->tr_time.tv_sec = seconds;
@@ -161,9 +155,9 @@ static void sleep(ULONG seconds, ULONG microseconds) {
                 DoIO((struct IORequest *)tr);
                 CloseDevice((struct IORequest *)tr);
             }
-            DeleteExtIO((struct IORequest *)tr);
+            L_DeleteExtIO((struct IORequest *)tr);
         }
-        DeletePort(iomp);
+        L_DeletePort(iomp);
     }
 }
 
@@ -176,6 +170,7 @@ static void sleep(ULONG seconds, ULONG microseconds) {
  * @return BOOL True if CDFS found
 */
 static BOOL FindCDFS() {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct FileSysResource *fsr = OpenResource(FSRNAME);
     struct FileSysEntry *fse;
 
@@ -190,11 +185,12 @@ static BOOL FindCDFS() {
 #endif
 
 static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
+    struct ExecBase *SysBase = dev->SysBase;
     bool found = false;
 
     struct IDEUnit *unit;
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -229,7 +225,7 @@ static void Cleanup(struct DeviceBase *dev) {
 
     struct IDEUnit *unit;
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -346,13 +342,14 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->lib.lib_IdString     = (APTR)device_id_string;
 
     dev->isOpen        = FALSE;
-    dev->numUnits     = 0;
-    dev->numTasks     = 0;
+    dev->numUnits      = 0;
+    dev->numTasks      = 0;
+    dev->hasRemovables = false;
 
-    NewList((struct List *)&dev->units);
+    L_NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
 
-    NewList((struct List *)&dev->ideTasks);
+    L_NewList((struct List *)&dev->ideTasks);
 
     if (!(ExpansionBase = (struct Library *)OpenLibrary("expansion.library",0))) {
         Cleanup(dev);
@@ -361,6 +358,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->ExpansionBase = ExpansionBase;
     }
 
+    struct IDETask *itask;
+    struct ConfigDev *cd;
+    struct Task *self = FindTask(NULL);
+
+#ifndef NO_AUTOCONFIG
+
     struct CurrentBinding cb;
 
     if (GetCurrentBinding(&cb,sizeof(struct CurrentBinding)) == 0) {
@@ -368,9 +371,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    struct ConfigDev *cd = cb.cb_ConfigDev;
-    struct IDETask *itask;
-    struct Task *self = FindTask(NULL);
+    cd = cb.cb_ConfigDev;
 
     // Add an IDE Task for each board
     // When loaded from Autoconfig ROM this will still only attach to one board.
@@ -390,6 +391,17 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         cd->cd_Driver = dev;
 
         numBoards++;
+#else
+        /**
+         * A ConfigDev is needed for Autoboot
+         * If we are booting a non-autoconfig device we need to create a ConfigDev struct
+         * This could also be done in mounter.c but that would create a new ConfigDev for each unit
+         */
+        cd = CreateFakeConfigDev(SysBase,ExpansionBase);
+        cd->cd_BoardAddr = (APTR)BOARD_BASE;
+        cd->cd_BoardSize = 0x1000;
+        numBoards = 1;
+#endif
         UBYTE channels = detectChannels(cd);
 
         for (int c=0; c < channels; c++) {
@@ -416,7 +428,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
             if (itask->task == NULL) {
                 Info("IDE Task %ld failed\n",itask->taskNum);
-                    continue;
+                continue;
             } else {
                 Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
             }
@@ -434,8 +446,9 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             AddTail((struct List *)&dev->ideTasks,(struct Node *)&itask->mn_Node);
             dev->numTasks++;
         }
+#ifndef NO_AUTOCONFIG
     }
-
+#endif
     Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->numUnits, numBoards);
 
     if (dev->numTasks == 0) {
@@ -443,7 +456,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
+    if (dev->hasRemovables) dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;
@@ -510,6 +523,7 @@ This call is guaranteed to be single-threaded; only one task
 will execute your Open at a time. */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
     bool found = false;
@@ -535,7 +549,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
         goto exit;
     }
 
-    if (SysBase->SoftVer >= 36) {
+    if (SysBase->LibNode.lib_Version >= 36) {
         ObtainSemaphoreShared(&dev->ulSem);
     } else {
         ObtainSemaphore(&dev->ulSem);
@@ -648,7 +662,7 @@ static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6")
     return 0;
 }
 
-static UWORD supported_commands[] =
+const UWORD supported_commands[] =
 {
     CMD_CLEAR,
     CMD_UPDATE,
@@ -689,6 +703,8 @@ static UWORD supported_commands[] =
 */
 static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
+
     BYTE error = TDERR_NotSpecified;
 
     // Check that the IOReq has a sane Device / Unit pointer first
@@ -811,7 +827,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                     result->SizeAvailable     = sizeof(struct NSDeviceQueryResult);
                     result->DeviceType        = NSDEVTYPE_TRACKDISK;
                     result->DeviceSubType     = 0;
-                    result->SupportedCommands = supported_commands;
+                    result->SupportedCommands = (UWORD *)supported_commands;
 
                     ioreq->io_Actual = sizeof(struct NSDeviceQueryResult);
                     error = 0;
@@ -844,6 +860,8 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 */
 static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
+    struct ExecBase *SysBase = dev->SysBase;
+
     Trace((CONST_STRPTR) "running abort_io()\n");
 
     struct IORequest *io;
@@ -894,7 +912,7 @@ static const ULONG device_vectors[] =
 */
 static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 {
-    SysBase = *(struct ExecBase **)4UL;
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
     struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
@@ -921,7 +939,7 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
 #endif
         struct IDEUnit *unit;
 
-        if (SysBase->SoftVer >= 36) {
+        if (SysBase->LibNode.lib_Version >= 36) {
             ObtainSemaphoreShared(&mydev->ulSem);
         } else {
             ObtainSemaphore(&mydev->ulSem);
@@ -937,7 +955,6 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
                 if (unit->deviceType == DG_CDROM && !CDBoot) continue;
 #endif
                 ms->Units[index].unitNum    = unit->unitNum;
-                ms->Units[index].deviceType = unit->deviceType;
                 ms->Units[index].configDev  = unit->cd;
                 index++;
             }

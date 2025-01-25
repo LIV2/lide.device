@@ -15,6 +15,11 @@
 
 #define MAX_UNITS 4
 
+// VSCode C/C++ extension doesn't like the asm("<reg>") syntax
+#ifdef __INTELLISENSE__
+#define asm(x)
+#endif
+
 enum xfer {
     longword_movem,
     longword_move
@@ -44,10 +49,10 @@ struct IDEUnit {
     struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
-    void  (*read_fast)(void *, void *);
-    void  (*write_fast)(void *, void *);
-    void  (*read_unaligned)(void *, void *);
-    void  (*write_unaligned)(void *, void *);
+    void  (*read_fast)(void * asm("a0"), void * asm("a1"));
+    void  (*write_fast)(void * asm("a0"), void * asm("a1"));
+    void  (*read_unaligned)(void * asm("a0"), void * asm("a1"));
+    void  (*write_unaligned)(void * asm("a0"), void * asm("a1"));
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
     volatile bool  deferTUR;
@@ -88,6 +93,7 @@ struct DeviceBase {
     struct MinList         units;
     struct SignalSemaphore ulSem;
     struct MinList         ideTasks;
+    volatile bool          hasRemovables; // modified by IDETask(s), Start the diskChange task? 
 };
 
 struct IDETask {
@@ -111,14 +117,19 @@ struct IDETask {
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
 
 #ifndef LIDE_IS_SCSI
-#define DEVICE_NAME "    lide.device"
+#define DEVICE_NAME "lide.device"
 #else
-#define DEVICE_NAME "    scsi.device"
+#define DEVICE_NAME "scsi.device"
 #endif
 
 #define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
+
+// The build process will define the version/revision based on the latest git tag
+#ifndef DEVICE_VERSION
 #define DEVICE_VERSION 40
-#define DEVICE_REVISION 9
-#define DEVICE_PRIORITY 0 /* Most people will not need a priority and should leave it at zero. */
+#define DEVICE_REVISION 0
+#endif
+
+#define DEVICE_PRIORITY 10
 
 #endif

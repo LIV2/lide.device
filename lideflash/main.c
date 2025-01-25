@@ -24,6 +24,8 @@
 #include <stdbool.h>
 #include <proto/dos.h>
 #include <dos/dos.h>
+#include <proto/alib.h>
+#include <dos/dosextens.h>
 
 #include "flash.h"
 #include "main.h"
@@ -33,19 +35,23 @@
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
 
-#define PROD_ID_CIDER     0x05
-#define PROD_ID_RIPPLE    0x07
+#define PROD_ID_CIDER  0x05
+#define PROD_ID_RIPPLE 0x07
+#define PROD_ID_RIDE   0x09
 
 #define SERIAL_LIV2  0x4C495632
 
 #define ROMSIZE 32768
 
+const char ver[] = VERSION_STRING;
+
 struct Library *DosBase;
 struct ExecBase *SysBase;
 struct ExpansionBase *ExpansionBase = NULL;
 struct Config *config;
+bool devsInhibited = false;
 
-void bankSelect(UBYTE bank, UBYTE *boardBase);
+void bankSelect(UBYTE bank, struct ideBoard *board);
 
 /**
  * _ColdReboot()
@@ -70,6 +76,116 @@ static void _ColdReboot() {
 }
 
 /**
+ * inhibitDosDevs
+ * 
+ * inhibit/uninhibit all drives
+ * Some boards lock out IDE when flash mode is enabled
+ * Send an ACTION_INHIBIT packet to all devices to flush the buffers to disk first
+ * 
+ * @param inhibit (bool) True: inhibit, False: uninhibit 
+ */
+bool inhibitDosDevs(bool inhibit) {
+  bool success = true;
+  struct MsgPort *mp = CreatePort(NULL,0);
+  struct Message msg;
+  struct DosPacket __aligned packet;
+  struct DosList *dl;
+  struct dosDev *dd;
+
+  struct MinList devs;
+  NewList((struct List *)&devs);
+
+  if (mp) {
+    packet.dp_Port = mp;
+    packet.dp_Link = &msg;
+    msg.mn_Node.ln_Name = (char *)&packet;
+
+    if (SysBase->LibNode.lib_Version >= 36) {
+
+      dl = LockDosList(LDF_DEVICES|LDF_READ);
+      // Build a list of dos devices to inhibit
+      // We need to send a packet to the FS to do the inhibit after releasing the lock
+      // So build a list of devs to be (un)-inhibited
+      while (dl = NextDosEntry(dl,LDF_DEVICES)) {
+        dd = AllocMem(sizeof(struct dosDev),MEMF_ANY|MEMF_CLEAR);
+        if (dd) {
+          if (dl->dol_Task) { // Device has a FS process?
+            dd->handler = dl->dol_Task;
+            AddTail((struct List *)&devs,(struct Node *)dd);
+          }
+        }
+      }
+      UnLockDosList(LDF_DEVICES|LDF_READ);
+
+    } else {
+      // For Kickstart 1.3
+      // Build a list of dos devices the old fashioned way
+      struct RootNode *rn = DOSBase->dl_Root;
+      struct DosInfo *di = BADDR(rn->rn_Info);
+
+      Forbid();
+      // Build a list of dos devices to inhibit
+      // We need to send a packet to the FS but that can't be done while in Forbid()
+      // So build a list of devs to be (un)-inhibited
+      for (dl = BADDR(di->di_DevInfo); dl; dl = BADDR(dl->dol_Next)) {
+        if (dl->dol_Type == DLT_DEVICE && dl->dol_Task) {
+          dd = AllocMem(sizeof(struct dosDev),MEMF_ANY|MEMF_CLEAR);
+          if (dd) {
+            if (dl->dol_Task) { // Device has a FS process?
+              dd->handler = dl->dol_Task;
+              AddTail((struct List *)&devs,(struct Node *)dd);
+            }
+          }
+        }
+      }
+      Permit();
+    }
+
+    struct dosDev *next = NULL;
+    // Send an ACTION_INHIBIT packet directly to the FS
+    for (dd = (struct dosDev *)devs.mlh_Head; dd->mn.mln_Succ; dd = next) {
+      if (inhibit) {
+        packet.dp_Port = mp;
+        packet.dp_Type = ACTION_FLUSH;
+        PutMsg(dd->handler,&msg);
+        WaitPort(mp);
+        GetMsg(mp);
+      }
+
+      for (int t=0; t < 3; t++) {
+        packet.dp_Port = mp;
+        packet.dp_Type = ACTION_INHIBIT;
+        packet.dp_Arg1 = (inhibit) ? DOSTRUE : DOSFALSE;
+        PutMsg(dd->handler,&msg);
+        WaitPort(mp);
+        GetMsg(mp);
+
+        if (packet.dp_Res1 == DOSTRUE || packet.dp_Res2 == ERROR_ACTION_NOT_KNOWN)
+          break;
+
+        Delay(1*TICKS_PER_SECOND);
+      }
+
+      if (packet.dp_Res1 == DOSFALSE && packet.dp_Res2 != ERROR_ACTION_NOT_KNOWN) {
+        success = false;
+      }
+
+      next = (struct dosDev *)dd->mn.mln_Succ;
+      Remove((struct Node *)dd);
+      FreeMem(dd,sizeof(struct dosDev));
+
+    }
+
+    DeletePort(mp);
+
+  } else {
+    success = false;
+  }
+
+  return success;
+}
+
+/**
  * setup_liv2_board
  *
  * Configure the board struct for a LIV2 Board (CIDER/RIPPLE)
@@ -78,10 +194,6 @@ static void _ColdReboot() {
 static void setup_liv2_board(struct ideBoard *board) {
   board->bootrom          = CIDER;
   board->bankSelect       = &bankSelect;
-  board->flash_init       = &flash_init;
-  board->flash_erase_bank = &flash_erase_bank;
-  board->flash_erase_chip = &flash_erase_chip;
-  board->flash_writeByte  = &flash_writeByte;
   board->writeEnable      = NULL;
   board->rebootRequired   = false;
 
@@ -91,6 +203,24 @@ static void setup_liv2_board(struct ideBoard *board) {
     // Newer version of the CIDER & RIPPLE firmware give the IDE device a 128K block, with the top 64K dedicated to the Flash
     // This means we can flash the IDE ROM without having to disable IDE
     board->flashbase += 65536;
+  }
+
+  if (board->cd->cd_Driver == NULL) {
+    // Poke IDE register space to ensure ROM overlay turned off
+    UBYTE *pokeReg = (UBYTE *)(board->cd->cd_BoardAddr + 0x1200);
+    *pokeReg = 0x00;
+  }
+
+  switch (board->cd->cd_Rom.er_Product) {
+    case PROD_ID_RIPPLE:
+      board->banks = 2;
+      break;
+    case PROD_ID_RIDE:
+      board->banks = 4;
+      break;
+    default:
+      board->banks = 1;
+      break;
   }
 }
 
@@ -170,10 +300,10 @@ int main(int argc, char *argv[])
 
   void *driver_buffer = NULL;
   void *driver_buffer2 = NULL;
-  void *cdfs_buffer   = NULL;
+  void *misc_buffer   = NULL;
 
   ULONG romSize    = 0;
-  ULONG cdfsSize   = 0;
+  ULONG miscSize   = 0;
 
   if (DosBase == NULL) {
     return(rc);
@@ -219,24 +349,24 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (config->cdfs_filename) {
+    if (config->misc_filename) {
 
-      cdfsSize = getFileSize(config->cdfs_filename);
+      miscSize = getFileSize(config->misc_filename);
 
-      if (cdfsSize == 0) {
+      if (miscSize == 0) {
         rc = 5;
         goto exit;
       }
 
-      if (cdfsSize > 32768) {
-        printf("CDFS too large!\n");
+      if (miscSize > 32768) {
+        printf("File too large!\n");
         rc = 5;
         goto exit;
       }
 
-      cdfs_buffer = AllocMem(cdfsSize,MEMF_ANY|MEMF_CLEAR);
-      if (cdfs_buffer) {
-        if (readFileToBuf(config->cdfs_filename,cdfs_buffer) == false) {
+      misc_buffer = AllocMem(miscSize,MEMF_ANY|MEMF_CLEAR);
+      if (misc_buffer) {
+        if (readFileToBuf(config->misc_filename,misc_buffer) == false) {
           rc = 5;
           goto exit;
         }
@@ -246,6 +376,15 @@ int main(int argc, char *argv[])
         goto exit;
       }
     }
+    
+    if (!inhibitDosDevs(true)) {
+      printf("Failed to inhibit AmigaDOS volumes, wait for disk activity to stop and try again.\n");
+      rc = 5;
+      inhibitDosDevs(false);
+      goto exit;
+    };
+
+    devsInhibited = true;
 
     if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
 
@@ -266,6 +405,10 @@ int main(int argc, char *argv[])
               printf("Found RIPPLE IDE");
               setup_liv2_board(&board);
               break;
+            } else if (cd->cd_Rom.er_Product == PROD_ID_RIDE) {
+              printf("Found RIDE IDE");
+              setup_liv2_board(&board);
+              break;
             } else {
               continue; // Skip this board
             }
@@ -277,7 +420,7 @@ int main(int argc, char *argv[])
                 if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
-                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER,false)) {
                     continue;
                   }
 
@@ -287,9 +430,18 @@ int main(int argc, char *argv[])
                 } else if (boardIs68ec020tk(cd)) {
                   printf("Found 68EC020-TK");
 
-                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER,false)) {
                     continue;
                   }
+
+                  setup_matzetk_board(&board);
+                  break;
+                } else if (boardIsZorroLanIDE(cd)) {
+                  if (!matzetk_fw_supported(cd,LAN_IDE_MIN_FW_VER,true)) {
+                    continue;
+                  }
+                  
+                  printf("Found Zorro-LAN-IDE");
 
                   setup_matzetk_board(&board);
                   break;
@@ -311,19 +463,28 @@ int main(int argc, char *argv[])
                 if (boardIsOlga(cd)) {
                   printf("Found Dicke Olga");
 
-                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,OLGA_MIN_FW_VER,false)) {
                     continue;
                   }
 
                   setup_matzetk_board(&board);
                   break;
 
-                } else if (boardIsOlga(cd)) {
+                } else if (boardIs68ec020tk(cd)) {
                   printf("Found 68EC020-TK");
 
-                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER)) {
+                  if (!matzetk_fw_supported(cd,TK020_MIN_FW_VER,false)) {
                     continue;
                   }
+
+                  setup_matzetk_board(&board);
+                  break;
+                } else if (boardIsZorroLanIDE(cd)) {
+                  if (!matzetk_fw_supported(cd,LAN_IDE_MIN_FW_VER,true)) {
+                    continue;
+                  }
+                  
+                  printf("Found Zorro-LAN-IDE");
 
                   setup_matzetk_board(&board);
                   break;
@@ -350,25 +511,26 @@ int main(int argc, char *argv[])
           config->rebootRequired = true;
 
         UBYTE manufId,devId;
-        if (board.flash_init(&manufId,&devId,board.flashbase)) {
+        UWORD sectorSize;
 
+        if (flash_init(&manufId,&devId,board.flashbase,&sectorSize)) {
           if (config->eraseFlash) {
             printf("Erasing flash.\n");
-            board.flash_erase_chip();
+            flash_erase_chip();
           }
 
           if (config->ide_rom_filename) {
             if (board.bankSelect != NULL) {
-              board.bankSelect(0,cd->cd_BoardAddr);
+              board.bankSelect(0,&board);
             }
 
             if (config->eraseFlash == false) {
-              if (board.flash_erase_bank != NULL) {
+              if (sectorSize > 0) {
                 printf("Erasing IDE bank...\n");
-                board.flash_erase_bank();
+                flash_erase_bank(sectorSize);
               } else {
                 printf("Erasing IDE flash...\n");
-                board.flash_erase_chip();
+                flash_erase_chip();
               }
             }
             printf("Writing IDE ROM.\n");
@@ -377,21 +539,21 @@ int main(int argc, char *argv[])
             printf("\n");
           }
 
-          if (config->cdfs_filename) {
+          if (config->misc_filename) {
 
-            if (cd->cd_Rom.er_Manufacturer == MANUF_ID_OAHR &&
-                cd->cd_Rom.er_Product == PROD_ID_RIPPLE &&
-                board.bankSelect != NULL) {
+            if (config->misc_bank < board.banks && sectorSize > 0) {
 
-              board.bankSelect(1,cd->cd_BoardAddr);
+              if (board.bankSelect != NULL)
+                board.bankSelect(config->misc_bank,&board);
+
               if (config->eraseFlash == false) {
-                printf("Erasing CDFS bank...\n");
-                board.flash_erase_bank();
+                printf("Erasing bank %d...\n",config->misc_bank);
+                flash_erase_bank(sectorSize);
               }
-              printf("Writing CDFS.\n");
-              writeBufToFlash(&board,cdfs_buffer,board.flashbase,cdfsSize);
+              printf("Writing bank %d.\n",config->misc_bank);
+              writeBufToFlash(&board,misc_buffer,board.flashbase,miscSize);
             } else {
-              printf("This board does not support flashing CDFS.\n");
+              printf("This board does not support flashing bank %d.\n",config->misc_bank);
             }
           }
 
@@ -415,12 +577,15 @@ int main(int argc, char *argv[])
     if (config->rebootRequired) {
       printf("Press return to reboot.\n");
       getchar();
-      if (SysBase->SoftVer >= 36) {
+      if (SysBase->LibNode.lib_Version >= 36) {
         ColdReboot();
       } else {
         _ColdReboot();
       }
     }
+
+    if (devsInhibited)
+      inhibitDosDevs(false);
 
   } else {
     usage();
@@ -429,7 +594,7 @@ int main(int argc, char *argv[])
 exit:
   if (driver_buffer2) FreeMem(driver_buffer2,romSize);
   if (driver_buffer)  FreeMem(driver_buffer,romSize);
-  if (cdfs_buffer)    FreeMem(cdfs_buffer,cdfsSize);
+  if (misc_buffer)    FreeMem(misc_buffer,miscSize);
   if (config)         FreeMem(config,sizeof(struct Config));
   if (ExpansionBase)  CloseLibrary((struct Library *)ExpansionBase);
   if (DosBase)        CloseLibrary((struct Library *)DosBase);
@@ -508,8 +673,13 @@ BOOL readFileToBuf(char *filename, void *buffer) {
  * @param bank the bank number to select
  * @param boardBase base address of the IDE board
 */
-void bankSelect(UBYTE bank, UBYTE *boardBase) {
-  *(boardBase + BANK_SEL_REG) = (bank << 6);
+void bankSelect(UBYTE bank, struct ideBoard *board) {
+  UBYTE *bankReg = board->cd->cd_BoardAddr + BANK_SEL_REG;
+  UBYTE regbits = *bankReg;
+  // Preserve the other bits
+  regbits &= 0x3F;
+  regbits |= (bank << 6);
+  *bankReg = regbits;
 }
 
 
@@ -543,7 +713,7 @@ BOOL writeBufToFlash(struct ideBoard *board, UBYTE *source, UBYTE *dest, ULONG s
       lastProgress = progress;
     }
     sourcePtr = ((void *)source + i);
-    board->flash_writeByte(i,*sourcePtr);
+    flash_writeByte(i,*sourcePtr);
 
   }
 

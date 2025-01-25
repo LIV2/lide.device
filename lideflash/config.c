@@ -39,7 +39,8 @@ struct Config* configure(int argc, char *argv[]) {
 
   if (config == NULL) return NULL;
 
-  config->cdfs_filename    = NULL;
+  config->misc_filename    = NULL;
+  config->misc_bank        = -1;
   config->eraseFlash       = false;
   config->rebootRequired   = false;
   config->assumeYes        = false;
@@ -56,7 +57,18 @@ struct Config* configure(int argc, char *argv[]) {
 
         case 'C':
           if (i+1 < argc) {
-            config->cdfs_filename = argv[i+1];
+            config->misc_filename = argv[i+1];
+            config->misc_bank = 1;
+            i++;
+          }
+          break;
+
+        case '1':
+        case '2':
+        case '3':
+          if (i+1 < argc) {
+            config->misc_filename = argv[i+1];
+            config->misc_bank = (BYTE)(argv[i][1] - '0');
             i++;
           }
           break;
@@ -77,7 +89,7 @@ struct Config* configure(int argc, char *argv[]) {
     }
   }
 
- if (config->ide_rom_filename == NULL && config->cdfs_filename == NULL && config->eraseFlash == false) {
+ if (config->ide_rom_filename == NULL && config->misc_filename == NULL && config->eraseFlash == false) {
       error = true;
   }
 

@@ -7,7 +7,6 @@
 #include <devices/trackdisk.h>
 #include <inline/timer.h>
 #include <proto/exec.h>
-#include <proto/alib.h>
 #include <proto/expansion.h>
 #include <exec/errors.h>
 #include <stdbool.h>
@@ -20,6 +19,7 @@
 #include "string.h"
 #include "blockcopy.h"
 #include "wait.h"
+#include "lide_alib.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
@@ -227,6 +227,92 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     return true;
 }
 
+/**
+ * ata_bench
+ * 
+ * Measure the amount of E Clock ticks taken to transfer 512K from the unit
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @param xfer_routine Pointer to one of the transfer routines
+ * @param buffer pointer to a 512 byte buffer
+ * @return tick count
+ * 
+ */
+static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
+    struct ExecBase *SysBase = unit->SysBase;
+    struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
+    struct EClockVal *startTime;
+    struct EClockVal *endTime;
+    ULONG ticks = 0;
+
+    if (TimerBase->dd_Library.lib_Version < 36) return 0;
+
+    if (buffer) {
+        void (*do_xfer)(void *source asm("a0"), void *destination asm("a1")) = xfer_routine;
+        if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
+            if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
+                ReadEClock(startTime);
+
+                for (int i=0; i<1024; i++) {
+                    do_xfer((void *)unit->drive.status_command,buffer);
+                }
+
+                ReadEClock(endTime);
+                ticks =  (*(uint64_t *)endTime) - (*(uint64_t *)startTime);
+                FreeMem(endTime,sizeof(struct EClockVal));
+            }
+            FreeMem(startTime,sizeof(struct EClockVal));
+        }
+    }
+    return ticks;
+}
+
+/**
+ * ata_autoselect_xfer
+ * 
+ * Set the transfer method for the unit based on the CPU, Board type and benchmark result
+ * 
+ * @param unit Pointer to an IDEUnit struct
+ * @return transfer method
+ */
+static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+    ULONG ticks;
+    void *buf;
+
+    // longword_movem requires 512 Byte register spacing
+    if ((unit->drive.lbaMid - unit->drive.lbaLow) != 512)
+        return longword_move;
+
+    // longword_movem will always be faster on a standard 68000
+    if ((SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) == 0)
+        return longword_movem;
+    
+    // ReadEClock needed by ata_bench not supported before Kick 2.0
+    if (SysBase->LibNode.lib_Version < 36)
+        return longword_movem;
+    
+    if ((buf = AllocMem(512,MEMF_ANY))) {
+        ticks = ata_bench(unit,&ata_read_long_movem,buf);
+        if (ticks > 0 && ata_bench(unit,&ata_read_long_move,buf) < ticks) {
+            return longword_move;
+        } else {
+            return longword_movem;
+        }
+        FreeMem(buf,512);
+    } else {
+        return longword_movem;
+    }
+}
+
+/**
+ * ata_set_xfer
+ * 
+ * Sets the transfer routine for the unit
+ * 
+ * @param unit Pointer to an IDEUnit strict
+ * @param method Transfer routine
+ */
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
     switch (method) {
         default:
@@ -257,14 +343,14 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
  * @returns false on error
 */
 bool ata_init_unit(struct IDEUnit *unit) {
+    struct ExecBase *SysBase = unit->SysBase;
+
     unit->cylinders       = 0;
     unit->heads           = 0;
     unit->sectorsPerTrack = 0;
     unit->blockSize       = 0;
     unit->present         = false;
     unit->mediumPresent   = false;
-
-    ata_set_xfer(unit,unit->xferMethod);
 
     ULONG offset;
     UWORD *buf;
@@ -282,6 +368,9 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->drive.status_command = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status);
 
     *unit->shadowDevHead = *unit->drive.devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+
+    enum xfer method = ata_autoselect_xfer(unit);
+    ata_set_xfer(unit,method);
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
@@ -435,6 +524,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     return 0;
 }
 
+#pragma GCC push_options
 #pragma GCC optimize ("-O3")
 
 /**
@@ -455,6 +545,8 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
+    UBYTE multipleCount = unit->multipleCount;
+    volatile void *dataRegister = unit->drive.data;
 
     if (unit->lba48) {
         command = ATA_CMD_READ_MULTIPLE_EXT;
@@ -462,7 +554,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     }
 
-    void (*ata_xfer)(void *source, void *destination);
+    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if (((ULONG)buffer) & 0x01) {
@@ -511,10 +603,10 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer((void *)unit->drive.data,buffer);
+            for (int i = 0; i < multipleCount && txn_count; i++) {
+                ata_xfer((void *)dataRegister,buffer);
                 txn_count--;
-                buffer += unit->blockSize;
+                buffer += 512;
             }
         }
 
@@ -542,6 +634,8 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     ULONG txn_count; // Amount of sectors to transfer in the current READ/WRITE command
 
     UBYTE command;
+    UBYTE multipleCount = unit->multipleCount;
+    volatile void *dataRegister = unit->drive.data;
 
     if (unit->lba48) {
         command = ATA_CMD_WRITE_MULTIPLE_EXT;
@@ -549,7 +643,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
 
-    void (*ata_xfer)(void *source, void *destination);
+    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if ((ULONG)buffer & 0x01) {
@@ -598,10 +692,10 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < unit->multipleCount && txn_count; i++) {
-                ata_xfer(buffer,(void *)unit->drive.data);
+            for (int i = 0; i < multipleCount && txn_count; i++) {
+                ata_xfer(buffer,(void *)dataRegister);
                 txn_count--;
-                buffer += unit->blockSize;
+                buffer += 512;
             }
         }
 
@@ -617,7 +711,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
  * @param source Pointer to the drive data port
  * @param destination Pointer to the data buffer
 */
-void ata_read_unaligned_long(void *source, void *destination) {
+void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1")) {
     ULONG readLong;
     UBYTE *dest = (UBYTE *)destination;
 
@@ -638,7 +732,7 @@ void ata_read_unaligned_long(void *source, void *destination) {
  * @param source Pointer to the data buffer
  * @param destination Pointer to the drive data port
 */
-void ata_write_unaligned_long(void *source, void *destination) {
+void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1")) {
     UBYTE *src = (UBYTE *)source;
     for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
         *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
@@ -727,6 +821,7 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
     return 0;
 }
 
+#pragma GCC pop_options
 
 /**
  * ata_set_pio

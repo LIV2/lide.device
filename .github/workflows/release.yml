@@ -24,7 +24,7 @@ jobs:
         run: |
           git config --global --add safe.directory "*"
           git fetch --prune --unshallow --tags
-          make clean all disk lha
+          make GIT_REF_NAME=${GITHUB_REF_NAME} clean all disk lha
 
       - uses: actions/upload-artifact@v4.4.0
         with:
