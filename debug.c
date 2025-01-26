@@ -1,11 +1,39 @@
 #include <exec/io.h>
 #include <exec/errors.h>
+#include <inline/exec.h>
 #include <devices/trackdisk.h>
 #include <devices/scsidisk.h>
 
 #include "device.h"
 #include "debug.h"
 #include "newstyle.h"
+
+#if DEBUG & DBG_MEM
+static int memused = 0;
+
+#define OrigAllocMem(___byteSize, ___requirements) \
+      LP2(0xc6, APTR, AllocMem , ULONG, ___byteSize, d0, ULONG, ___requirements, d1,\
+      , EXEC_BASE_NAME)
+
+#define OrigFreeMem(___memoryBlock, ___byteSize) \
+      LP2NR(0xd2, FreeMem , APTR, ___memoryBlock, a1, ULONG, ___byteSize, d0,\
+      , EXEC_BASE_NAME)
+
+void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG requirements)
+{
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    KPrintF("AllocMem: %s:%ld %ld %ld\n", file,line, memused, byteSize);
+    memused += byteSize;
+    return OrigAllocMem(byteSize,requirements);
+}
+
+void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize) {
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    KPrintF("FreeMem: %s:%ld %ld %ld\n", file, line, memused, byteSize);
+    memused -= byteSize;
+    OrigFreeMem(memBlock,byteSize);
+}
+#endif
 
 #if DEBUG & DBG_CMD
 
