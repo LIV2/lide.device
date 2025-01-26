@@ -428,6 +428,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
             if (itask->task == NULL) {
                 Info("IDE Task %ld failed\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IDETask));
                 continue;
             } else {
                 Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
@@ -439,6 +440,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             // If itask->active has been set to false it means the task exited
             if (itask->active == false) {
                 Info("IDE Task %ld exited.\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IDETask));
                 continue;
             }
 
