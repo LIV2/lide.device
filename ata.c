@@ -293,13 +293,15 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
         return longword_movem;
     
     if ((buf = AllocMem(512,MEMF_ANY))) {
+        enum xfer method;
         ticks = ata_bench(unit,&ata_read_long_movem,buf);
         if (ticks > 0 && ata_bench(unit,&ata_read_long_move,buf) < ticks) {
-            return longword_move;
+            method = longword_move;
         } else {
-            return longword_movem;
+            method = longword_movem;
         }
         FreeMem(buf,512);
+        return method;
     } else {
         return longword_movem;
     }
