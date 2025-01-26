@@ -6,9 +6,20 @@
 #define DBG_WARN  2
 #define DBG_TRACE 4
 #define DBG_CMD   8
+#define DBG_MEM   16
 
 #if DEBUG
 #include <clib/debug_protos.h>
+#endif
+
+#if DEBUG & DBG_MEM
+void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG attributes);
+#undef AllocMem
+#define AllocMem(x,y) DebugAllocMem(__FILE__,__LINE__,x,y)
+
+void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize);
+#undef FreeMem
+#define FreeMem(x,y) DebugFreeMem(__FILE__,__LINE__,x,y)
 #endif
 
 #if DEBUG & DBG_INFO
