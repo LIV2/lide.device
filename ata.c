@@ -417,7 +417,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
             if (buf[ata_identify_lba48_sectors + 2] > 0 ||
                 buf[ata_identify_lba48_sectors + 3] > 0) {
                 Info("INIT: Rejecting drive larger than 2TB\n");
-                return false;
+                goto ident_failed;
             }
 
             unit->lba48 = true;
