@@ -12,7 +12,7 @@
 * [Large drive (>4GB) support](#large-drive-4gb-support)
 * [Hardware Implementation](#hardware-implementation)
 * [Building / Development](#building--development)
-* [Acknowledgements](#acknowlegements)
+* [Acknowledgements](#acknowledgements)
 * [Third-party notice](#third-party-notice)
 * [License](#license)
 
@@ -25,7 +25,7 @@
 * [Boot from CD-ROM*](#boot-from-cd-rom)
 * SCSI Direct, NSD, TD64 support
 
-# Suported hardware
+# Supported hardware
 lide.device supports the following devices:
 * [CIDER](https://github.com/LIV2/CIDER)
 * [RIPPLE](https://github.com/LIV2/RIPPLE-IDE)
@@ -86,7 +86,7 @@ The following boards support loading BootCDFileSystem from ROM:
 * 68030-TK2
 
 `BootCDFileSystem` must be flashed to the second bank of the ROM.  
-This can be acheived on RIPPLE and 68EC020-TK boards using `lideflash` i.e  
+This can be achieved on RIPPLE and 68EC020-TK boards using `lideflash` i.e  
 `lideflash -C BootCDFileSystem`
 
 ## Large drive (>4GB) support
@@ -128,7 +128,7 @@ docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} stefanreinauer/amiga-gcc:latest m
 
 If you are using VS Code you can install the "Dev containers" extension which will allow you to develop with the environment ready to go.
 
-## Acknowlegements
+## Acknowledgements
 This driver uses the movem based fast read / write routines from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
 The release of the open source at_apollo_device inspired me to work on this.  
 
