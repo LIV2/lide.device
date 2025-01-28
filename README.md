@@ -2,7 +2,7 @@
 
 ## Table of Contents
 * [Features](#features)
-* [Supported hardware](#suported-hardware)
+* [Supported hardware](#supported-hardware)
 * [Downloads](#downloads)
     * [lide-update.adf](#lide-updateadf)
     * [AIDE-boot.adf](#aide-bootadf)
