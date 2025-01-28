@@ -189,7 +189,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
  * Send an IDENTIFY command to the device and place the results in the buffer
  * @param unit Pointer to an IDEUnit struct
  * @param buffer Pointer to the destination buffer
- * @return fals on error
+ * @return false on error
 */
 bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {

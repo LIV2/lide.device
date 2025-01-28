@@ -385,7 +385,7 @@ void __attribute__((noreturn)) diskchange_task () {
                 Trace("Testing unit %ld\n",unit->unitNum);
                 ioreq->io_Unit = (struct Unit *)unit;
 
-                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request dirßsectly to the ide task
+                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
                 WaitPort(iomp);
                 GetMsg(iomp);
 
@@ -438,7 +438,7 @@ die:
  * Initialize the IDE Drives and add them to the dev->units list
  *
  * @param itask Pointer to an IDETask struct
- * @returns number of drives foun
+ * @returns number of drives found
 */
 static BYTE init_units(struct IDETask *itask) {
     struct ExecBase *SysBase = itask->dev->SysBase;
