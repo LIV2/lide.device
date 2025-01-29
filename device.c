@@ -486,10 +486,15 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
 }
 
-/* device dependent expunge function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Expunge at a time. */
+/* 
+ * device dependent expunge function
+ * !!! CAUTION: This function runs in a forbidden state !!!
+ * This call is guaranteed to be single-threaded; only one task
+ * will execute your Expunge at a time.
+ * 
+ * IMPORTANT: because Expunge is called from the memory allocator,
+ * it may NEVER Wait() or otherwise take long time to complete.
+*/
 static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
 {
     Trace((CONST_STRPTR) "running expunge()\n");
@@ -497,59 +502,28 @@ static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6
     /**
      * Don't expunge
      *
-     * If expunged the driver will be gone until reboot
-     *
-     * Also need to figure out how to kill the disk change int task cleanly before this can be enabled
+     * If expunged the driver would be gone until reboot
     */
 
     dev->lib.lib_Flags |= LIBF_DELEXP;
     return 0;
 
-    // if (dev->lib.lib_OpenCnt != 0)
-    // {
-    //     dev->lib.lib_Flags |= LIBF_DELEXP;
-    //     return 0;
-    // }
-
-    // if (dev->IDETask != NULL && dev->IDETaskActive == true) {
-    //     // Shut down ide_task
-
-    //     struct MsgPort *mp = NULL;
-    //     struct IOStdReq *ioreq = NULL;
-
-    //     if ((mp = CreatePort(NULL,0)) == NULL)
-    //         return 0;
-    //     if ((ioreq = CreateStdIO(mp)) == NULL) {
-    //         DeletePort(mp);
-    //         return 0;
-    //     }
-
-    //     ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
-
-    //     PutMsg(dev->IDETaskMP,(struct Message *)ioreq);
-    //     WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
-
-    //     if (ioreq) DeleteStdIO(ioreq);
-    //     if (mp) DeletePort(mp);
-    // }
-
-    // Cleanup(dev);
-    // BPTR seg_list = dev->saved_seg_list;
-    // Remove(&dev->lib.lib_Node);
-    // FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
-    // return seg_list;
 }
 
-/* device dependent open function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Open at a time. */
+/* 
+* device dependent open function
+* !!! CAUTION: This function runs in a forbidden state !!!
+* This call is guaranteed to be single-threaded; only one task
+* will execute your Open at a time. 
+*/
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
     bool found = false;
+
+    dev->lib.lib_OpenCnt++; // Make sure we're not Expunged during open()
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
@@ -617,6 +591,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     if (unit->atapi && unit->openCount == 0) direct_changestate(unit,dev);
 
     unit->openCount++;
+    dev->lib.lib_OpenCnt++;
 
     dev->lib.lib_Flags &= ~LIBF_DELEXP;
 
@@ -630,19 +605,16 @@ exit:
         ioreq->io_Unit   = NULL;
         ioreq->io_Device = NULL;
     }
-    dev->lib.lib_OpenCnt++;
+
     ioreq->io_Error = error;
+
+    dev->lib.lib_OpenCnt--;
 }
 
 
 static void td_get_geometry(struct IOStdReq *ioreq) {
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
-
-    // if (unit->atapi && unit->mediumPresent == false) {
-    //     ioreq->io_Error = TDERR_DiskChanged;
-    //     return;
-    // }
 
     // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
     memset(geometry,0,sizeof(struct DriveGeometry));
@@ -661,10 +633,12 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
 }
 
 
-/* device dependent close function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Close at a time. */
+/* 
+ * device dependent close function
+ * !!! CAUTION: This function runs in a forbidden state !!!
+ * This call is guaranteed to be single-threaded; only one task
+ * will execute your Close at a time. 
+ */
 static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
     if (ioreq_is_valid(dev,ioreq)) {
@@ -814,12 +788,12 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 break;
 
 
-            case TD_CHANGESTATE:
             case CMD_READ:
             case ETD_READ:
             case CMD_WRITE:
             case ETD_WRITE:
                 ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+            case TD_CHANGESTATE:
             case TD_PROTSTATUS:
             case TD_EJECT:
             case TD_FORMAT:
