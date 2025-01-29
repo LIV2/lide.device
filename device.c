@@ -29,6 +29,10 @@
 extern UBYTE bootblock, bootblock_end;
 #endif
 
+extern const char device_name[];
+extern const char device_id_string[];
+extern int endskip;
+static struct Library * init(BPTR seg_list asm("a0"));
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
@@ -40,21 +44,23 @@ int __attribute__((no_reorder)) _start()
     return -1;
 }
 
-asm("romtag:                                \n"
-    "       dc.w    "XSTR(RTC_MATCHWORD)"   \n"
-    "       dc.l    romtag                  \n"
-    "       dc.l    _endskip                \n"
-    "       dc.b    "XSTR(RTF_COLDSTART)"   \n"
-    "       dc.b    "XSTR(DEVICE_VERSION)"  \n"
-    "       dc.b    "XSTR(NT_DEVICE)"       \n"
-    "       dc.b    "XSTR(DEVICE_PRIORITY)" \n"
-    "       dc.l    _device_name            \n"
-    "       dc.l    _device_id_string       \n"
-    "       dc.l    _init                   \n");
+
+__attribute__((used,no_reorder))
+static const struct Resident romTag = {
+    .rt_MatchWord = RTC_MATCHWORD,
+    .rt_MatchTag  = (APTR)&romTag,
+    .rt_EndSkip   = (APTR)&endskip,
+    .rt_Flags     = RTF_COLDSTART,
+    .rt_Version   = DEVICE_VERSION,
+    .rt_Type      = NT_DEVICE,
+    .rt_Pri       = DEVICE_PRIORITY,
+    .rt_Name      = (APTR)&device_name,
+    .rt_IdString  = (APTR)&device_id_string,
+    .rt_Init      = (APTR)init
+};
 
 const char device_name[] = DEVICE_NAME;
 const char device_id_string[] = DEVICE_ID_STRING;
-
 /**
  * set_dev_name
  *
