@@ -50,6 +50,7 @@ static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command)
    if (!(ata_identify(unit,identity))) {
         error = HFERR_SelTimeout;
         scsi_sense(scsi_command,0,0,error);
+        FreeMem(identity,512);
         return error;
     }
 
