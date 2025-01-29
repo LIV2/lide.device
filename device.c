@@ -79,7 +79,7 @@ char * set_dev_name(struct DeviceBase *dev) {
             if (i == 0) {
                 devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
                 if (devName == NULL) return NULL;
-                strncpy(devName + 4,device_name,sizeof(device_name));
+                strcpy(devName + 4,device_name);
             }
             
             switch (i) {
@@ -99,7 +99,10 @@ char * set_dev_name(struct DeviceBase *dev) {
             return devName;
         }
     }
+
     Info("Couldn't set device name.\n");
+    // if devName doesn't point to the const device_name then we need to free up that memory
+    if (devName != device_name) FreeMem(devName,sizeof(device_name)+4);
     return NULL;
 }
 
@@ -134,7 +137,10 @@ struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *
 			ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
 			*da_Pointer = (ULONG)diagArea;
 		}
-	}
+	} else {
+        FreeConfigDev(cd);
+        cd = NULL;
+    }
     return cd;
 }
 #endif
@@ -228,7 +234,7 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
 static void Cleanup(struct DeviceBase *dev) {
     Info("Cleaning up...\n");
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-
+    char *devName = dev->lib.lib_Node.ln_Name;
     struct IDEUnit *unit;
 
     if (SysBase->LibNode.lib_Version >= 36) {
@@ -255,6 +261,12 @@ static void Cleanup(struct DeviceBase *dev) {
          itask = (struct IDETask *)itask->mn_Node.mln_Succ)
     {
         FreeMem(itask,sizeof(struct IDETask));
+    }
+
+    // if devName doesn't point to the const device_name then we need to free up that memory
+    if (devName != device_name) { 
+        FreeMem(devName,sizeof(device_name)+4);
+        devName = NULL;
     }
 
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
@@ -327,7 +339,6 @@ static BYTE detectChannels(struct ConfigDev *cd) {
  * Scan for drives and initialize the driver if any are found
 */
 struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
-//struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
 {
     dev->SysBase = SysBase;
     Trace("Init dev, base: %08lx\n",dev);
@@ -403,7 +414,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
          * If we are booting a non-autoconfig device we need to create a ConfigDev struct
          * This could also be done in mounter.c but that would create a new ConfigDev for each unit
          */
-        cd = CreateFakeConfigDev(SysBase,ExpansionBase);
+        if ((cd = CreateFakeConfigDev(SysBase,ExpansionBase)) == NULL) {
+            Info("Failed to create fake configdev\n");
+            Cleanup(dev);
+            return NULL;
+        }
         cd->cd_BoardAddr = (APTR)BOARD_BASE;
         cd->cd_BoardSize = 0x1000;
         numBoards = 1;
