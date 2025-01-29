@@ -18,7 +18,7 @@
 #include "atapi.h"
 #include "scsi.h"
 #include "string.h"
-#include "wait.h"
+#include "sleep.h"
 #include "blockcopy.h"
 #include "lide_alib.h"
 
@@ -49,7 +49,7 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
     atapi_status_reg_delay(unit);
     for (int i=0; i < tries; i++) {
         if ((*unit->drive.status_command & ata_flag_drq) != 0) return true;
-        wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
+        sleep_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
     }
     Trace("atapi_wait_drq timeout\n");
     return false;
@@ -68,7 +68,7 @@ static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == ata_flag_drq) return true;
-        wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
+        sleep_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
     }
     return false;
 }
@@ -86,7 +86,7 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
-        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
+        sleep_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     Trace("atapi_wait_not_bsy timeout\n");
     return false;
@@ -106,7 +106,7 @@ static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
 
     for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == 0) return true;
-        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
+        sleep_us(tr,ATAPI_BSY_WAIT_LOOP_US);
     }
     Trace("atapi_wait_not_drqbsy timeout\n");
     return false;
@@ -155,7 +155,7 @@ void atapi_dev_reset(struct IDEUnit *unit) {
 bool atapi_check_signature(struct IDEUnit *unit) {
 
     atapi_dev_reset(unit);
-    wait_us(unit->itask->tr,10000);
+    sleep_us(unit->itask->tr,10000);
     for (int i=0; i<20; i++) {
         if ((*unit->drive.lbaHigh == 0xEB) && (*unit->drive.lbaMid == 0x14)) return true;
     }
@@ -280,7 +280,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
                     case 0x02:                       // Unit not ready
                         if (asc == 0x4) {            // Becoming ready
                             ret = TDERR_DiskChanged;
-                            wait(unit->itask->tr,1);   // Wait
+                            sleep_s(unit->itask->tr,1);   // Wait
                             continue;                // and try again
                         } else {
                             ret = TDERR_DiskChanged; // No media
@@ -538,7 +538,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (tries > 0) wait(unit->itask->tr,3);
+                            if (tries > 0) sleep_s(unit->itask->tr,3);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;
