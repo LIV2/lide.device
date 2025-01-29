@@ -18,7 +18,7 @@
 #include "scsi.h"
 #include "string.h"
 #include "blockcopy.h"
-#include "wait.h"
+#include "sleep.h"
 #include "lide_alib.h"
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
@@ -94,7 +94,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
             if ((status & ata_flag_drq) != 0) return true;
             if (status & (ata_flag_error | ata_flag_df)) return false;
         }
-        wait_us(tr,ATA_DRQ_WAIT_LOOP_US);
+        sleep_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
     Trace("wait_drq timeout\n");
     return false;
@@ -117,7 +117,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
         for (int j=0; j<100; j++) {
             if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
         }
-        wait_us(tr,ATA_BSY_WAIT_LOOP_US);
+        sleep_us(tr,ATA_BSY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -139,7 +139,7 @@ static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
         for (int j=0; j<1000; j++) {
             if ((*unit->drive.status_command & (ata_flag_ready | ata_flag_busy)) == ata_flag_ready) return true;
         }
-        wait_us(tr,ATA_RDY_WAIT_LOOP_US);
+        sleep_us(tr,ATA_RDY_WAIT_LOOP_US);
     }
     return false;
 }
@@ -174,7 +174,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     *unit->drive.devHead = select;
 
     if (changed && wait) {
-        wait_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_status_reg_delay
+        sleep_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_status_reg_delay
         ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
     }
 

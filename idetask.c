@@ -17,7 +17,7 @@
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
-#include "wait.h"
+#include "sleep.h"
 #include "lide_alib.h"
 
 /**
@@ -320,7 +320,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                     if ((atapi_autosense(scsi_command,unit)) == 0)
                         break;
 
-                    wait_us(unit->itask->tr,250000); // Wait 250ms before retrying
+                    sleep_us(unit->itask->tr,250000); // Wait 250ms before retrying
                 }
             }
         }
@@ -417,7 +417,7 @@ void __attribute__((noreturn)) diskchange_task () {
         ReleaseSemaphore(&dev->ulSem);
 
         Trace("Wait...\n");
-        wait(TimerReq,CHANGEINT_INTERVAL);
+        sleep_s(TimerReq,CHANGEINT_INTERVAL);
     }
 
 die:
