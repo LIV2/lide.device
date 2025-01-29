@@ -106,7 +106,7 @@ bool inhibitDosDevs(bool inhibit) {
       // Build a list of dos devices to inhibit
       // We need to send a packet to the FS to do the inhibit after releasing the lock
       // So build a list of devs to be (un)-inhibited
-      while (dl = NextDosEntry(dl,LDF_DEVICES)) {
+      while ((dl = NextDosEntry(dl,LDF_DEVICES))) {
         dd = AllocMem(sizeof(struct dosDev),MEMF_ANY|MEMF_CLEAR);
         if (dd) {
           if (dl->dol_Task) { // Device has a FS process?
