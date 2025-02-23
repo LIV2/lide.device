@@ -403,10 +403,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             continue;
         }
 
-        Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-        cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
-        cd->cd_Driver = dev;
-
         numBoards++;
 #else
         /**
@@ -468,6 +464,10 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             // Add the task to the list
             AddTail((struct List *)&dev->ideTasks,(struct Node *)&itask->mn_Node);
             dev->numTasks++;
+
+            Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+            cd->cd_Flags &= ~(CDF_CONFIGME);
+            cd->cd_Driver = dev;
         }
 #ifndef NO_AUTOCONFIG
     }
