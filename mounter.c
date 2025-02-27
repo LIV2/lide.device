@@ -608,8 +608,10 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 		dbg("FileSystem.resource created %p\n", fsr);
 	}
 	if (fsr) {
-		fse = (struct FileSysEntry*)fsr->fsr_FileSysEntries.lh_Head;
-		while (fse->fse_Node.ln_Succ)  {
+		for (fse = (struct FileSysEntry*)fsr->fsr_FileSysEntries.lh_Head;
+			 fse->fse_Node.ln_Succ;
+			 fse = (struct FileSysEntry*)fse->fse_Node.ln_Succ)
+		{
 			if (fse->fse_DosType == dostype) {
 				if (fse->fse_Version >= version) {
 					// FileSystem.resource filesystem is same or newer, don't update
@@ -620,11 +622,10 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 					goto end;
 				}
 			}
-			fse = (struct FileSysEntry*)fse->fse_Node.ln_Succ;
 		}
 
-		// If the FS wasn't found fse would have been pointing at the last FS in FileSystem.resource
-		if (fse->fse_DosType != dostype) fse = NULL;
+		// If the FS wasn't found fse would have been pointing at the lh_Tail
+		if (!fse->fse_Node.ln_Succ) fse = NULL;
 
 		if (fshb && newOnly) {
 			fse = AllocMem(sizeof(struct FileSysEntry) + strlen(creator) + 1, MEMF_PUBLIC | MEMF_CLEAR);
