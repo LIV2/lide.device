@@ -20,6 +20,9 @@
 #define asm(x)
 #endif
 
+#define likely(x)   __builtin_expect((x), 1)
+#define unlikely(x) __builtin_expect((x), 0)
+
 enum xfer {
     longword_movem,
     longword_move

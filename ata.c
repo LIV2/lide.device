@@ -569,7 +569,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
     ata_select(unit,drvSel,true);
 
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+    if (unlikely(!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))) {
         ata_save_error(unit);
         return HFERR_SelTimeout;
     }
@@ -582,7 +582,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
      * multiple_count: Max number of sectors that can be transferred before polling DRQ
      */
     while (count > 0) {
-        if (count >= MAX_TRANSFER_SECTORS) { // Transfer 256 Sectors at a time
+        if (unlikely(count >= MAX_TRANSFER_SECTORS)) { // Transfer 256 Sectors at a time
             txn_count = MAX_TRANSFER_SECTORS;
         } else {
             txn_count = count;               // Get any remainders
@@ -591,7 +591,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
 
         Trace("ATA: XFER Count: %ld, txn_count: %ld\n",count,txn_count);
 
-        if ((error = unit->write_taskfile(unit,command,lba,txn_count,0)) != 0) {
+        if (unlikely((error = unit->write_taskfile(unit,command,lba,txn_count,0)) != 0)) {
             ata_save_error(unit);
             return error;
         }
@@ -599,13 +599,15 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         lba += txn_count;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
+            if (unlikely(!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true))) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < multipleCount && txn_count; i++) {
+            int limit = (txn_count < multipleCount) ? txn_count : multipleCount;
+
+            for (int i = 0; i < limit; i++) {
                 ata_xfer((void *)dataRegister,buffer);
                 txn_count--;
                 buffer += 512;
