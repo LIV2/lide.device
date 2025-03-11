@@ -135,6 +135,8 @@ bool CheckPVD(struct IOStdReq *ior) {
 
 		if (ior->io_Actual < 2048) break;
 
+		if (buf[0] == 255) break; // Volume Descriptor set terminator
+
 		// Check ISO ID String & for PVD Version & Type code
 		if ((strncmp(iso_id,id_string,5) == 0) && buf[0] == 1 && buf[6] == 1) {
 			if (strncmp(sys_id_1,system_id,strlen(sys_id_1)) == 0 || strncmp(sys_id_2,system_id,strlen(sys_id_2)) == 0) {
