@@ -49,7 +49,6 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej);
 BYTE atapi_check_wp(struct IDEUnit *unit);
 bool atapi_update_presence(struct IDEUnit *unit, bool present);
-void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd);
 BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize);
 BOOL atapi_get_track_msf(struct SCSI_CD_TOC *toc, int trackNum, struct SCSI_TRACK_MSF *msf);
 BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end);

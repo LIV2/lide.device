@@ -21,6 +21,84 @@
 #include "lide_alib.h"
 
 /**
+ * create_timer
+ *
+ * Create and initialize the timer for the IDE task
+ *
+ * @param SysBase Pointer to the ExecBase
+ * @param mp Pointer to the MsgPort
+ * @param tr Pointer to the timerequest
+ * @param unit Timer unit to use
+ * @returns True if the timer was created successfully, false otherwise
+ */
+static bool create_timer(struct ExecBase *SysBase, struct MsgPort **mp, struct timerequest **tr, ULONG unit) {
+
+    Trace("Enter create_timer()\n");
+
+    if ((*mp = L_CreatePort(NULL,0))) {
+        if ((*tr = (struct timerequest *)L_CreateExtIO(*mp,sizeof(struct timerequest)))) {
+            if (!OpenDevice("timer.device",unit,(struct IORequest *)*tr,0)) {
+                return true;
+            } else {
+                Trace("Failed to open timer.device\n");
+            }
+            L_DeleteExtIO((struct IORequest *)*tr);
+        } else {
+            Trace("CreateExtIO failed\n");
+        }
+        L_DeletePort(*mp);
+    } else {
+        Trace("CreatePort failed\n");
+    }
+
+    Trace("create_timer failed\n");
+
+    return false;
+}
+
+/**
+ * run_timer
+ *
+ * Run the timer to signal the task periodically
+ *
+ * @param SysBase Pointer to the ExecBase
+ * @param tr Pointer to the timerequest
+ * @param secs Seconds to wait
+ * @param micros Microseconds to wait
+ */
+static void run_timer(struct ExecBase *SysBase, struct timerequest *tr, ULONG secs, ULONG micros) {
+    tr->tr_node.io_Command = TR_ADDREQUEST;
+    tr->tr_time.tv_sec   = secs;
+    tr->tr_time.tv_micro = micros;
+    SendIO((struct IORequest *)tr);
+}
+
+/**
+ * delete_timer
+ *
+ * Delete a timer and messageport created by create_timer
+ *
+ * @param SysBase Pointer to the ExecBase
+ * @param mp Pointer to the message port
+ * @param tr Pointer to the timerequest
+ */
+static void delete_timer(struct ExecBase *SysBase, struct MsgPort *mp, struct timerequest *tr, bool armed) {
+    if (tr) {
+        if (tr->tr_node.io_Device) {
+            if (armed) {
+                AbortIO((struct IORequest *)tr);
+                WaitIO((struct IORequest *)tr);
+            }
+            CloseDevice((struct IORequest *)tr);
+        }
+        L_DeleteExtIO((struct IORequest *)tr);
+    }
+    if (mp) {
+        L_DeletePort(mp);
+    }
+}
+
+/**
  * scsi_inquiry_ata
  *
  * Handle SCSI-Direct INQUIRY commands for ATA devices
@@ -343,97 +421,6 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 }
 
 /**
- * diskchange_task
- *
- * This task periodically polls all removable devices for media changes and updates
-*/
-void __attribute__((noreturn)) diskchange_task () {
-    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    struct Task volatile *task = FindTask(NULL);
-    struct MsgPort *TimerMP, *iomp = NULL;
-    struct timerequest *TimerReq = NULL;
-    struct IOStdReq *ioreq = NULL, *intreq = NULL;
-    struct IDEUnit *unit = NULL;
-    bool present;
-
-    while (task->tc_UserData == NULL); // Wait for Task Data to be populated
-    struct DeviceBase *dev = (struct DeviceBase *)task->tc_UserData;
-
-    if ((TimerMP = L_CreatePort(NULL,0)) == NULL || (TimerReq = (struct timerequest *)L_CreateExtIO(TimerMP, sizeof(struct timerequest))) == NULL) goto die;
-    if ((iomp = L_CreatePort(NULL,0)) == NULL || (ioreq = L_CreateStdIO(iomp)) == NULL) goto die;
-    if (OpenDevice("timer.device",UNIT_VBLANK,(struct IORequest *)TimerReq,0) != 0) goto die;
-
-    ioreq->io_Command = TD_CHANGESTATE; // Run TD_CHANGESTATE to update medium presence, this should be replaced with a TUR call
-    ioreq->io_Data    = NULL;
-    ioreq->io_Length  = 1;
-    ioreq->io_Actual  = 0;
-
-    while (1) {
-        ioreq->io_Data   = NULL;
-        ioreq->io_Length = 0;
-
-        if (SysBase->LibNode.lib_Version >= 36) {
-            ObtainSemaphoreShared(&dev->ulSem);
-        } else {
-            ObtainSemaphore(&dev->ulSem);
-        }
-
-        for (unit = (struct IDEUnit *)dev->units.mlh_Head;
-             unit->mn_Node.mln_Succ != NULL;
-             unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-        {
-            if (unit->present && unit->atapi && !unit->deferTUR) {
-                Trace("Testing unit %ld\n",unit->unitNum);
-                ioreq->io_Unit = (struct Unit *)unit;
-
-                PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
-                WaitPort(iomp);
-                GetMsg(iomp);
-
-                present = (ioreq->io_Actual == 0); // Get current state
-
-                if (present != unit->mediumPresentPrev) {
-
-                    Forbid();
-                    if (unit->changeInt != NULL)
-                        Cause((struct Interrupt *)unit->changeInt); // TD_REMOVE
-
-                    for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head;
-                         intreq->io_Message.mn_Node.ln_Succ != NULL;
-                         intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
-
-                        if (intreq->io_Data) {
-                            Cause(intreq->io_Data);
-                        }
-                    }
-                    Permit();
-                }
-
-                unit->mediumPresentPrev = present;
-            }
-            unit->deferTUR = false;
-        }
-
-        ReleaseSemaphore(&dev->ulSem);
-
-        Trace("Wait...\n");
-        sleep_s(TimerReq,CHANGEINT_INTERVAL);
-    }
-
-die:
-    Info("Change task dying...\n");
-    if (ioreq) L_DeleteStdIO(ioreq);
-    if (iomp) L_DeletePort(iomp);
-    if (TimerReq && TimerReq->tr_node.io_Device) CloseDevice((struct IORequest *)TimerReq);
-    if (TimerReq) L_DeleteExtIO((struct IORequest *)TimerReq);
-    if (TimerMP) L_DeletePort(TimerMP);
-
-    RemTask(NULL);
-    Wait(0);
-    while (1);
-}
-
-/**
  * init_units
  *
  * Initialize the IDE Drives and add them to the dev->units list
@@ -442,7 +429,7 @@ die:
  * @returns number of drives found
 */
 static BYTE init_units(struct IDETask *itask) {
-    struct ExecBase *SysBase = itask->dev->SysBase;
+    struct ExecBase *SysBase = itask->SysBase;
     UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
 
@@ -467,7 +454,6 @@ static BYTE init_units(struct IDETask *itask) {
             unit->multipleCount     = 0;
             unit->shadowDevHead     = &itask->shadowDevHead;
             *unit->shadowDevHead    = 0;
-            unit->deferTUR          = false;
 
             // Initialize the change int list
             unit->changeInts.mlh_Tail     = NULL;
@@ -477,7 +463,7 @@ static BYTE init_units(struct IDETask *itask) {
             Warn("testing unit %ld\n",unit->unitNum);
 
             if (ata_init_unit(unit)) {
-                if (unit->atapi) dev->hasRemovables = true;
+                if (unit->atapi) itask->hasRemovables = true;
                 num_units++;
                 itask->dev->numUnits++;
                 dev->highestUnit = unit->unitNum;
@@ -502,20 +488,14 @@ static BYTE init_units(struct IDETask *itask) {
  * Clean up after the task, freeing resources etc back to the system
 */
 static void cleanup(struct IDETask *itask) {
-    struct ExecBase *SysBase = itask->dev->SysBase;
+    struct ExecBase *SysBase = itask->SysBase;
     if (itask->iomp)
         L_DeletePort(itask->iomp);
 
-    if (itask->tr) {
-        if (itask->tr->tr_node.io_Device)
-            CloseDevice((struct IORequest *)itask->tr);
-
-        L_DeleteExtIO((struct IORequest *)itask->tr);
-    }
-    if (itask->timermp) L_DeletePort(itask->timermp);
+    delete_timer(SysBase,itask->timermp,itask->tr,false);
+    delete_timer(SysBase,itask->dcTimerMp,itask->dcTimerReq,itask->dcTimerArmed);
 
     struct IDEUnit *unit;
-
 
     for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
          unit->mn_Node.mln_Succ != NULL;
@@ -528,10 +508,230 @@ static void cleanup(struct IDETask *itask) {
             }
          }
 
-
     itask->active = false;
     itask->task   = NULL;
     Signal(itask->parent, SIGF_SINGLE);
+}
+
+/**
+ * diskchange_check
+ *
+ * Check for disk changes and send interrupts if necessary
+ *
+ * @param itask Pointer to the IDE task
+ */
+static void diskchange_check(struct IDETask *itask) {
+    Info("diskchange check...\n");
+    struct ExecBase *SysBase = itask->SysBase;
+    struct IDEUnit *unit;
+    struct IOStdReq *intreq = NULL;
+    bool present;
+
+    if (SysBase->LibNode.lib_Version >= 36) {
+        ObtainSemaphoreShared(&itask->dev->ulSem);
+    } else {
+        ObtainSemaphore(&itask->dev->ulSem);
+    }
+
+    for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
+        unit->mn_Node.mln_Succ != NULL;
+        unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
+    {
+        if (unit->present && unit->atapi) {
+
+            present = (atapi_test_unit_ready(unit) == 0) ? true : false;
+
+            if (present != unit->mediumPresentPrev) {
+
+                Forbid();
+                if (unit->changeInt != NULL)
+                    Cause((struct Interrupt *)unit->changeInt); // TD_REMOVE
+
+                for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head;
+                     intreq->io_Message.mn_Node.ln_Succ != NULL;
+                     intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
+
+                    if (intreq->io_Data) {
+                        Cause(intreq->io_Data);
+                    }
+                }
+                Permit();
+            }
+
+            unit->mediumPresentPrev = present;
+
+
+        }
+    }
+
+    ReleaseSemaphore(&itask->dev->ulSem);
+}
+
+/**
+ * process_ioreq
+ *
+ * Process an IO request for the IDE task
+ *
+ * @param ioreq Pointer to the IO request
+ * @param itask Pointer to the IDE task
+ */
+static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
+    struct ExecBase *SysBase = itask->SysBase;
+    struct IOExtTD *iotd;
+    struct IDEUnit *unit;
+    UWORD blockShift;
+    ULONG lba;
+    ULONG count;
+    BYTE  error = 0;
+    enum xfer_dir direction = WRITE;
+    unit = (struct IDEUnit *)ioreq->io_Unit;
+    iotd = (struct IOExtTD *)ioreq;
+
+    direction = WRITE;
+
+    switch (ioreq->io_Command) {
+        case TD_EJECT:
+            if (!unit->atapi) {
+                error  = IOERR_NOCMD;
+                break;
+            }
+            ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
+
+            bool insert = (ioreq->io_Length == 0) ? true : false;
+
+            if (insert == false) atapi_update_presence(unit,false); // Immediately update medium presence on Eject
+
+            error = atapi_start_stop_unit(unit,insert,1);
+            break;
+
+        case TD_CHANGESTATE:
+            error   = 0;
+            ioreq->io_Actual = 0;
+            if (unit->atapi) {
+                ioreq->io_Actual = (atapi_test_unit_ready(unit) != 0);
+                break;
+            }
+            ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;
+            break;
+
+        case TD_PROTSTATUS:
+            error  = 0;
+            if (unit->atapi) {
+                if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
+                    error  = 0;
+                    ioreq->io_Actual = 1;
+                    break;
+                }
+            }
+            ioreq->io_Actual = 0; // Not protected
+            break;
+
+        case ETD_READ:
+        case NSCMD_ETD_READ64:
+            direction = READ;
+            goto validate_etd;
+
+        case ETD_WRITE:
+        case ETD_FORMAT:
+        case NSCMD_ETD_WRITE64:
+        case NSCMD_ETD_FORMAT64:
+            direction = WRITE;
+validate_etd:
+            if (iotd->iotd_Count < unit->changeCount) {
+                error  = TDERR_DiskChanged;
+                break;
+            } else {
+                goto transfer;
+            }
+        case CMD_READ:
+        case TD_READ64:
+        case NSCMD_TD_READ64:
+            direction = READ;
+            goto transfer;
+
+        case CMD_WRITE:
+        case TD_WRITE64:
+        case TD_FORMAT:
+        case TD_FORMAT64:
+        case NSCMD_TD_WRITE64:
+        case NSCMD_TD_FORMAT64:
+            direction = WRITE;
+transfer:
+            if (unit->atapi == true && unit->mediumPresent == false) {
+                Trace("Access attempt without media\n");
+                error  = TDERR_DiskChanged;
+                break;
+            }
+
+            blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
+            lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
+            count = (ioreq->io_Length >> blockShift);
+
+            if (count == 0) {
+                error = IOERR_BADLENGTH;
+                break;
+            }
+
+            if ((lba + count) > (unit->logicalSectors)) {
+                Trace("Read past end of device\n");
+                error  = IOERR_BADADDRESS;
+                break;
+            }
+
+            if (unit->atapi == true) {
+                error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+            } else {
+                if (direction == READ) {
+                    error  = ata_read(ioreq->io_Data, lba, count, unit);
+                } else {
+                    error  = ata_write(ioreq->io_Data, lba, count, unit);
+                }
+                ioreq->io_Actual = ioreq->io_Length;
+            }
+            break;
+
+        /* SCSI Direct */
+        case HD_SCSICMD:
+            error = handle_scsi_command(ioreq);
+            break;
+
+        case CMD_XFER:
+            if (ioreq->io_Length < 3) {
+                ata_set_xfer(unit,ioreq->io_Length);
+                error = 0;
+            } else {
+                error = IOERR_ABORTED;
+            }
+            break;
+
+        case CMD_PIO:
+            if (ioreq->io_Length <= 4) {
+                error = ata_set_pio(unit,ioreq->io_Length);
+            } else {
+                error = IOERR_BADADDRESS;
+            }
+            break;
+
+        /* CMD_DIE: Shut down this task and clean up */
+        case CMD_DIE:
+            Info("Task: CMD_DIE: Shutting down IDE Task\n");
+            cleanup(itask);
+            ReplyMsg(&ioreq->io_Message);
+            RemTask(NULL);
+            Wait(0);
+            break;
+        default:
+            // Unknown commands.
+            error = IOERR_NOCMD;
+            ioreq->io_Actual = 0;
+            break;
+    }
+
+#if DEBUG & DBG_CMD
+    traceCommand(ioreq);
+#endif
+    ioreq->io_Error = error;
+    ReplyMsg(&ioreq->io_Message);
 }
 
 /**
@@ -545,13 +745,8 @@ void __attribute__((noreturn)) ide_task () {
     struct Task *task = FindTask(NULL);
     struct IDETask *itask = (struct IDETask *)task->tc_UserData;
     struct IOStdReq *ioreq;
-    struct IOExtTD *iotd;
-    struct IDEUnit *unit;
-    UWORD blockShift;
-    ULONG lba;
-    ULONG count;
-    BYTE  error = 0;
-    enum xfer_dir direction = WRITE;
+    ULONG signalsSet = 0;
+    ULONG signalMask = 0;
 
     itask->task = task;
 
@@ -562,16 +757,12 @@ void __attribute__((noreturn)) ide_task () {
         RemTask(NULL);
         Wait(0);
     }
+
+    signalMask = (1 << itask->iomp->mp_SigBit);
+
     Trace("IDE Task: CreatePort() ok\n");
 
-    if ((itask->timermp = L_CreatePort(NULL,0)) != NULL && (itask->tr = (struct timerequest *)L_CreateExtIO(itask->timermp, sizeof(struct timerequest))) != NULL) {
-        if (OpenDevice("timer.device",UNIT_MICROHZ,(struct IORequest *)itask->tr,0)) {
-            cleanup(itask);
-            RemTask(NULL);
-            Wait(0);
-        }
-    } else {
-        Info("Failed to create Timer MP or Request.\n");
+    if (!create_timer(SysBase,&itask->timermp,&itask->tr,UNIT_MICROHZ)) {
         cleanup(itask);
         RemTask(NULL);
         Wait(0);
@@ -586,163 +777,44 @@ void __attribute__((noreturn)) ide_task () {
     itask->active = true;
     Signal(itask->parent,SIGF_SINGLE);
 
+    if (itask->hasRemovables) {
+
+        if (!create_timer(SysBase,&itask->dcTimerMp,&itask->dcTimerReq,UNIT_VBLANK)) {
+            cleanup(itask);
+            RemTask(NULL);
+            Wait(0);
+        }
+        
+        signalMask |= (1 << itask->dcTimerMp->mp_SigBit);
+
+        run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
+        itask->dcTimerArmed = true;
+    }
+
+
     while (1) {
         // Main loop, handle IO Requests as they come in.
         Trace("IDE Task: WaitPort()\n");
-        Wait(1 << itask->iomp->mp_SigBit); // Wait for an IORequest to show up
+        signalsSet = Wait(signalMask);
 
-        while ((ioreq = (struct IOStdReq *)GetMsg(itask->iomp)) != NULL) {
-            unit = (struct IDEUnit *)ioreq->io_Unit;
-            iotd = (struct IOExtTD *)ioreq;
-
-            direction = WRITE;
-
-            switch (ioreq->io_Command) {
-                case TD_EJECT:
-                    if (!unit->atapi) {
-                        error  = IOERR_NOCMD;
-                        break;
-                    }
-                    ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
-
-                    bool insert = (ioreq->io_Length == 0) ? true : false;
-
-                    if (insert == false) atapi_update_presence(unit,false); // Immediately update medium presence on Eject
-
-                    error = atapi_start_stop_unit(unit,insert,1);
-                    break;
-
-                case TD_CHANGESTATE:
-                    error   = 0;
-                    ioreq->io_Actual = 0;
-                    if (unit->atapi) {
-                        ioreq->io_Actual = (atapi_test_unit_ready(unit) != 0);
-                        break;
-                    }
-                    ioreq->io_Actual = (((struct IDEUnit *)ioreq->io_Unit)->mediumPresent) ? 0 : 1;
-                    break;
-
-                case TD_PROTSTATUS:
-                    error  = 0;
-                    if (unit->atapi) {
-                        if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
-                            error  = 0;
-                            ioreq->io_Actual = 1;
-                            break;
-                        }
-                    }
-                    ioreq->io_Actual = 0; // Not protected
-                    break;
-
-                case ETD_READ:
-                case NSCMD_ETD_READ64:
-                    direction = READ;
-                    goto validate_etd;
-
-                case ETD_WRITE:
-                case ETD_FORMAT:
-                case NSCMD_ETD_WRITE64:
-                case NSCMD_ETD_FORMAT64:
-                    direction = WRITE;
-validate_etd:
-                    if (iotd->iotd_Count < unit->changeCount) {
-                        error  = TDERR_DiskChanged;
-                        break;
-                    } else {
-                        goto transfer;
-                    }
-                case CMD_READ:
-                case TD_READ64:
-                case NSCMD_TD_READ64:
-                    direction = READ;
-                    goto transfer;
-
-                case CMD_WRITE:
-                case TD_WRITE64:
-                case TD_FORMAT:
-                case TD_FORMAT64:
-                case NSCMD_TD_WRITE64:
-                case NSCMD_TD_FORMAT64:
-                    direction = WRITE;
-transfer:
-                    if (unit->atapi == true && unit->mediumPresent == false) {
-                        Trace("Access attempt without media\n");
-                        error  = TDERR_DiskChanged;
-                        break;
-                    }
-
-                    blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
-                    lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
-                    count = (ioreq->io_Length >> blockShift);
-
-                    if (count == 0) {
-                        error = IOERR_BADLENGTH;
-                        break;
-                    }
-
-                    if ((lba + count) > (unit->logicalSectors)) {
-                        Trace("Read past end of device\n");
-                        error  = IOERR_BADADDRESS;
-                        break;
-                    }
-
-                    if (unit->atapi == true) {
-                        error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
-                    } else {
-                        if (direction == READ) {
-                            error  = ata_read(ioreq->io_Data, lba, count, unit);
-                        } else {
-                            error  = ata_write(ioreq->io_Data, lba, count, unit);
-                        }
-                        ioreq->io_Actual = ioreq->io_Length;
-                    }
-                    break;
-
-                /* SCSI Direct */
-                case HD_SCSICMD:
-                    error = handle_scsi_command(ioreq);
-                    break;
-
-                case CMD_XFER:
-                    if (ioreq->io_Length < 3) {
-                        ata_set_xfer(unit,ioreq->io_Length);
-                        error = 0;
-                    } else {
-                        error = IOERR_ABORTED;
-                    }
-                    break;
-
-                case CMD_PIO:
-                    if (ioreq->io_Length <= 4) {
-                        error = ata_set_pio(unit,ioreq->io_Length);
-                    } else {
-                        error = IOERR_BADADDRESS;
-                    }
-                    break;
-
-                /* CMD_DIE: Shut down this task and clean up */
-                case CMD_DIE:
-                    Info("Task: CMD_DIE: Shutting down IDE Task\n");
-                    cleanup(itask);
-                    ReplyMsg(&ioreq->io_Message);
-                    RemTask(NULL);
-                    Wait(0);
-                    break;
-                default:
-                    // Unknown commands.
-                    error = IOERR_NOCMD;
-                    ioreq->io_Actual = 0;
-                    break;
+        if (signalsSet & (1 << itask->iomp->mp_SigBit)) {
+            while ((ioreq = (struct IOStdReq *)GetMsg(itask->iomp)) != NULL) {
+              process_ioreq(itask,ioreq);
             }
+        }
 
-#if DEBUG & DBG_CMD
-            traceCommand(ioreq);
-#endif
-            ioreq->io_Error = error;
-            ReplyMsg(&ioreq->io_Message);
+        if (itask->hasRemovables) {
+            if (signalsSet & (1 << itask->dcTimerMp->mp_SigBit)) {
+                WaitIO((struct IORequest *)itask->dcTimerReq);
+                itask->dcTimerArmed = false;
+
+                diskchange_check(itask);
+                run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
+
+                itask->dcTimerArmed = true;
+            }
         }
     }
-
 }
 
 /**

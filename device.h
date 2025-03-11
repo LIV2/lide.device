@@ -55,7 +55,6 @@ struct IDEUnit {
     void  (*write_unaligned)(void * asm("a0"), void * asm("a1"));
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
-    volatile bool  deferTUR;
     UBYTE unitNum;
     UBYTE channel;
     UBYTE deviceType;
@@ -93,19 +92,23 @@ struct DeviceBase {
     struct MinList         units;
     struct SignalSemaphore ulSem;
     struct MinList         ideTasks;
-    volatile bool          hasRemovables; // modified by IDETask(s), Start the diskChange task? 
 };
 
 struct IDETask {
     struct MinNode     mn_Node;
     struct Task        *task;
     struct Task        *parent;
+    struct ExecBase    *SysBase;
     struct DeviceBase  *dev;
     struct ConfigDev   *cd;
     struct MsgPort     *iomp;
     struct MsgPort     *timermp;
+    struct MsgPort     *dcTimerMp;
     struct timerequest *tr;
+    struct timerequest *dcTimerReq;
     volatile bool      active;
+    bool               hasRemovables;
+    bool               dcTimerArmed;
     UBYTE              shadowDevHead;
     UBYTE              boardNum;
     UBYTE              taskNum;
