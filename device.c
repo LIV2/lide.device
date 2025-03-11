@@ -361,7 +361,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->isOpen        = FALSE;
     dev->numUnits      = 0;
     dev->numTasks      = 0;
-    dev->hasRemovables = false;
 
     L_NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
@@ -423,7 +422,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
         for (int c=0; c < channels; c++) {
 
-            Trace("Starting IDE Task %ld\n",numBoards);
+            Info("Starting IDE Task %ld\n",dev->numTasks);
 
             itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
 
@@ -432,12 +431,14 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
                 break;
             }
 
-            itask->dev      = dev;
-            itask->cd       = cd;
-            itask->channel  = c;
-            itask->taskNum  = dev->numTasks;
-            itask->parent   = self;
-            itask->boardNum = (numBoards - 1);
+            itask->SysBase       = SysBase;
+            itask->dev           = dev;
+            itask->cd            = cd;
+            itask->channel       = c;
+            itask->taskNum       = dev->numTasks;
+            itask->parent        = self;
+            itask->boardNum      = (numBoards - 1);
+            itask->hasRemovables = false;
 
             SetSignal(0,SIGF_SINGLE);
 
@@ -478,8 +479,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         Cleanup(dev);
         return NULL;
     }
-
-    if (dev->hasRemovables) dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
 
     Info("Startup finished.\n");
     return (struct Library *)dev;
