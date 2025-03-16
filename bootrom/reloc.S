@@ -18,11 +18,12 @@ NUM_ENTRIES EQU 5
         ;   d0: 0
         public  _relocate
 _relocate
-        movem.l d1-d7/a0-a6,-(sp)
+        movem.l d1-d3/d5-d7/a0-a6,-(sp)
 
         bsr     InitHandle
 
         ; fetch file header
+        move.l  #$000F,D4
         bsr     RomFetch32
         cmp.l   #$3f3,d0 ; We only know hunk_hdr
         bne     .RelocateFail
@@ -48,6 +49,7 @@ _relocate
         move.l  d0,(a3)+         ; segment length
         addq.l  #8,d0            ; Add 8 for seglist overhead
         jsr     _LVOAllocMem(a6)
+        move.l  #$00F0,D4
         tst.l   d0
         beq.s   .RelocateFail
         addq.l  #8,d0            ; Skip seglist overhead
@@ -75,7 +77,7 @@ _relocate
         beq     .HunkSymbol
         cmp.l   #$3f2,d0
         beq     .HunkEnd
-
+        move.l  #$0CCC,D4
         ; We don't know this hunk
 .RelocateFail
         IFD HAVE_RERRNO
@@ -85,7 +87,7 @@ _relocate
         ENDIF
         bsr     .RelocateCleanup
         moveq.l #0,d0 ; NULL = Failure
-        movem.l (sp)+,d1-d7/a0-a6
+        movem.l (sp)+,d1-d3/d5-d7/a0-a6
         rts
 
 ; ---------------------
@@ -208,7 +210,7 @@ _relocate
 
         bsr.s   .RelocateCleanup
         move.l  d2,d0
-        movem.l (sp)+,d1-d7/a0-a6
+        movem.l (sp)+,d1-d3/d5-d7/a0-a6
         rts
 
 .RelocateCleanup
