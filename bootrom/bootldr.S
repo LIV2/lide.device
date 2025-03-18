@@ -59,7 +59,7 @@ DiagStart
 * will be returned to the free memory pool.
 *
 DiagEntry
-        movem.l d2-d7/a2-a6,-(sp)
+        movem.l d2-d7/a1-a6,-(sp)
 
         ; Patch up Romtag Resident Structure in memory
         lea.l   Romtag(pc),a4                       ; find Romtag in memory
@@ -69,16 +69,45 @@ DiagEntry
         add.l   d0,RT_NAME(a4)
         add.l   d0,RT_IDSTRING(a4)
         add.l   d0,RT_INIT(a4)
-        move.l  a0,BoardBase-Romtag(a4)             ; Save board base for later
-        move.l  a3,MyConfigDev-Romtag(a4)           ; Save ConfigDev for later
         cmp.w   #$082c,cd_Rom+er_Manufacturer(a3)
         bne     .skip
         ; For AT-Bus devices change the manufacturer/prod id to prevent Oktapussy meddling with us
         move.w  #$0A1C,cd_Rom+er_Manufacturer(a3)   ; Manufacturer: A1K.org
         move.b  #$7D,cd_Rom+er_Product(a3)          ; Product: Matzes IDE-Controller
-.skip   movem.l (sp)+,d2-d7/a2-a6
+.skip
+        move.l  #$2001,d0
+        bsr     _relocate
+        tst.l   d0
+        beq.s   .err
+        bsr     InitRT
+        tst.l   d0
+        beq.s   .err
+        move.l  d0,a1
+        move.l  RT_ENDSKIP(a1),RT_ENDSKIP(a4)
+        move.l  RT_INIT(a1),RT_INIT(a4)
+        move.l  RT_NAME(a1),RT_NAME(a4)
+        move.l  RT_IDSTRING(a1),RT_IDSTRING(a4)
         moveq.l #1,d0
+        movem.l (sp)+,d2-d7/a1-a6
         rts
+.err
+        move.l  #0,RT_MATCHTAG(a4)
+        *******  Show checkered purple failure screen **************************
+        movem.l d2-d3,-(sp)
+        move.w  #$0005,d2
+.fc1
+        move.w  #$ffff,d3
+.fc2
+        move.w  #$0000,$dff180               ; black
+        move.w  #$0F0C,$dff180               ; purple
+        dbra    d3,.fc2
+        dbra    d2,.fc1
+        movem.l (sp)+,d2-d3
+        *******  End checkered purple failure screen **************************
+        moveq.l #0,d0
+        movem.l (sp)+,d2-d7/a1-a6
+        rts
+
 
 *******  BootEntry  **************************************************
 **********************************************************************
@@ -110,62 +139,8 @@ Romtag
         dc.b    0                  ; BYTE  RT_PRI
         dc.l    DevName            ; APTR  RT_NAME
         dc.l    DevName            ; APTR  RT_IDSTRING
-        dc.l    Init               ; APTR  RT_INIT
+        dc.l    0                  ; APTR  RT_INIT
 
-BoardBase:   dc.l 0
-MyConfigDev: dc.l 0
-
-Init:   movem.l d2-d7/a2-a6,-(sp)
-        move.l  MyConfigDev(PC),a1
-        move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
-        moveq   #0,d2
-        cmp.l   #1,d1                         ; AT-Bus with odd address?
-        beq     .odd
-        cmp.l   #$100,d1                      ; WinUAE AT-Bus with ROM at odd address (despite DiagVec...)
-        bne     .even
-.odd    add.l   #1,d2
-.even 
-        and.l   #$F000,d1                     ; Add any other offset
-        add.l   d1,d2
-.loaddriver:
-        move.l  BoardBase(PC),a0
-
-        IFND WORDWIDE
-
-        move.l  #DRIVEROFFSET,d0
-        add.l   d2,d0               ; Add offset if AT-Bus with odd address
-
-        ELSE
-
-        move.l  #0,d0
-        add.l   d2,a0
-        add.l   #DRIVEROFFSET,a0
-
-        ENDIF
-        bsr     _relocate
-        tst.l   d0
-        beq.s   .err
-        bsr     InitRT
-        tst.l   d0
-        beq.s   .ok
-        move.w  #$0F00,d4
-.err
-        *******  Show checkered purple failure screen **************************
-        movem.l d2-d3,-(sp)
-        move.w  #$0001,d2
-.fc1
-        move.w  #$ffff,d3
-.fc2
-        move.w  #$0000,$dff180               ; black
-        move.w  d4,$dff180               ; purple
-        dbra    d3,.fc2
-        dbra    d2,.fc1
-        movem.l (sp)+,d2-d3
-        *******  End checkered purple failure screen **************************
-
- .ok:   moveq.l #0,d0
-        movem.l (sp)+,d2-d7/a2-a6
-        rts
 
 * Search for the driver Romtag
 InitRT
@@ -179,16 +154,14 @@ InitRT
 .not_rt addq.l  #2,a1
         dbra    d3,.findrt
         movem.l (sp)+,d2/d3/a1
-        moveq.l #-1,d0
+        moveq.l #0,d0
         rts
 
 * Found the driver, initialize it
 .found  
-        moveq.l  #0,d1
-        jsr      _LVOInitResident(A6)
+        move.l a1,d0
 .done
         movem.l (sp)+,d2/d3/a1
-        moveq.l #0,d0
         rts
 
 *******  Strings referenced in Diag Copy area  **************************
