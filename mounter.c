@@ -838,28 +838,28 @@ static void AddNode(struct PartitionBlock *part, struct ParameterPacket *pp, str
 	struct ExecBase *SysBase = md->SysBase;
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct DosLibrary *DOSBase = md->DOSBase;
-	
+	LONG bootPri;
 	char bootname[8];
 	UWORD major;
 	
-	major=(ExpansionBase->LibNode.lib_Version)%100;         // we assume versionnumber is under 100, but better safe then sorry
+	major=(ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry
 	bootname[0]=0x06;
 	bootname[1]='B';
 	bootname[2]='O';
-        bootname[3]='O';
-  	bootname[4]='T';
+	bootname[3]='O';
+	bootname[4]='T';
 	bootname[5]=0x30+(major/10);
 	bootname[6]=0x30+(major%10);
 	bootname[7]=0;
 
-	LONG bootPri = (part->pb_Flags & PBFF_BOOTABLE) ? pp->de.de_BootPri: -128; 
-	
-	if(strncmp(name, "BOOT", 4)==0)   // does it start with BOOT?
-	{
-	  if(CompareBSTRNoCase(part->pb_DriveName, bootname)==TRUE)   // is there a 'drivename' for this kickstart?
-	  {
-	    bootPri++;                    // make priority a bit higher
-	  }
+	if (!(part->pb_Flags & PBFF_BOOTABLE)) {
+		bootPri = -128;
+	} else {
+		bootPri = pp->de.de_BootPri;
+		// is there a 'drivename' for this kickstart?
+		if(CompareBSTRNoCase(part->pb_DriveName, bootname)==TRUE) {
+			bootPri++; // make priority a bit higher
+		}
 	}
 
 	if (ExpansionBase->LibNode.lib_Version >= 37) {
