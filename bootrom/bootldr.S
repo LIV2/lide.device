@@ -117,11 +117,12 @@ MyConfigDev: dc.l 0
 
 Init:   movem.l d2-d7/a2-a6,-(sp)
         move.l  MyConfigDev(PC),a1
+        moveq.l #0,d1
         move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
         moveq   #0,d2
-        cmp.l   #1,d1                         ; AT-Bus with odd address?
+        cmp.w   #1,d1                         ; AT-Bus with odd address?
         beq     .odd
-        cmp.l   #$100,d1                      ; WinUAE AT-Bus with ROM at odd address (despite DiagVec...)
+        cmp.w   #$100,d1                      ; WinUAE AT-Bus with ROM at odd address (despite DiagVec...)
         bne     .even
 .odd    add.l   #1,d2
 .even 
