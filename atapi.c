@@ -510,7 +510,10 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
-    UBYTE senseError, senseKey, asc, asq = 0;
+    UBYTE senseError = 0;
+    UBYTE senseKey = 0;
+    UBYTE asc = 0;
+    UBYTE asq = 0;
     UBYTE ret = 0;
 
     for (int tries = 4; tries > 0; tries--) {
