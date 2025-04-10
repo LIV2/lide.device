@@ -490,6 +490,10 @@ end:
         Warn("Interrupt reason: %02lx\n",*unit->drive.sectorCount);
         cmd->scsi_Status = 2;
         if (ret == 0) ret = HFERR_BadStatus;
+        if (cmd->scsi_Flags & (SCSIF_AUTOSENSE)) {
+            Trace("Auto sense requested\n");
+            atapi_autosense(cmd,unit);
+        }
     }
     Trace("Remaining: %ld\n",remaining);
     Trace("exit atapi_packet\n");
@@ -1221,20 +1225,30 @@ BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit)
 */
 BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     UBYTE ret = 0;
+
+    if (scsi_command->scsi_SenseData == NULL || scsi_command->scsi_SenseLength == 0)
+        return IOERR_BADADDRESS;
+    
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
 
     if (cmd != NULL) {
-        cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-        cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
-        cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
-        cmd->scsi_Length     = scsi_command->scsi_SenseLength;
-        cmd->scsi_Flags      = SCSIF_READ;
-        cmd->scsi_CmdLength  = 12;
+        for (int retry=0; retry<3; retry++) {
+            cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+            cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
+            cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
+            cmd->scsi_Length     = scsi_command->scsi_SenseLength;
+            cmd->scsi_Flags      = SCSIF_READ;
+            cmd->scsi_CmdLength  = 12;
+    
+            ret = atapi_packet(cmd,unit);
+            scsi_command->scsi_SenseActual = cmd->scsi_Actual;
 
-        ret = atapi_packet(cmd,unit);
-        scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+            if (ret == 0) break;
+
+            sleep_us(unit->itask->tr,250000);
+        }
+
         DeleteSCSICmd(cmd);
-
         return ret;
     } else {
         return TDERR_NoMem;

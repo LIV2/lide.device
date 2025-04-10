@@ -389,19 +389,6 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
         }
 
-        if (error != 0) {
-            if (scsi_command->scsi_Flags & (SCSIF_AUTOSENSE)) {
-
-                Trace("Auto sense requested\n");
-                // Request sense with retries
-                for (int retry = 0; retry < 3; retry++) {
-                    if ((atapi_autosense(scsi_command,unit)) == 0)
-                        break;
-
-                    sleep_us(unit->itask->tr,250000); // Wait 250ms before retrying
-                }
-            }
-        }
     }
 
     // SCSI Command complete, handle any errors
