@@ -177,30 +177,21 @@ bool CheckPVD(struct IOStdReq *ior) {
 	ior->io_Command = CMD_READ;
 	ior->io_Data    = buf;
 	ior->io_Length  = 2048;
+	ior->io_Offset  = 32768; // Sector 16
 
-	for (int i=0; i < 32; i++) {
+	for (int retry = 0; retry < 3; retry++) {
+		if ((err = DoIO((struct IORequest*)ior)) == 0) break;
+	}
 
-		ior->io_Offset = (i + 16) << 11;
-
-		for (int retry = 0; retry < 3; retry++) {
-			if ((err = DoIO((struct IORequest*)ior)) == 0) break;
-		}
-
-		if (ior->io_Actual < 2048) break;
-
+	if (err == 0) {
 		// Check ISO ID String & for PVD Version & Type code
 		if ((strncmp(iso_id,id_string,5) == 0) && buf[0] == 1 && buf[6] == 1) {
 			if (strncmp(sys_id_1,system_id,strlen(sys_id_1)) == 0 || strncmp(sys_id_2,system_id,strlen(sys_id_2)) == 0) {
 				ret = true; // CDTV or AMIGA BOOT
-			} else {
-				ret = false;
 			}
-			break;
-		} else {
-			continue;
 		}
-
 	}
+
 done:
 	if (buf)  FreeMem(buf,2048);
 	return ret;
