@@ -50,6 +50,7 @@
 #include "ndkcompat.h"
 #include "mounter.h"
 #include "lide_alib.h"
+#include "scsi.h"
 
 #if TRACE
 #define dbg Trace
@@ -103,6 +104,59 @@ BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
 }
 
 #if CDBOOT
+// Check if this is a data disc by reading the TOC and checking that track 1 is a data track.
+bool isDataCD(struct IOStdReq *ior) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+	bool ret = false;
+
+	BYTE err;
+
+	struct SCSICmd     *scsiCmd = NULL;
+	struct SCSI_CD_TOC *tocBuf  = NULL;
+	
+	ULONG bufSize = sizeof(struct SCSI_CD_TOC);
+
+	char cdb[10];
+	memset(&cdb,0,10);
+
+	if ((scsiCmd = AllocMem(sizeof(struct SCSICmd),MEMF_PUBLIC | MEMF_CLEAR))) {
+		if ((tocBuf = AllocMem(bufSize,MEMF_PUBLIC | MEMF_CLEAR))) {
+			scsiCmd->scsi_Data      = (UWORD *)tocBuf;
+			scsiCmd->scsi_Length    = bufSize;
+			scsiCmd->scsi_Flags     = SCSIF_READ;
+			scsiCmd->scsi_CmdLength = 10;
+			scsiCmd->scsi_Command   = cdb;
+			
+			cdb[0] = SCSI_CMD_READ_TOC;
+			cdb[2] = 0x00;               // Format: 0
+			cdb[6] = 1;                  // Track 1
+			cdb[7] = bufSize >> 8;
+			cdb[8] = bufSize & 0xFF;
+		
+			ior->io_Data    = scsiCmd;
+			ior->io_Length  = sizeof(struct SCSICmd);
+			ior->io_Command = HD_SCSICMD;
+		
+			for (int retry = 0; retry < 3; retry++) {
+				if ((err = DoIO((struct IORequest *)ior)) == 0 && scsiCmd->scsi_Status == 0)
+					break;
+			}
+
+			if (err == 0) {
+				if (tocBuf->firstTrack == 1 && tocBuf->td[0].trackNumber == 1) {
+					if (tocBuf->td[0].adrControl & 0x04) {	// Data Track?
+						ret = true;
+					}
+				}
+			}
+
+			FreeMem(tocBuf,bufSize);
+		}
+		FreeMem(scsiCmd,sizeof(struct SCSICmd));
+	}
+	return ret;
+}
+
 // CheckPVD
 // Check for "CDTV" or "AMIGA BOOT" as the System ID in the PVD
 bool CheckPVD(struct IOStdReq *ior) {
@@ -116,10 +170,6 @@ bool CheckPVD(struct IOStdReq *ior) {
 	char *buf = NULL;
 
 	if (!(buf = AllocMem(2048,MEMF_ANY|MEMF_CLEAR))) goto done;
-
-	ior->io_Command = TD_CHANGESTATE; // Check if there's a disc in the drive
-
-	if (err = DoIO((struct IORequest *)ior) || ior->io_Actual != 0) goto done;
 
 	char *id_string = buf + 1;
 	char *system_id = buf + 8;
@@ -1059,10 +1109,21 @@ static struct FileSysEntry *scan_filesystems(void)
 // Search for Bootable CDROM
 static LONG ScanCDROM(struct MountData *md)
 {
+	struct ExecBase *SysBase = md->SysBase;
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct FileSysEntry *fse=NULL;
 	char dosName[] = "\3CD0"; // BCPL String
 	LONG bootPri;
+
+	// Check if a disc is present
+	md->request->iotd_Req.io_Command = TD_CHANGESTATE; // Check if there's a disc in the drive
+	md->request->iotd_Req.io_Actual   = 0;
+
+	if ((DoIO((struct IORequest *)md->request) != 0) || md->request->iotd_Req.io_Actual != 0)
+		return -1;
+
+	if (!isDataCD((struct IOStdReq *)md->request))
+		return -1;
 
 	// "CDTV" or "AMIGA BOOT"?
 	if (CheckPVD((struct IOStdReq *)md->request)) {
