@@ -7,6 +7,7 @@
 
 #define SCSI_CMD_TEST_UNIT_READY  0x00
 #define SCSI_CMD_REQUEST_SENSE    0x03
+#define SCSI_CMD_FORMAT_UNIT      0x04
 #define SCSI_CMD_READ_6           0x08
 #define SCSI_CMD_WRITE_6          0x0A
 #define SCSI_CMD_INQUIRY          0x12
@@ -15,12 +16,17 @@
 #define SCSI_CMD_READ_CAPACITY_10 0x25
 #define SCSI_CMD_READ_10          0x28
 #define SCSI_CMD_WRITE_10         0x2A
+#define SCSI_CMD_SYNC_CACHE_10    0x35
+#define SCSI_CMD_SEND_OPC_INFO    0x40
 #define SCSI_CMD_READ_TOC         0x43
 #define SCSI_CMD_PLAY_AUDIO_MSF   0x47
 #define SCSI_CMD_PLAY_TRACK_INDEX 0x48
 #define SCSI_CMD_MODE_SELECT_10   0x55
+#define SCSI_CMD_REPAIR_TRACK     0x58
 #define SCSI_CMD_MODE_SENSE_10    0x5A
+#define SCSI_CMD_CLOSE_TRACK_SESS 0x5B
 #define SCSI_CMD_START_STOP_UNIT  0x1B
+#define SCSI_CMD_BLANK            0xA1
 #define SCSI_CMD_ATA_PASSTHROUGH  0xA1
 #define SCSI_CHECK_CONDITION      0x02
 
