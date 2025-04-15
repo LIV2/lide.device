@@ -574,9 +574,10 @@ end:
  * Send a TEST UNIT READY to the unit and update the media change count & presence
  *
  * @param unit Pointer to an IDEUnit struct
+ * @param immediate Don't wait for medium to become ready
  * @returns nonzero if there was an error
 */
-BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
+BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
@@ -607,7 +608,8 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (tries > 0) sleep_s(unit->itask->tr,3);
+                            if (!immediate)
+                                if (tries > 0) sleep_s(unit->itask->tr,2);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;

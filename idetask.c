@@ -526,7 +526,7 @@ static void diskchange_check(struct IDETask *itask) {
     {
         if (unit->present && unit->atapi) {
 
-            present = (atapi_test_unit_ready(unit) == 0) ? true : false;
+            present = (atapi_test_unit_ready(unit,true) == 0) ? true : false;
 
             if (present != unit->mediumPresentPrev) {
 
@@ -595,7 +595,7 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
             error   = 0;
             ioreq->io_Actual = 0;
             if (unit->atapi) {
-                ioreq->io_Actual = (atapi_test_unit_ready(unit) != 0);
+                ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
                 break;
             }
             ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;
@@ -802,44 +802,4 @@ void __attribute__((noreturn)) ide_task () {
             }
         }
     }
-}
-
-/**
- * direct_changestate
- *
- * Send a TD_CHANGESTATE request directly to the IDE Task
- * This will have the side-effect of updating the presence status and geometry of the unit if the status changed
- *
- * @param unit Pointer to an IDEUnit struct
- * @param dev Pointer to DeviceBase
- * @returns -1 on error, 0 if disk present, >0 if no disk
-*/
-BYTE direct_changestate (struct IDEUnit *unit, struct DeviceBase *dev) {
-    struct ExecBase *SysBase = unit->SysBase;
-
-    BYTE ret = -1;
-    struct MsgPort *iomp = NULL;
-    struct IOStdReq *ioreq = NULL;
-
-    if ((iomp = L_CreatePort(NULL,0)) == NULL || (ioreq = L_CreateStdIO(iomp)) == NULL) goto die;
-
-    ioreq->io_Command = TD_CHANGESTATE;
-    ioreq->io_Data    = NULL;
-    ioreq->io_Length  = 1;
-    ioreq->io_Actual  = 0;
-    ioreq->io_Unit    = (struct Unit *)unit;
-    PutMsg(unit->itask->iomp,(struct Message *)ioreq); // Send request directly to the ide task
-    WaitPort(iomp);
-    GetMsg(iomp);
-
-    if (ioreq->io_Error == 0) {
-        ret = ioreq->io_Actual; // TD_CHANGESTATE returns 0 in io_Actual if disk preset, nonzero if no disk
-    } else {
-        ret = -1;
-    }
-die:
-    if (ioreq) L_DeleteStdIO(ioreq);
-    if (iomp)  L_DeletePort(iomp);
-
-    return ret;
 }

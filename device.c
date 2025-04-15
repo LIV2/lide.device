@@ -585,10 +585,6 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     */
     ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
 
-    // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
-    // This will update the media presence & geometry
-    if (unit->atapi && unit->openCount == 0) direct_changestate(unit,dev);
-
     unit->openCount++;
     dev->lib.lib_OpenCnt++;
 
