@@ -47,7 +47,7 @@ BYTE atapi_translate(APTR io_Data,ULONG lba, ULONG count, ULONG *io_Actual, stru
 BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit);
-BYTE atapi_test_unit_ready(struct IDEUnit *unit);
+BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate);
 BYTE atapi_get_capacity(struct IDEUnit *unit);
 BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey, UBYTE *asc, UBYTE *asq);
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, UWORD *buffer, UWORD length, UWORD *actual, BOOL dbd);

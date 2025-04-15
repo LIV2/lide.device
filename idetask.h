@@ -13,4 +13,3 @@
 #define CMD_PIO  (CMD_XFER + 1)
 
 void ide_task();
-BYTE direct_changestate(struct IDEUnit *unit, struct DeviceBase *dev);
