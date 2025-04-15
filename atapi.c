@@ -551,11 +551,16 @@ end:
         Warn("Status: %02lx\n",*status);
         Warn("Interrupt reason: %02lx\n",*unit->drive.sectorCount);
         cmd->scsi_Status = 2;
-        if (ret == 0) ret = HFERR_BadStatus;
         if (cmd->scsi_Flags & (SCSIF_AUTOSENSE)) {
             Trace("Auto sense requested\n");
-            atapi_autosense(cmd,unit);
+            if (ret == IOERR_UNITBUSY) {
+                // This was a timeout, fake the autosense data
+                scsi_sense(cmd,0,0,ret);
+            } else {
+                atapi_autosense(cmd,unit);
+            }
         }
+        if (ret == 0) ret = HFERR_BadStatus;
     }
     Trace("Remaining: %ld\n",remaining);
     Trace("exit atapi_packet\n");
