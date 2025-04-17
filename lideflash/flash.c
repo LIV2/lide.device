@@ -17,6 +17,7 @@
  */
 
 #include <proto/expansion.h>
+#include <proto/exec.h>
 #include <exec/types.h>
 #include <stdbool.h>
 
@@ -104,11 +105,12 @@ static UWORD flash_get_sectorSize(UBYTE manufacturer, UBYTE device) {
 void flash_writeByte(ULONG address, UBYTE data) {
   address &= (FLASH_SIZE-1);
   address <<= 1;
+  Forbid();
   flash_unlock_sdp();
   flash_command(CMD_BYTE_PROGRAM);
   *(volatile UBYTE *)(flashbase + address) = data;
   flash_poll(address);
-
+  Permit();
   return;
 }
 
@@ -139,12 +141,13 @@ void flash_unlock_sdp() {
  * @brief Perform a chip erase
 */
 void flash_erase_chip() {
+  Forbid();
   flash_unlock_sdp();
   flash_command(CMD_ERASE);
   flash_unlock_sdp();
   flash_command(CMD_ERASE_CHIP);
-
   flash_poll(0);
+  Permit();
 }
 
 
@@ -171,11 +174,13 @@ void flash_erase_bank(UWORD sectorSize) {
 void flash_erase_sector(ULONG address) {
   address &= (FLASH_SIZE-1);
   address <<= 1;
+  Forbid();
   flash_unlock_sdp();
   flash_command(CMD_ERASE);
   flash_unlock_sdp();
   *(volatile UBYTE *)(flashbase + address) = CMD_ERASE_SECTOR;
   flash_poll(address);
+  Permit();
 }
 
 /** flash_poll
@@ -206,6 +211,7 @@ bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base, UWORD *sectorSize) {
 
   flashbase = (ULONG)base;
 
+  Forbid();
   flash_unlock_sdp();
   flash_command(CMD_ID_ENTRY);
 
@@ -213,6 +219,7 @@ bool flash_init(UBYTE *manuf, UBYTE *devid, ULONG *base, UWORD *sectorSize) {
   deviceId = *(volatile UBYTE *)(flashbase + 2);
 
   flash_command(CMD_CFI_ID_EXIT);
+  Permit();
 
   if (manuf) *manuf = manufId;
   if (devid) *devid = deviceId;
