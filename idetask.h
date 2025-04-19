@@ -11,5 +11,7 @@
 #define CMD_DIE  0x1000
 #define CMD_XFER (CMD_DIE + 1)
 #define CMD_PIO  (CMD_XFER + 1)
+#define CMD_PAUSE (CMD_PIO + 1)
+#define CMD_RESUME (CMD_PAUSE + 1)
 
 void ide_task();

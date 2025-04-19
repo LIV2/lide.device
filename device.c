@@ -784,6 +784,23 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 Enable();
                 break;
 
+            case CMD_RESUME:
+                if (unit->itask->paused) {
+                    Signal(unit->itask->task,SIGBREAKF_CTRL_D);
+                    error = 0;
+                    unit->itask->paused = false;
+                } else {
+                    error = IOERR_ABORTED;
+                }
+                break;
+
+            case CMD_PAUSE:
+                if (unit->itask->paused) {
+                    error = IOERR_UNITBUSY;
+                    break;
+                }
+                goto sendToTask;
+
             // Begin IO Task commands //
             case CMD_START:
             case CMD_STOP:
@@ -813,6 +830,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             case CMD_XFER:
             case CMD_PIO:
             case HD_SCSICMD:
+sendToTask:
                 // Send all of these to ide_task
                 ioreq->io_Flags &= ~IOF_QUICK;
                 PutMsg(unit->itask->iomp,&ioreq->io_Message);

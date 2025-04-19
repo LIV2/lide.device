@@ -83,7 +83,6 @@ struct DeviceBase {
     struct Library         lib;
     struct ExecBase        *SysBase;
     struct Library         *ExpansionBase;
-    struct Task            *ChangeTask;
     BPTR                   saved_seg_list;
     bool                   isOpen;
     ULONG                  numUnits;
@@ -107,6 +106,7 @@ struct IDETask {
     struct timerequest *tr;
     struct timerequest *dcTimerReq;
     volatile bool      active;
+    volatile bool      paused;
     bool               hasRemovables;
     bool               dcTimerArmed;
     UBYTE              shadowDevHead;

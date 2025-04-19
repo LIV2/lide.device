@@ -1,6 +1,6 @@
 PROJECT=lideflash
 CC=m68k-amigaos-gcc
-CFLAGS=-lamiga -mcrt=nix13 -mcpu=68000 -Wall -Wno-pointer-sign -s -O3 -fomit-frame-pointer
+CFLAGS=-lamiga -mcrt=nix13 -mcpu=68000 -Wall -Wno-pointer-sign -s -O3 -fomit-frame-pointer -Wno-multichar
 .PHONY:	clean all
 
 ifneq ($(DEVICE_VERSION), )

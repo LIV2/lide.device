@@ -577,6 +577,13 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
     direction = WRITE;
 
     switch (ioreq->io_Command) {
+        case CMD_PAUSE:
+            itask->paused = true;
+            ioreq->io_Error = 0;
+            ReplyMsg(&ioreq->io_Message);
+            Wait(SIGBREAKF_CTRL_D);
+            return;
+
         case CMD_START:
             if (unit->atapi) {
                 error = atapi_start_stop_unit(unit,true,false,false);
@@ -771,6 +778,7 @@ void __attribute__((noreturn)) ide_task () {
     }
 
     itask->active = true;
+    itask->paused = false;
     Signal(itask->parent,SIGF_SINGLE);
 
     if (itask->hasRemovables) {
