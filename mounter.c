@@ -25,6 +25,7 @@
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <exec/alerts.h>
+#include <exec/errors.h>
 #include <exec/ports.h>
 #include <exec/execbase.h>
 #include <exec/io.h>
@@ -92,7 +93,7 @@ struct MountData
 
 static volatile struct CIA * const ciaa = (struct CIA *)0x0bfe001;
 
-// Get Block size of unit by sending a SCSI READ CAPACITY 10 command
+// Get Block size of unit
 BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
 	
@@ -104,6 +105,30 @@ BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
 }
 
 #if CDBOOT
+// Check if there is a disc inserted
+bool UnitIsReady(struct IOStdReq *req) {
+	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+	BYTE err;
+	
+	// First spin up the disc
+	// Not critical if there's an error so no need to check
+	req->io_Command = CMD_START;
+	req->io_Error   = 0;
+	DoIO((struct IORequest *)req);
+
+	req->io_Command = TD_CHANGESTATE;
+	req->io_Actual  = 0;
+	req->io_Error   = 0;
+	err = DoIO((struct IORequest *)req);
+
+	// Some devices/units don't support this - assume that it is ready
+	if (err == IOERR_NOCMD) return true;
+
+	if (err == 0 && req->io_Actual == 0) return true;
+
+	return false;
+}
+
 // Check if this is a data disc by reading the TOC and checking that track 1 is a data track.
 bool isDataCD(struct IOStdReq *ior) {
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
@@ -1100,17 +1125,12 @@ static struct FileSysEntry *scan_filesystems(void)
 // Search for Bootable CDROM
 static LONG ScanCDROM(struct MountData *md)
 {
-	struct ExecBase *SysBase = md->SysBase;
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct FileSysEntry *fse=NULL;
 	char dosName[] = "\3CD0"; // BCPL String
 	LONG bootPri;
 
-	// Check if a disc is present
-	md->request->iotd_Req.io_Command = TD_CHANGESTATE; // Check if there's a disc in the drive
-	md->request->iotd_Req.io_Actual   = 0;
-
-	if ((DoIO((struct IORequest *)md->request) != 0) || md->request->iotd_Req.io_Actual != 0)
+	if (!UnitIsReady((struct IOStdReq *)md->request))
 		return -1;
 
 	if (!isDataCD((struct IOStdReq *)md->request))
