@@ -729,14 +729,18 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     unit->logicalSectors  = 0;
     unit->blockShift      = 0;
 
-    if ((ret = atapi_packet(cmd,unit)) == 0) {
-        unit->logicalSectors  = capacity.logicalSectors + 1;
-        unit->blockSize       = capacity.blockSize;
-
-        while ((unit->blockSize >> unit->blockShift) > 1) {
-            unit->blockShift++;
+    for (int retry = 3; retry > 0; retry--) {
+        if ((ret = atapi_packet(cmd,unit)) == 0) {
+            unit->logicalSectors  = capacity.logicalSectors + 1;
+            unit->blockSize       = capacity.blockSize;
+    
+            while ((unit->blockSize >> unit->blockShift) > 1) {
+                unit->blockShift++;
+            }
+            break;
         }
     }
+
     Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
 
     DeleteSCSICmd(cmd);
@@ -1016,23 +1020,49 @@ BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
  * @param loej loej bit of START STOP
  * @returns non-zero on error
 */
-BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
-    struct SCSICmd *cmd = NULL;
+BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool immediate) {
     UBYTE operation = 0;
-    UBYTE ret;
+    UBYTE ret = 0;
 
     if (loej)  operation |= (1<<1);
     if (start) operation |= (1<<0);
+  
+    BYTE cdb[10] = {0};
+    struct SCSI_FIXED_SENSE sense;
+    memset(&sense,0,sizeof(struct SCSI_FIXED_SENSE));
+    
+    struct SCSICmd cmd = {
+        .scsi_Command     = (APTR)&cdb,
+        .scsi_CmdActual   = 0,
+        .scsi_CmdLength   = 10,
+        .scsi_Data        = NULL,
+        .scsi_Length      = 0,
+        .scsi_Flags       = SCSIF_AUTOSENSE,
+        .scsi_SenseData   = (APTR)&sense,
+        .scsi_SenseLength = sizeof(struct SCSI_FIXED_SENSE),
+        .scsi_SenseActual = 0,
+        .scsi_Status      = 0
+    };
 
-    if ((cmd = MakeSCSICmd(SZ_CDB_10)) == NULL) return TDERR_NoMem;
+    cdb[0] = SCSI_CMD_START_STOP_UNIT;
+    cdb[1] = (immediate) ? 1 : 0;
+    cdb[4] = operation;
 
-    cmd->scsi_Command[0] = SCSI_CMD_START_STOP_UNIT;
-    cmd->scsi_Command[1] = (1<<0); // Immediate bit set
-    cmd->scsi_Command[4] = operation;
+    ret = atapi_packet(&cmd,unit);
 
-    ret = atapi_packet(cmd,unit);
+    if (cmd.scsi_Status == 0x02) {
+        if (sense.senseKey == 0x02) {
+            if (sense.asc == 0x04) {
+                ret = 0; // Becoming ready
+            } else {
+                ret = TDERR_DiskChanged;
+            }
+        } else {
+            ret = TDERR_NotSpecified;
+        }
+    }
 
-    DeleteSCSICmd(cmd);
+    atapi_test_unit_ready(unit,true);
 
     return ret;
 }
@@ -1301,7 +1331,7 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
 
     if (cmd != NULL) {
-        for (int retry=0; retry<3; retry++) {
+        for (int retry=3; retry > 0; retry--) {
             cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
             cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
             cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;

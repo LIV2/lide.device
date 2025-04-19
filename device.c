@@ -660,6 +660,8 @@ const UWORD supported_commands[] =
     CMD_UPDATE,
     CMD_READ,
     CMD_WRITE,
+    CMD_START,
+    CMD_STOP,
     TD_ADDCHANGEINT,
     TD_REMCHANGEINT,
     TD_REMOVE,
@@ -782,7 +784,14 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 Enable();
                 break;
 
-
+            // Begin IO Task commands //
+            case CMD_START:
+            case CMD_STOP:
+                // Don't pass it to the task if it's not an atapi device
+                if (!unit->atapi) {
+                    error = 0;
+                    break;
+                }
             case CMD_READ:
             case ETD_READ:
             case CMD_WRITE:
@@ -809,6 +818,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 PutMsg(unit->itask->iomp,&ioreq->io_Message);
                 Trace((CONST_STRPTR) "IO queued\n");
                 return;
+            // End IO Task commands //
 
             case NSCMD_DEVICEQUERY:
                 if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
