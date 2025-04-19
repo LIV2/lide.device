@@ -17,6 +17,7 @@
  */
 
 #include <exec/execbase.h>
+#include <exec/errors.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <string.h>
@@ -31,6 +32,8 @@
 #include "main.h"
 #include "config.h"
 #include "matzetk.h"
+#include "../device.h"
+#include "../idetask.h"
 
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194
@@ -183,6 +186,80 @@ bool inhibitDosDevs(bool inhibit) {
   }
 
   return success;
+}
+
+/**
+ * suspend_lide
+ * 
+ * Send a CMD_PAUSE/CMD_RESUME command to every running instance of lide.device
+ * This is used to pause the lide IO task while we disable the IDE interface
+ * 
+ * @param pause (bool) True to pause, False to resume
+ */
+void suspend_lide(bool pause) {
+  struct MsgPort *mp = NULL;
+  struct IOStdReq *ior = NULL;
+  
+  BYTE err = 0;
+  
+  const char device_name[] = DEVICE_NAME;
+  const ULONG prefix[] = {' nd.', ' rd.', ' th.'};
+  char *prefixedName;
+  char *devNamePtr;
+  
+  if ((prefixedName = AllocMem(sizeof(device_name) + 4,MEMF_ANY|MEMF_CLEAR))) {
+    memcpy(prefixedName+4,device_name,sizeof(device_name));
+    if ((mp = CreatePort(NULL,0))) {
+      if ((ior = CreateStdIO(mp))) {
+        // Iterate through device names from lide.device .. 8th.lide.device
+        for (int i=0; i < 8; i++) {
+          switch (i) {
+            case 0:                             // lide.device
+              devNamePtr = prefixedName + 4;
+              break;
+            case 1:                             // 2nd.lide.device
+              devNamePtr = prefixedName;
+              *(ULONG *)devNamePtr = prefix[0];
+              break;
+            case 2:                             // 3rd.lide.device
+              devNamePtr = prefixedName;
+              *(ULONG *)devNamePtr = prefix[1];
+              break;
+            default:                            // 4-8th.lide.device
+              devNamePtr = prefixedName;
+              *(ULONG *)devNamePtr = prefix[2];
+              break;
+          }
+          
+          // Set the prefix number
+          if (i > 0) *(char *)prefixedName = '1' + i;
+
+          // DOS Devices are inhibited so check that the device is already loaded
+          // OpenDevice would otherwise try to load from disk which would throw a requester
+          if (FindName(&SysBase->DeviceList,devNamePtr)) {
+            for (int unit=0; unit < MAX_UNITS; unit++) {
+              err = OpenDevice(devNamePtr,unit,(struct IORequest *)ior,0);
+
+              if (err == IOERR_OPENFAIL) break;
+
+              if (err == 0) {
+                ior->io_Command = (pause) ? CMD_PAUSE : CMD_RESUME;
+                ior->io_Error   = 0;
+                err = DoIO((struct IORequest *)ior);
+                CloseDevice((struct IORequest *)ior);
+
+                if (err == IOERR_NOCMD) break;
+
+              }
+            }
+          }
+        }
+        DeleteStdIO(ior);
+      }
+      DeletePort(mp);
+    }
+    FreeMem(prefixedName,sizeof(device_name) + 4);
+  }
 }
 
 /**
@@ -503,6 +580,8 @@ int main(int argc, char *argv[])
 
         // Ask the user if they wish to update this board
         if (!promptUser(config)) continue;
+        
+        suspend_lide(true);
 
         if (board.writeEnable != NULL)  // Setup board to allow flash write access
           board.writeEnable(&board);
@@ -584,6 +663,7 @@ int main(int argc, char *argv[])
       }
     }
 
+    suspend_lide(false);
     if (devsInhibited)
       inhibitDosDevs(false);
 
