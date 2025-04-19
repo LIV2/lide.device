@@ -465,6 +465,8 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
                 unit->deviceType      = (buf[0] >> 8) & 0x1F;
                 unit->atapi           = true;
+
+                atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
         } else {
 ident_failed:
             Warn("INIT: IDENTIFY failed\n");

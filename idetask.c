@@ -577,6 +577,18 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
     direction = WRITE;
 
     switch (ioreq->io_Command) {
+        case CMD_START:
+            if (unit->atapi) {
+                error = atapi_start_stop_unit(unit,true,false,false);
+            }
+            break;
+
+        case CMD_STOP:
+            if (unit->atapi) {
+                error = atapi_start_stop_unit(unit,false,false,false);
+            }
+            break;
+
         case TD_EJECT:
             if (!unit->atapi) {
                 error  = IOERR_NOCMD;
@@ -586,9 +598,7 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
 
             bool insert = (ioreq->io_Length == 0) ? true : false;
 
-            if (insert == false) atapi_update_presence(unit,false); // Immediately update medium presence on Eject
-
-            error = atapi_start_stop_unit(unit,insert,1);
+            error = atapi_start_stop_unit(unit,insert,1,false);
             break;
 
         case TD_CHANGESTATE:
@@ -598,7 +608,6 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
                 ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
                 break;
             }
-            ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;
             break;
 
         case TD_PROTSTATUS:
