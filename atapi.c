@@ -820,7 +820,8 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_sense = MakeSCSICmd(SZ_CDB_10);
 
     if (cmd_sense == NULL) {
-        return TDERR_NoMem;
+        ret = TDERR_NoMem;
+        goto cleanup;
     }
 
     cmd_sense->scsi_Command[0] = SCSI_CMD_MODE_SENSE_10;
@@ -836,20 +837,25 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     ret = atapi_packet(cmd_sense,unit);
 
-
     if (ret == 0 && cmd_sense->scsi_Status == 0) {
-        // Translate the mode parameter header
-        dest[0] = (buf[1] - 3); // Length
-        dest[1] = buf[2];       // Medium type
-        dest[2] = buf[3];       // WP/DPOFUA Flags
-        dest[3] = buf[7];       // Block descriptor length
-
-        // Copy the mode sense data
-        for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
-            dest[i+4] = buf[i+8];
+        // Check that mode data is not too short and does not exceed mode sense(6) length and
+        if (cmd_sense->scsi_Actual < 8 || buf[0] || buf[6] || buf[1] < 3) {
+            cmd->scsi_Status = 2;
+            ret = IOERR_BADLENGTH;
+        } else {
+            // Translate the mode parameter header
+            dest[0] = (buf[1] - 3); // Length
+            dest[1] = buf[2];       // Medium type
+            dest[2] = buf[3];       // WP/DPOFUA Flags
+            dest[3] = buf[7];       // Block descriptor length
+    
+            // Copy the mode sense data
+            for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
+                dest[i+4] = buf[i+8];
+            }
+            cmd->scsi_Actual = cmd_sense->scsi_Actual - 4;
+            cmd->scsi_Status = 0;
         }
-        cmd->scsi_Actual = cmd_sense->scsi_Actual - 4;
-        cmd->scsi_Status = 0;
     } else {
         cmd->scsi_Status = 2;
     }
@@ -857,8 +863,9 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
 
-    FreeMem(buf,len);
-    DeleteSCSICmd(cmd_sense);
+cleanup:
+    if (buf) FreeMem(buf,len);
+    if (cmd_sense) DeleteSCSICmd(cmd_sense);
     return ret;
 }
 
@@ -867,7 +874,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
  *
  * ATAPI devices do not support MODE SELECT (6) so translate to a MODE SELECT (10)
  *
- * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
+ * @param cmd Pointer to a SCSICmd struct containing a MODE SELECT (6) request
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
 */
@@ -896,7 +903,8 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_select = MakeSCSICmd(SZ_CDB_10);
 
     if (cmd_select == NULL) {
-        return TDERR_NoMem;
+        ret = TDERR_NoMem;
+        goto cleanup;
     }
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
@@ -911,10 +919,14 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_select->scsi_SenseData   = cmd->scsi_SenseData;
     cmd_select->scsi_SenseLength = cmd->scsi_SenseLength;
 
+    // Copy Mode parameter header fields
+    dst[2] = src[1]; // Mediun Type
+    dst[3] = src[2]; // Device specific parameter
+    dst[7] = src[3]; // Block descriptor length
+  
     // Copy the Mode Parameters
-    dst += 4;
-    len = bufSize - 4;
-    CopyMem(src,dst,len);
+    len = bufSize - 8;
+    CopyMem(src + 4, dst + 8, len);
 
     ret = atapi_packet(cmd_select, unit);
     if (ret == 0 && cmd_select->scsi_Status == 0) {
@@ -927,8 +939,9 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_Actual      = cmd_select->scsi_Actual;
 
-    DeleteSCSICmd(cmd_select);
-    FreeMem(buf,bufSize);
+cleanup:
+    if (buf) FreeMem(buf,bufSize);
+    if (cmd_select) DeleteSCSICmd(cmd_select);
 
     return ret;
 }
