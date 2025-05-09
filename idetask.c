@@ -141,14 +141,14 @@ static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command)
 }
 
 /**
- * scsi_read_capaity_ata
+ * scsi_read_capacity_ata
  *
  * Handle SCSI-Direct READ CAPACITY commands for ATA devices
  *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
-static BYTE scsi_read_capaity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+static BYTE scsi_read_capacity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_CAPACITY_10 *data = (struct SCSI_CAPACITY_10 *)scsi_command->scsi_Data;
     BYTE error;
 
@@ -289,7 +289,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_READ_CAPACITY_10:
-                error = scsi_read_capaity_ata(unit,scsi_command);
+                error = scsi_read_capacity_ata(unit,scsi_command);
                 break;
 
             case SCSI_CMD_READ_6:
