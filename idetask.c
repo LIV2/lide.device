@@ -213,7 +213,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
     UBYTE idx = 4;
     if (page == 0x3F || page == 0x03) {
         data[idx++] = 0x03; // Page Code: Format Parameters
-        data[idx++] = 0x16; // Page length
+        data[idx++] = 0x18; // Page length
         for (int i=0; i <8; i++) {
             data[idx++] = 0;
         }
@@ -228,7 +228,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
 
     if (page == 0x3F || page == 0x04) {
         data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
-        data[idx++] = 0x16; // Page length
+        data[idx++] = 0x17; // Page length
         data[idx++] = (unit->cylinders >> 16);
         data[idx++] = (unit->cylinders >> 8);
         data[idx++] = unit->cylinders;
