@@ -238,7 +238,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  * @return tick count
  * 
  */
-static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
+static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *buffer) {
     struct ExecBase *SysBase = unit->SysBase;
     struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
     struct EClockVal *startTime;
@@ -248,7 +248,7 @@ static ULONG ata_bench(struct IDEUnit *unit, void *xfer_routine, void *buffer) {
     if (TimerBase->dd_Library.lib_Version < 36) return 0;
 
     if (buffer) {
-        void (*do_xfer)(void *source asm("a0"), void *destination asm("a1")) = xfer_routine;
+        ata_xfer_func do_xfer = xfer_routine;
         if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
             if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
                 ReadEClock(startTime);
@@ -294,8 +294,8 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
     
     if ((buf = AllocMem(512,MEMF_ANY))) {
         enum xfer method;
-        ticks = ata_bench(unit,&ata_read_long_movem,buf);
-        if (ticks > 0 && ata_bench(unit,&ata_read_long_move,buf) < ticks) {
+        ticks = ata_bench(unit,ata_read_long_movem,buf);
+        if (ticks > 0 && ata_bench(unit,ata_read_long_move,buf) < ticks) {
             method = longword_move;
         } else {
             method = longword_movem;
@@ -319,18 +319,18 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
     switch (method) {
         default:
         case longword_movem:
-            unit->read_fast       = &ata_read_long_movem;
-            unit->read_unaligned  = &ata_read_unaligned_long;
-            unit->write_fast      = &ata_write_long_movem;
-            unit->write_unaligned = &ata_write_unaligned_long;
+            unit->read_fast       = ata_read_long_movem;
+            unit->read_unaligned  = ata_read_unaligned_long;
+            unit->write_fast      = ata_write_long_movem;
+            unit->write_unaligned = ata_write_unaligned_long;
 
             unit->xferMethod = longword_movem;
             break;
         case longword_move:
-            unit->read_fast       = &ata_read_long_move;
-            unit->read_unaligned  = &ata_read_unaligned_long;
-            unit->write_fast      = &ata_write_long_move;
-            unit->write_unaligned = &ata_write_unaligned_long;
+            unit->read_fast       = ata_read_long_move;
+            unit->read_unaligned  = ata_read_unaligned_long;
+            unit->write_fast      = ata_write_long_move;
+            unit->write_unaligned = ata_write_unaligned_long;
 
             unit->xferMethod = longword_move;
             break;
@@ -558,7 +558,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     }
 
-    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
+    ata_xfer_func ata_xfer;
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if (((ULONG)buffer) & 0x01) {
@@ -647,7 +647,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
 
-    void (*ata_xfer)(void *source asm("a0"), void *destination asm("a1"));
+    ata_xfer_func ata_xfer;
 
     /* If the buffer is not word-aligned we need to use a slower routine */
     if ((ULONG)buffer & 0x01) {

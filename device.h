@@ -25,6 +25,8 @@ enum xfer {
     longword_move
 };
 
+typedef void (*ata_xfer_func)(void * asm("a0"), void * asm("a1"));
+
 /**
  * Drive struct
  *
@@ -49,10 +51,10 @@ struct IDEUnit {
     struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
-    void  (*read_fast)(void * asm("a0"), void * asm("a1"));
-    void  (*write_fast)(void * asm("a0"), void * asm("a1"));
-    void  (*read_unaligned)(void * asm("a0"), void * asm("a1"));
-    void  (*write_unaligned)(void * asm("a0"), void * asm("a1"));
+    ata_xfer_func read_fast;
+    ata_xfer_func write_fast;
+    ata_xfer_func read_unaligned;
+    ata_xfer_func write_unaligned;
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
     UBYTE unitNum;
