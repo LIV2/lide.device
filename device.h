@@ -15,6 +15,20 @@
 
 #define MAX_UNITS 4
 
+#if AMIGAPCI
+#define NO_AUTOCONFIG  1
+#define BOARD_MANUF_ID 600
+#define BOARD_PROD_ID  3
+#endif
+
+#ifdef SIMPLE_IDE
+#define NO_AUTOCONFIG 1
+#endif
+
+#ifdef NO_AUTOCONFIG
+#define FAKE_CONFIGDEV 1
+#endif
+
 // VSCode C/C++ extension doesn't like the asm("<reg>") syntax
 #ifdef __INTELLISENSE__
 #define asm(x)

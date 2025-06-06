@@ -56,6 +56,11 @@ CFLAGS+= -DSIMPLE_IDE=1
 .PHONY: $(PROJECT)
 endif
 
+ifdef AMIGAPCI
+CFLAGS+= -DAMIGAPCI=1
+.PHONY: $(PROJECT)
+endif
+
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
 
 all:	$(ROM) \
@@ -63,7 +68,8 @@ all:	$(ROM) \
 		rename/renamelide \
 		lide-N2630-high.rom \
 		lide-N2630-low.rom \
-		AIDE-$(PROJECT)
+		AIDE-$(PROJECT) \
+		amigapci-$(PROJECT)
 
 OBJ = device.o \
       ata.o \
@@ -87,6 +93,9 @@ $(ROM): $(PROJECT)
 
 AIDE-$(PROJECT): $(SRCS)
 	${CC} -o $@ $(CFLAGS) -DSIMPLE_IDE=1 $(SRCS) bootblock.S $(LDFLAGS)
+
+amigapci-$(PROJECT): $(SRCS)
+	${CC} -o $@ $(CFLAGS) -DAMIGAPCI=1 $(SRCS) bootblock.S $(LDFLAGS)
 
 lideflash/lideflash:
 	make -C lideflash
@@ -148,6 +157,7 @@ lide-tk-29F040.rom: lide-tk-29F020.rom
 clean:
 	-rm -f $(PROJECT)
 	-rm -f AIDE-$(PROJECT)
+	-rm -f amigapci-$(PROJECT)
 	make -C bootrom clean
 	make -C lideflash clean
 	make -C lidetool clean

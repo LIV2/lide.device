@@ -25,7 +25,7 @@
 #include "debug.h"
 #include "lide_alib.h"
 
-#ifdef NO_AUTOCONFIG
+#ifdef FAKE_CONFIGDEV
 extern UBYTE bootblock, bootblock_end;
 #endif
 
@@ -106,7 +106,7 @@ char * set_dev_name(struct DeviceBase *dev) {
     return NULL;
 }
 
-#ifdef NO_AUTOCONFIG
+#ifdef FAKE_CONFIGDEV
 /**
  * CreateFakeConfigDev
  * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
@@ -414,6 +414,16 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             Cleanup(dev);
             return NULL;
         }
+#ifdef BOARD_MANUF_ID
+        struct ConfigDev *realcd;
+
+        if (!(realcd = FindConfigDev(NULL,BOARD_MANUF_ID,BOARD_PROD_ID))) {
+            Info("AmigaPCI IDE not found\n");
+            Cleanup(dev);
+            return NULL;
+        }
+        APTR BOARD_BASE = realcd->cd_BoardAddr;
+#endif
         cd->cd_BoardAddr = (APTR)BOARD_BASE;
         cd->cd_BoardSize = 0x1000;
         numBoards = 1;
