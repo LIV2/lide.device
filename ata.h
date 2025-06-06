@@ -16,8 +16,6 @@
 
 #ifdef SIMPLE_IDE
 
-#define NO_AUTOCONFIG
-
 #define BOARD_BASE 0xEF0000
 #define CHANNEL_0  0x2000
 #define CHANNEL_1  0x1000
