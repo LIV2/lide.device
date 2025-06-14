@@ -269,6 +269,7 @@ static void Cleanup(struct DeviceBase *dev) {
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
+#ifndef ATA_CHANNELS
 /**
  * detectChannels
  *
@@ -329,6 +330,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     return 1;
 
 }
+#endif
 
 /**
  * init_device
@@ -425,8 +427,11 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
         cd->cd_BoardSize = 0x1000;
         numBoards = 1;
 #endif
+#ifndef ATA_CHANNELS
         UBYTE channels = detectChannels(cd);
-
+#else
+        UBYTE channels = ATA_CHANNELS;
+#endif
         for (int c=0; c < channels; c++) {
 
             Info("Starting IO Task %ld\n",dev->numTasks);

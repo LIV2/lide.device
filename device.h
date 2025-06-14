@@ -19,6 +19,7 @@
 #define NO_AUTOCONFIG  1
 #define BOARD_MANUF_ID 600
 #define BOARD_PROD_ID  3
+#define ATA_CHANNELS 2
 #endif
 
 #ifdef SIMPLE_IDE
