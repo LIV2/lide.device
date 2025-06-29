@@ -17,9 +17,8 @@
 
 #if AMIGAPCI
 #define NO_AUTOCONFIG  1
-#define BOARD_MANUF_ID 600
-#define BOARD_PROD_ID  3
-#define ATA_CHANNELS 2
+// #define BOARD_MANUF_ID 5194
+// #define BOARD_PROD_ID  7
 #endif
 
 #ifdef SIMPLE_IDE
