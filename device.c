@@ -8,6 +8,7 @@
 #include <exec/errors.h>
 #include <exec/execbase.h>
 #include <exec/resident.h>
+#include <hardware/cia.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <resources/filesysres.h>
@@ -926,6 +927,77 @@ static const ULONG device_vectors[] =
     };
 
 /**
+ * AdjustBootPriority
+ *
+ * Adjusts the boot priority of the first matching device in a mount list. Searches
+ * for a device node with the specified name and increases its priority by the given
+ * increment. Optionally checks gameport 1 button state before applying changes.
+ * Re-orders the device in the priority list after modification.
+ *
+ * @param bootname BSTR name to match against device nodes
+ * @param MountList Pointer to the mount list to traverse
+ * @param checkFire If true, only modify when gameport 1 button is pressed
+ * @param increment Amount to increase both device and boot node priorities
+ */
+void AdjustBootPriority(struct ExecBase *SysBase, char *bootname, struct List *MountList, bool checkFire, int increment) {
+    volatile struct CIA *ciaa = (struct CIA *)0x0bfe001;
+    struct BootNode *bn;
+    struct DeviceNode *dn;
+
+    for (bn = (struct BootNode *)MountList->lh_Head;
+        bn->bn_Node.ln_Succ;
+        bn = (struct BootNode *)bn->bn_Node.ln_Succ)
+    {
+        dn = bn->bn_DeviceNode;
+        if (dn->dn_Priority != -128) 
+        {
+            if (L_CompareBSTR(BADDR(dn->dn_Name),bootname)) {
+                if(!checkFire || (ciaa->ciapra & CIAF_GAMEPORT1)==0) {
+                    dn->dn_Priority+=increment;
+                    bn->bn_Node.ln_Pri+=increment;
+                    Remove((struct Node *)bn);
+                    Enqueue(MountList,(struct Node *)bn);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * TweakBootList
+ *
+ * Modifies boot device priorities in the expansion library mount list. Traverses all
+ * boot nodes and increases priority (+1) for devices matching "BOOTxx" names (where xx
+ * is the expansion library major version). Additionally boosts priority (+2) for
+ * "BOOT00" devices when gameport 1 button is pressed. Skips devices with priority -128.
+ *
+ * @param SysBase Pointer to the ExecBase system library base
+ */
+void TweakBootList(struct ExecBase *SysBase) {
+    struct ExpansionBase *ExpansionBase;
+
+    if (ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) {
+        char bootname[] = "\6BOOT00"; // BSTR
+
+        UWORD major = (ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry
+
+        Forbid();
+
+        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,true,2);
+
+        bootname[5]=0x30+(major/10);
+        bootname[6]=0x30+(major%10);
+
+        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,false,1);
+
+        Permit();
+
+        CloseLibrary((struct Library *)ExpansionBase);
+    }
+}
+
+/**
  * init
  *
  * Create the device and add it to the system if init_device succeeds
@@ -988,6 +1060,10 @@ static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
         }
 
         FreeMem(ms,ms_size);
+
+        if (!seg_list) // Only tweak if we're in boot
+            TweakBootList(SysBase);
+
     }
 done:
     return (struct Library *)mydev;
