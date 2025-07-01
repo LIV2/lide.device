@@ -81,7 +81,7 @@ char * set_dev_name(struct DeviceBase *dev) {
                 if (devName == NULL) return NULL;
                 strcpy(devName + 4,device_name);
             }
-            
+
             switch (i) {
                 case 0:
                     *(ULONG *)devName = device_prefix[0];
@@ -111,33 +111,33 @@ char * set_dev_name(struct DeviceBase *dev) {
  * CreateFakeConfigDev
  * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
  * Adapted from mounter.c by Toni Wilen
- * 
+ *
  * @param SysBase Pointer to SysBase
  * @param ExpansionBase Pointer to ExpansionBase
  * @returns Pointer to a ConfigDev struct
  */
 struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *ExpansionBase)
 {
-	struct ConfigDev *cd;
+    struct ConfigDev *cd;
 
-	cd = AllocConfigDev();
-	if (cd) {
-		cd->cd_BoardAddr = NULL;
-		cd->cd_BoardSize = 0;
-		cd->cd_Rom.er_Type = ERTF_DIAGVALID;
-		ULONG bbSize = &bootblock_end - &bootblock;
-		ULONG daSize = sizeof(struct DiagArea) + bbSize;
-		struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
-		if (diagArea) {
-			diagArea->da_Config     = DAC_CONFIGTIME;
-			diagArea->da_BootPoint  = sizeof(struct DiagArea);
-			diagArea->da_Size       = (UWORD)daSize;
+    cd = AllocConfigDev();
+    if (cd) {
+        cd->cd_BoardAddr = NULL;
+        cd->cd_BoardSize = 0;
+        cd->cd_Rom.er_Type = ERTF_DIAGVALID;
+        ULONG bbSize = &bootblock_end - &bootblock;
+        ULONG daSize = sizeof(struct DiagArea) + bbSize;
+        struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
+        if (diagArea) {
+            diagArea->da_Config     = DAC_CONFIGTIME;
+            diagArea->da_BootPoint  = sizeof(struct DiagArea);
+            diagArea->da_Size       = (UWORD)daSize;
             CopyMem(&bootblock, diagArea+1, bbSize);
-			// cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
-			ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
-			*da_Pointer = (ULONG)diagArea;
-		}
-	} else {
+            // cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
+            ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
+            *da_Pointer = (ULONG)diagArea;
+        }
+    } else {
         FreeConfigDev(cd);
         cd = NULL;
     }
@@ -264,7 +264,7 @@ static void Cleanup(struct DeviceBase *dev) {
     }
 
     // if devName doesn't point to the const device_name then we need to free up that memory
-    if (devName != device_name) { 
+    if (devName != device_name) {
         FreeMem(devName,sizeof(device_name)+4);
         devName = NULL;
     }
@@ -485,12 +485,12 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
 }
 
-/* 
+/*
  * device dependent expunge function
  * !!! CAUTION: This function runs in a forbidden state !!!
  * This call is guaranteed to be single-threaded; only one task
  * will execute your Expunge at a time.
- * 
+ *
  * IMPORTANT: because Expunge is called from the memory allocator,
  * it may NEVER Wait() or otherwise take long time to complete.
 */
@@ -509,11 +509,11 @@ static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6
 
 }
 
-/* 
+/*
 * device dependent open function
 * !!! CAUTION: This function runs in a forbidden state !!!
 * This call is guaranteed to be single-threaded; only one task
-* will execute your Open at a time. 
+* will execute your Open at a time.
 */
 static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
@@ -628,11 +628,11 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
 }
 
 
-/* 
+/*
  * device dependent close function
  * !!! CAUTION: This function runs in a forbidden state !!!
  * This call is guaranteed to be single-threaded; only one task
- * will execute your Close at a time. 
+ * will execute your Close at a time.
  */
 static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
