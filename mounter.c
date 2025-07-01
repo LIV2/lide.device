@@ -39,7 +39,6 @@
 #include <dos/dos.h>
 #include <dos/dosextens.h>
 #include <dos/doshunks.h>
-#include <hardware/cia.h>
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -90,8 +89,6 @@ struct MountData
 	BOOL wasLastDev;
 	int blocksize;
 };
-
-static volatile struct CIA * const ciaa = (struct CIA *)0x0bfe001;
 
 // Get Block size of unit
 BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry) {
@@ -909,35 +906,8 @@ static void AddNode(struct PartitionBlock *part, struct ParameterPacket *pp, str
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct DosLibrary *DOSBase = md->DOSBase;
 	LONG bootPri;
-	char bootname[8];
-	UWORD major;
-	
-	major=(ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry
-	bootname[0]=0x06;
-	bootname[1]='B';
-	bootname[2]='O';
-	bootname[3]='O';
-	bootname[4]='T';
-	bootname[5]=0x30+(major/10);
-	bootname[6]=0x30+(major%10);
-	bootname[7]=0;
 
-	if (!(part->pb_Flags & PBFF_BOOTABLE)) {
-		bootPri = -128;
-	} else {
-		bootPri = pp->de.de_BootPri;
-		// Do we have a bootpartition for this kickstart?
-		if(CompareBSTRNoCase(part->pb_DriveName, bootname)==TRUE) {
-			bootPri++; // make priority a bit higher
-		}
-		// Do we have a setup bootpartition? 
-		bootname[5]=bootname[6]='0';
-		if(CompareBSTRNoCase(part->pb_DriveName, bootname)==TRUE) {
-		        if((ciaa->ciapra & CIAF_GAMEPORT1)==0) {
-			          bootPri+=2; // make priority a bit more higher
-			}
-		}
-	}
+	bootPri = (part->pb_Flags & PBFF_BOOTABLE) ? pp->de.de_BootPri : -128;
 	
 	if (ExpansionBase->LibNode.lib_Version >= 37) {
 		// KS 2.0+

@@ -7,6 +7,7 @@
 #include <exec/nodes.h>
 #include <exec/ports.h>
 #include <proto/exec.h>
+#include <stdbool.h>
 #include <string.h>
 #include "debug.h"
 
@@ -18,9 +19,9 @@
 
 /**
  * L_NewList
- * 
+ *
  * Initialize a new list
- * 
+ *
  * @param new_list Pointer to a new list
  */
 void L_NewList(struct List *new_list) {
@@ -31,9 +32,9 @@ void L_NewList(struct List *new_list) {
 
 /**
  * L_CreatePort
- * 
+ *
  * Create a new MsgPort
- * 
+ *
  * @param name (optional) name of the port
  * @param priority priority of the port
  * @returns pointer to a MsgPort
@@ -49,7 +50,7 @@ struct MsgPort *L_CreatePort(STRPTR name, LONG pri) {
             mp->mp_Node.ln_Name = name;
             mp->mp_SigBit       = sigNum;
             mp->mp_SigTask      = FindTask(0);
-            
+
             L_NewList(&mp->mp_MsgList);
 
             if (mp->mp_Node.ln_Name)
@@ -62,9 +63,9 @@ struct MsgPort *L_CreatePort(STRPTR name, LONG pri) {
 
 /**
  * L_DeletePort
- * 
+ *
  * Delete a MsgPort
- * 
+ *
  * @param mp Pointer to a MsgPort
  */
 void L_DeletePort(struct MsgPort *mp) {
@@ -73,7 +74,7 @@ void L_DeletePort(struct MsgPort *mp) {
     if (mp) {
         if (mp->mp_Node.ln_Name)
             RemPort(mp);
-        
+
         FreeSignal(mp->mp_SigBit);
         FreeMem(mp,sizeof(struct MsgPort));
     }
@@ -81,9 +82,9 @@ void L_DeletePort(struct MsgPort *mp) {
 
 /**
  * L_CreateExtIO
- * 
+ *
  * Create an Extended IO Request
- * 
+ *
  * @param mp Pointer to the reply port
  * @param size Size of the IO request
  * @return pointer to the IO request
@@ -105,9 +106,9 @@ struct IORequest* L_CreateExtIO(struct MsgPort *mp, ULONG size) {
 
 /**
  * L_CreateStdIO
- * 
+ *
  * Create a standard IO Request
- * 
+ *
  * @param mp Pointer to the reply port
  * @return Pointer to an IOStdReq
  */
@@ -117,9 +118,9 @@ struct IOStdReq* L_CreateStdIO(struct MsgPort *mp) {
 
 /**
  * L_DeleteExtIO
- * 
+ *
  * Delete an Extended IO Request
- * 
+ *
  * @param ior Pointer to an IORequest
  */
 void L_DeleteExtIO(struct IORequest *ior) {
@@ -133,9 +134,9 @@ void L_DeleteExtIO(struct IORequest *ior) {
 
 /**
  * L_DeleteStdIO
- * 
+ *
  * Delete a Standard IO Requesrt
- * 
+ *
  * @param ior Pointer to an IOStdReq
  */
 void L_DeleteStdIO(struct IOStdReq *ior) {
@@ -192,4 +193,43 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         AddTask(task,funcEntry,NULL);
 
         return task;
+}
+
+/**
+ * L_Uppercase
+ * Convert lowercase char to uppercase
+ *
+ * @param c char to uppercase
+ * @returns char
+ */
+
+char L_UpperCase(char c) {
+    if (c >= 'a' && c <= 'z')
+        c -= ('a'-'A');
+
+    return c;
+}
+
+/**
+ * L_CompareBSTR
+ * Compare two BSTRs
+ *
+ * @param str1 String 1
+ * @param str2 String 2
+ * @returns bool Equality
+ */
+bool L_CompareBSTR(char *str1, char *str2) {
+    UBYTE len1 = str1[0];
+    UBYTE len2 = str2[0];
+
+    if (len1 != len2) {
+        return false;
+    }
+
+    for (int i=1; i<=len1; i++) {
+        if (L_UpperCase(str1[i]) != L_UpperCase(str2[i]))
+            return false;
+    }
+
+    return true;
 }
