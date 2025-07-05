@@ -342,9 +342,10 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
  *
  * Initialize a unit, check if it is there and responding
  * @param unit Pointer to an IDEUnit struct
+ * @param base Base address of the drive registers
  * @returns false on error
 */
-bool ata_init_unit(struct IDEUnit *unit) {
+bool ata_init_unit(struct IDEUnit *unit, void *base) {
     struct ExecBase *SysBase = unit->SysBase;
 
     unit->cylinders       = 0;
@@ -354,20 +355,17 @@ bool ata_init_unit(struct IDEUnit *unit) {
     unit->present         = false;
     unit->mediumPresent   = false;
 
-    ULONG offset;
     UWORD *buf;
     bool dev_found = false;
-
-    offset = (unit->channel == 0) ? CHANNEL_0 : CHANNEL_1;
-
-    unit->drive.data           = (UWORD*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_data);
-    unit->drive.error_features = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_error);
-    unit->drive.sectorCount    = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_sectorCount);
-    unit->drive.lbaLow         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaLow);
-    unit->drive.lbaMid         = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaMid);
-    unit->drive.lbaHigh        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_lbaHigh);
-    unit->drive.devHead        = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_devHead);
-    unit->drive.status_command = (UBYTE*) ((void *)unit->cd->cd_BoardAddr + offset + ata_reg_status);
+    
+    unit->drive.data           = (UWORD*) (base + ata_reg_data);
+    unit->drive.error_features = (UBYTE*) (base + ata_reg_error);
+    unit->drive.sectorCount    = (UBYTE*) (base + ata_reg_sectorCount);
+    unit->drive.lbaLow         = (UBYTE*) (base + ata_reg_lbaLow);
+    unit->drive.lbaMid         = (UBYTE*) (base + ata_reg_lbaMid);
+    unit->drive.lbaHigh        = (UBYTE*) (base + ata_reg_lbaHigh);
+    unit->drive.devHead        = (UBYTE*) (base + ata_reg_devHead);
+    unit->drive.status_command = (UBYTE*) (base + ata_reg_status);
 
     *unit->shadowDevHead = *unit->drive.devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
 
@@ -376,7 +374,7 @@ bool ata_init_unit(struct IDEUnit *unit) {
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
-        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)unit->cd->cd_BoardAddr + offset  + i) & 0xC0) != 0xC0) {
+        if ((i != ata_reg_devHead) && (*((volatile UBYTE *)base + i) & 0xC0) != 0xC0) {
             dev_found = true;
             Trace("INIT: Unit base: %08lx; Drive base %08lx\n",unit, unit->drive);
             break;

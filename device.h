@@ -44,8 +44,6 @@ struct Drive {
 
 struct IDEUnit {
     struct MinNode mn_Node;
-    struct Unit io_unit;
-    struct ConfigDev *cd;
     struct ExecBase *SysBase;
     struct IDETask *itask;
     struct Drive drive;
@@ -58,7 +56,6 @@ struct IDEUnit {
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
     UBYTE unitNum;
-    UBYTE channel;
     UBYTE deviceType;
     UBYTE last_error[6];
     bool  primary;

@@ -236,22 +236,6 @@ static void Cleanup(struct DeviceBase *dev) {
     Info("Cleaning up...\n");
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     char *devName = dev->lib.lib_Node.ln_Name;
-    struct IDEUnit *unit;
-
-    if (SysBase->LibNode.lib_Version >= 36) {
-        ObtainSemaphoreShared(&dev->ulSem);
-    } else {
-        ObtainSemaphore(&dev->ulSem);
-    }
-
-    for (unit = (struct IDEUnit *)dev->units.mlh_Head;
-         unit->mn_Node.mln_Succ != NULL;
-         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-        {
-            unit->cd->cd_Flags |= CDF_CONFIGME;
-        }
-
-    ReleaseSemaphore(&dev->ulSem);
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
 
@@ -261,6 +245,7 @@ static void Cleanup(struct DeviceBase *dev) {
          itask->mn_Node.mln_Succ != NULL;
          itask = (struct IDETask *)itask->mn_Node.mln_Succ)
     {
+        itask->cd->cd_Flags |= CDF_CONFIGME;
         FreeMem(itask,sizeof(struct IDETask));
     }
 
