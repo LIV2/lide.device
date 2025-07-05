@@ -549,7 +549,7 @@ static void open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("
 
     ReleaseSemaphore(&dev->ulSem);
 
-    if (found == false || unit->present == false) {
+    if (found == false || unit->flags.present == false) {
         error = TDERR_BadUnitNum;
         goto exit;
     }
@@ -608,7 +608,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
     geometry->dg_DeviceType   = unit->deviceType;
-    geometry->dg_Flags        = (unit->atapi) ? DGF_REMOVABLE : 0;
+    geometry->dg_Flags        = (unit->flags.atapi) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Actual = sizeof(struct DriveGeometry);
 }
@@ -791,7 +791,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
             case CMD_START:
             case CMD_STOP:
                 // Don't pass it to the task if it's not an atapi device
-                if (!unit->atapi) {
+                if (!unit->flags.atapi) {
                     error = 0;
                     break;
                 }

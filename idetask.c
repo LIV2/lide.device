@@ -267,7 +267,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
     Trace("SCSI: Command %lx\n",*scsi_command->scsi_Command);
 
-    if (unit->atapi == false)
+    if (unit->flags.atapi == false)
     {
         // Non-ATAPI drives - Translate SCSI CMD to ATA
         switch (scsi_command->scsi_Command[0]) {
@@ -425,21 +425,21 @@ static BYTE init_units(struct IDETask *itask) {
 
         if (unit != NULL) {
             // Setup each unit structure
-            unit->itask             = itask;
-            unit->unitNum           = ((itask->boardNum * 4) + (itask->channel << 1) + i);
-            unit->SysBase           = SysBase;
-            unit->primary           = ((i%2) == 1) ? false : true;
-            unit->openCount         = 0;
-            unit->changeCount       = 1;
-            unit->deviceType        = DG_DIRECT_ACCESS;
-            unit->mediumPresent     = false;
-            unit->mediumPresentPrev = false;
-            unit->present           = false;
-            unit->atapi             = false;
-            unit->xferMultiple      = false;
-            unit->multipleCount     = 0;
-            unit->shadowDevHead     = &itask->shadowDevHead;
-            *unit->shadowDevHead    = 0;
+            unit->itask                   = itask;
+            unit->unitNum                 = ((itask->boardNum * 4) + (itask->channel << 1) + i);
+            unit->SysBase                 = SysBase;
+            unit->flags.primary           = ((i%2) == 1) ? false : true;
+            unit->openCount               = 0;
+            unit->changeCount             = 1;
+            unit->deviceType              = DG_DIRECT_ACCESS;
+            unit->flags.mediumPresent     = false;
+            unit->flags.mediumPresentPrev = false;
+            unit->flags.present           = false;
+            unit->flags.atapi             = false;
+            unit->flags.xferMultiple      = false;
+            unit->multipleCount           = 0;
+            unit->shadowDevHead           = &itask->shadowDevHead;
+            *unit->shadowDevHead          = 0;
 
             // Initialize the change int list
             unit->changeInts.mlh_Tail     = NULL;
@@ -452,7 +452,7 @@ static BYTE init_units(struct IDETask *itask) {
             base += (itask->channel == 0) ? CHANNEL_0 : CHANNEL_1;
 
             if (ata_init_unit(unit,base)) {
-                if (unit->atapi) itask->hasRemovables = true;
+                if (unit->flags.atapi) itask->hasRemovables = true;
                 num_units++;
                 itask->dev->numUnits++;
                 dev->highestUnit = unit->unitNum;
@@ -526,11 +526,11 @@ static void diskchange_check(struct IDETask *itask) {
         unit->mn_Node.mln_Succ != NULL;
         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
     {
-        if (unit->present && unit->atapi) {
+        if (unit->flags.present && unit->flags.atapi) {
 
             present = (atapi_test_unit_ready(unit,true) == 0) ? true : false;
 
-            if (present != unit->mediumPresentPrev) {
+            if (present != unit->flags.mediumPresentPrev) {
 
                 Forbid();
                 if (unit->changeInt != NULL)
@@ -547,7 +547,7 @@ static void diskchange_check(struct IDETask *itask) {
                 Permit();
             }
 
-            unit->mediumPresentPrev = present;
+            unit->flags.mediumPresentPrev = present;
 
 
         }
@@ -587,23 +587,23 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
             return;
 
         case CMD_START:
-            if (unit->atapi) {
+            if (unit->flags.atapi) {
                 error = atapi_start_stop_unit(unit,true,false,false);
             }
             break;
 
         case CMD_STOP:
-            if (unit->atapi) {
+            if (unit->flags.atapi) {
                 error = atapi_start_stop_unit(unit,false,false,false);
             }
             break;
 
         case TD_EJECT:
-            if (!unit->atapi) {
+            if (!unit->flags.atapi) {
                 error  = IOERR_NOCMD;
                 break;
             }
-            ioreq->io_Actual = (unit->mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
+            ioreq->io_Actual = (unit->flags.mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
 
             bool insert = (ioreq->io_Length == 0) ? true : false;
 
@@ -613,7 +613,7 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
         case TD_CHANGESTATE:
             error   = 0;
             ioreq->io_Actual = 0;
-            if (unit->atapi) {
+            if (unit->flags.atapi) {
                 ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
                 break;
             }
@@ -621,7 +621,7 @@ static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
 
         case TD_PROTSTATUS:
             error  = 0;
-            if (unit->atapi) {
+            if (unit->flags.atapi) {
                 if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
                     error  = 0;
                     ioreq->io_Actual = 1;
@@ -662,7 +662,7 @@ validate_etd:
         case NSCMD_TD_FORMAT64:
             direction = WRITE;
 transfer:
-            if (unit->atapi == true && unit->mediumPresent == false) {
+            if (unit->flags.atapi == true && unit->flags.mediumPresent == false) {
                 Trace("Access attempt without media\n");
                 error  = TDERR_DiskChanged;
                 break;
@@ -683,7 +683,7 @@ transfer:
                 break;
             }
 
-            if (unit->atapi == true) {
+            if (unit->flags.atapi == true) {
                 error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
             } else {
                 if (direction == READ) {

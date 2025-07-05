@@ -58,14 +58,6 @@ struct IDEUnit {
     UBYTE unitNum;
     UBYTE deviceType;
     UBYTE last_error[6];
-    bool  primary;
-    bool  present;
-    bool  atapi;
-    bool  mediumPresent;
-    bool  mediumPresentPrev;
-    bool  xferMultiple;
-    bool  lba;
-    bool  lba48;
     UWORD openCount;
     UWORD changeCount;
     UWORD heads;
@@ -76,6 +68,16 @@ struct IDEUnit {
     ULONG logicalSectors;
     struct MinList changeInts;
     UBYTE multipleCount;
+    struct {
+        unsigned char primary : 1;
+        unsigned char present : 1;
+        unsigned char atapi : 1;
+        unsigned char mediumPresent : 1;
+        unsigned char mediumPresentPrev : 1;
+        unsigned char xferMultiple : 1;
+        unsigned char lba : 1;
+        unsigned char lba48 : 1;
+    } flags;
 };
 
 struct DeviceBase {
