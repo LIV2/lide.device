@@ -11,7 +11,7 @@ export BUILD_DATE
 export GIT_REF
 
 CC=m68k-amigaos-gcc
-CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-attributes  -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
+CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LDFLAGS=-lgcc -lc
 AS=m68k-amigaos-as
@@ -71,7 +71,7 @@ OBJ = device.o \
 	  scsi.o \
 	  idetask.o \
 	  lide_alib.o \
-	  mounter.o \
+	  mounter/mounter.o \
 	  debug.o
 
 ASMOBJ = endskip.o

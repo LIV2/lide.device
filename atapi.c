@@ -31,7 +31,7 @@
  *
  * @param unit Pointer to an IDEUnit struct
 */
-static void  __attribute__((always_inline)) atapi_status_reg_delay() {
+static void atapi_status_reg_delay() {
     asm volatile (
         "tst.b 0xBFE001"
     );
@@ -158,7 +158,7 @@ static bool atapi_check_ir(struct IDEUnit *unit, UBYTE mask, UBYTE value, UWORD 
  * @param unit Pointer to an IDEUnit struct
  * @returns True if error is indicated
 */
-static bool __attribute__((always_inline)) atapi_check_error(struct IDEUnit *unit) {
+static bool atapi_check_error(struct IDEUnit *unit) {
     atapi_status_reg_delay();
     return (*unit->drive.status_command & (ata_flag_error | ata_flag_df));
 }
