@@ -34,7 +34,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  *
  * @param unit Pointer to an IDEUnit struct
 */
-static void __attribute__((always_inline)) ata_status_reg_delay(struct IDEUnit *unit) {
+static void ata_status_reg_delay(struct IDEUnit *unit) {
     asm volatile (
         ".rep 4     \n\t"
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
@@ -68,7 +68,7 @@ static void ata_save_error(struct IDEUnit *unit) {
  * @param unit Pointer to an IDEUnit struct
  * @returns True if error is indicated
 */
-static bool __attribute__((always_inline)) ata_check_error(struct IDEUnit *unit) {
+static bool ata_check_error(struct IDEUnit *unit) {
     return (*unit->drive.status_command & (ata_flag_error | ata_flag_df));
 }
 

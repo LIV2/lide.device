@@ -339,7 +339,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
  *
  * Scan for drives and initialize the driver if any are found
 */
-struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
+struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
 {
     dev->SysBase = SysBase;
     Trace("Init dev, base: %08lx\n",dev);
@@ -495,7 +495,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
  * IMPORTANT: because Expunge is called from the memory allocator,
  * it may NEVER Wait() or otherwise take long time to complete.
 */
-static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
+static BPTR expunge(struct DeviceBase *dev asm("a6"))
 {
     Trace((CONST_STRPTR) "running expunge()\n");
 
@@ -516,7 +516,7 @@ static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6
 * This call is guaranteed to be single-threaded; only one task
 * will execute your Open at a time.
 */
-static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
+static void open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
     struct IDEUnit *unit = NULL;
@@ -635,7 +635,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
  * This call is guaranteed to be single-threaded; only one task
  * will execute your Close at a time.
  */
-static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
+static BPTR close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
     if (ioreq_is_valid(dev,ioreq)) {
         struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
@@ -696,7 +696,7 @@ const UWORD supported_commands[] =
  *
  * Handle immediate requests and send any others to ide_task
 */
-static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
 
@@ -879,7 +879,7 @@ sendToTask:
  *
  * Abort io request
 */
-static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static ULONG abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
 
@@ -1002,7 +1002,7 @@ void TweakBootList(struct ExecBase *SysBase) {
  *
  * Create the device and add it to the system if init_device succeeds
 */
-static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
+static struct Library * init(BPTR seg_list asm("a0"))
 {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
