@@ -160,7 +160,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     bool changed = false;
     volatile UBYTE *shadowDevHead = unit->shadowDevHead;
 
-    if (!unit->lba) select &= ~(0x40);
+    if (!unit->flags.lba) select &= ~(0x40);
 
     if (*shadowDevHead == select) {
         return false;
@@ -193,7 +193,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
 */
 bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 {
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     ata_select(unit,drvSel,false);
 
@@ -348,12 +348,12 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 bool ata_init_unit(struct IDEUnit *unit, void *base) {
     struct ExecBase *SysBase = unit->SysBase;
 
-    unit->cylinders       = 0;
-    unit->heads           = 0;
-    unit->sectorsPerTrack = 0;
-    unit->blockSize       = 0;
-    unit->present         = false;
-    unit->mediumPresent   = false;
+    unit->cylinders           = 0;
+    unit->heads               = 0;
+    unit->sectorsPerTrack     = 0;
+    unit->blockSize           = 0;
+    unit->flags.present       = false;
+    unit->flags.mediumPresent = false;
 
     UWORD *buf;
     bool dev_found = false;
@@ -367,7 +367,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     unit->drive.devHead        = (UBYTE*) (base + ata_reg_devHead);
     unit->drive.status_command = (UBYTE*) (base + ata_reg_status);
 
-    *unit->shadowDevHead = *unit->drive.devHead = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    *unit->shadowDevHead = *unit->drive.devHead = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     enum xfer method = ata_autoselect_xfer(unit);
     ata_set_xfer(unit,method);
@@ -393,20 +393,20 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     if (ata_identify(unit,buf) == true) {
         Info("INIT: ATA Drive found!\n");
 
-        unit->lba             = (buf[ata_identify_capabilities] & ata_capability_lba) != 0;
-        unit->cylinders       = buf[ata_identify_cylinders];
-        unit->heads           = buf[ata_identify_heads];
-        unit->sectorsPerTrack = buf[ata_identify_sectors];
-        unit->blockSize       = 512;
-        unit->logicalSectors  = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
-        unit->blockShift      = 0;
-        unit->mediumPresent   = true;
-        unit->multipleCount   = buf[ata_identify_multiple] & 0xFF;
+        unit->flags.lba            = (buf[ata_identify_capabilities] & ata_capability_lba) != 0;
+        unit->cylinders           = buf[ata_identify_cylinders];
+        unit->heads               = buf[ata_identify_heads];
+        unit->sectorsPerTrack     = buf[ata_identify_sectors];
+        unit->blockSize           = 512;
+        unit->logicalSectors      = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
+        unit->blockShift          = 0;
+        unit->flags.mediumPresent = true;
+        unit->multipleCount       = buf[ata_identify_multiple] & 0xFF;
 
         if (unit->multipleCount > 0 && (ata_set_multiple(unit,unit->multipleCount) == 0)) {
-            unit->xferMultiple = true;
+            unit->flags.xferMultiple = true;
         } else {
-            unit->xferMultiple = false;
+            unit->flags.xferMultiple = false;
             unit->multipleCount = 1;
         }
 
@@ -418,13 +418,13 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
                 goto ident_failed;
             }
 
-            unit->lba48 = true;
+            unit->flags.lba48 = true;
             Info("INIT: Drive supports LBA48 mode \n");
             unit->logicalSectors = (buf[ata_identify_lba48_sectors + 1] << 16 |
                                     buf[ata_identify_lba48_sectors]);
             unit->write_taskfile = &write_taskfile_lba48;
 
-        } else if (unit->lba == true) {
+        } else if (unit->flags.lba == true) {
             // LBA-28 up to 127GB
             unit->write_taskfile = &write_taskfile_lba;
 
@@ -462,7 +462,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             Info("INIT: ATAPI Drive found!\n");
 
                 unit->deviceType      = (buf[0] >> 8) & 0x1F;
-                unit->atapi           = true;
+                unit->flags.atapi     = true;
 
                 atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
         } else {
@@ -474,14 +474,14 @@ ident_failed:
         }
     }
 
-    if (unit->atapi == false && unit->blockSize == 0) {
+    if (unit->flags.atapi == false && unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
         return false;
     }
 
     Info("INIT: Blockshift: %ld\n",unit->blockShift);
-    unit->present = true;
+    unit->flags.present = true;
 
     Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
 
@@ -498,7 +498,7 @@ ident_failed:
  * @return non-zero on error
 */
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     ata_select(unit,drvSel,true);
 
@@ -550,10 +550,10 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     UBYTE multipleCount = unit->multipleCount;
     volatile void *dataRegister = unit->drive.data;
 
-    if (unit->lba48) {
+    if (unit->flags.lba48) {
         command = ATA_CMD_READ_MULTIPLE_EXT;
     } else {
-        command = (unit->xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
+        command = (unit->flags.xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     }
 
     ata_xfer_func ata_xfer;
@@ -565,7 +565,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         ata_xfer = unit->read_fast;
     }
 
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
 
@@ -639,10 +639,10 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
     UBYTE multipleCount = unit->multipleCount;
     volatile void *dataRegister = unit->drive.data;
 
-    if (unit->lba48) {
+    if (unit->flags.lba48) {
         command = ATA_CMD_WRITE_MULTIPLE_EXT;
     } else {
-        command = (unit->xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
+        command = (unit->flags.xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
 
     ata_xfer_func ata_xfer;
@@ -654,7 +654,7 @@ BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
         ata_xfer = unit->write_fast;
     }
 
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
 
@@ -758,7 +758,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
-    devHead = ((unit->primary) ? 0xA0 : 0xB0) | (head & 0x0F);
+    devHead = ((unit->flags.primary) ? 0xA0 : 0xB0) | (head & 0x0F);
 
     *unit->shadowDevHead         = devHead;
     *unit->drive.devHead        = devHead;
@@ -784,7 +784,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
-    devHead = ((unit->primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
+    devHead = ((unit->flags.primary) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F);
 
     *unit->shadowDevHead         = devHead;
     *unit->drive.devHead        = devHead;
@@ -918,7 +918,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     count += (count & 1); // Ensure byte count is even
 
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0;
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
 
     ata_select(unit,drvSel,true);
 

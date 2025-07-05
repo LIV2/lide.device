@@ -161,14 +161,14 @@ static void DumpUnit(struct IOStdReq *req) {
 
     printf("Device Type:         %d\n", unit->deviceType);
     printf("Transfer method:     %d\n", unit->xferMethod);
-    printf("Primary:             %s\n", (unit->primary) ? "Yes" : "No");
-    printf("ATAPI:               %s\n", (unit->atapi) ? "Yes" : "No");
-    printf("Medium Present:      %s\n", (unit->mediumPresent) ? "Yes" : "No");
-    printf("Supports LBA:        %s\n", (unit->lba) ? "Yes" : "No");
-    printf("Supports LBA48:      %s\n", (unit->lba48) ? "Yes" : "No");
+    printf("Primary:             %s\n", (unit->flags.primary) ? "Yes" : "No");
+    printf("ATAPI:               %s\n", (unit->flags.atapi) ? "Yes" : "No");
+    printf("Medium Present:      %s\n", (unit->flags.mediumPresent) ? "Yes" : "No");
+    printf("Supports LBA:        %s\n", (unit->flags.lba) ? "Yes" : "No");
+    printf("Supports LBA48:      %s\n", (unit->flags.lba48) ? "Yes" : "No");
     printf("C/H/S:               %d/%d/%d\n", unit->cylinders, unit->heads, unit->sectorsPerTrack);
     printf("Logical Sectors:     %ld\n", (long int)unit->logicalSectors);
-    printf("READ/WRITE Multiple: %s\n", (unit->xferMultiple) ? "Yes" : "No");
+    printf("READ/WRITE Multiple: %s\n", (unit->flags.xferMultiple) ? "Yes" : "No");
     printf("Multiple count:      %d\n", unit->multipleCount);
     printf("Last Error: ");
     for (int i=0; i<6; i++) {
@@ -298,12 +298,12 @@ static void setMultiple(struct IOStdReq *req, int multiple) {
   struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
 
   if (multiple > 0) {
-    unit->xferMultiple = true;
+    unit->flags.xferMultiple = true;
     unit->multipleCount = multiple;
     printf("set multiple transfer: %d\n",multiple);
   } else {
     printf("Transfer multiple disabled.\n");
-    unit->xferMultiple = false;
+    unit->flags.xferMultiple = false;
     unit->multipleCount = 1;
   }
 

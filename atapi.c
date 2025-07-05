@@ -206,7 +206,7 @@ bool atapi_check_signature(struct IDEUnit *unit) {
 */
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSel,false);
@@ -410,7 +410,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd->scsi_Actual = 0;
 
-    UBYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
+    UBYTE drvSelHead = ((unit->flags.primary) ? 0xE0 : 0xF0);
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
@@ -1119,14 +1119,14 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 */
 bool atapi_update_presence(struct IDEUnit *unit, bool present) {
     bool ret = false;
-    if (present && unit->mediumPresent == false) {
+    if (present && unit->flags.mediumPresent == false) {
         unit->changeCount++;
-        unit->mediumPresent = true;
+        unit->flags.mediumPresent = true;
         atapi_get_capacity(unit);
         ret = true;
-    } else if (!present && unit->mediumPresent == true) {
+    } else if (!present && unit->flags.mediumPresent == true) {
         unit->changeCount++;
-        unit->mediumPresent  = false;
+        unit->flags.mediumPresent = false;
         unit->logicalSectors = 0;
         unit->blockShift     = 0;
         unit->blockSize      = 0;
