@@ -22,9 +22,9 @@
 #include "idetask.h"
 #include "newstyle.h"
 #include "td64.h"
-#include "mounter.h"
 #include "debug.h"
 #include "lide_alib.h"
+#include "mounter/mounter.h"
 
 #ifdef NO_AUTOCONFIG
 extern UBYTE bootblock, bootblock_end;
@@ -1006,64 +1006,37 @@ static struct Library * init(BPTR seg_list asm("a0"))
 {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
-    struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                                 NULL,                      // InitStruct data
                                                                 (APTR)init_device,         // Init function
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
 
+    BOOL CDBoot = FindCDFS();
+
     if (mydev != NULL) {
-        ULONG ms_size = (sizeof(struct MountStruct) + (MAX_UNITS * sizeof(struct UnitStruct)));
         Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
 
-        if ((ms = AllocMem(ms_size,MEMF_ANY|MEMF_PUBLIC)) == NULL) goto done;
+        struct IDETask *itask = (struct IDETask *)mydev->ideTasks.mlh_Head;
 
-        ms->deviceName  = mydev->lib.lib_Node.ln_Name;
-        ms->creatorName = NULL;
-        ms->numUnits    = 0;
-        ms->SysBase     = SysBase;
+        if (!itask->mn_Node.mln_Succ) goto done;
 
-        UWORD index = 0;
-#if CDBOOT
-        BOOL CDBoot = FindCDFS();
-#endif
-        struct IDEUnit *unit;
+        struct MountStruct ms = {
+            .deviceName  = mydev->lib.lib_Node.ln_Name,
+            .creatorName = mydev->lib.lib_Node.ln_Name,
+            .SysBase     = SysBase,
+            .cdBoot      = CDBoot,
+            .luns        = false,
+            .slowSpinup  = false,
+            .ignoreLast  = true,
+            .configDev   = itask->cd
+        };
 
-        if (SysBase->LibNode.lib_Version >= 36) {
-            ObtainSemaphoreShared(&mydev->ulSem);
-        } else {
-            ObtainSemaphore(&mydev->ulSem);
-        }
-
-        for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
-             unit->mn_Node.mln_Succ != NULL;
-             unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-        {
-            if (unit->present == true) {
-#if CDBOOT
-                // If CDFS not resident don't bother adding the CDROM to the mountlist
-                if (unit->deviceType == DG_CDROM && !CDBoot) continue;
-#endif
-                ms->Units[index].unitNum    = unit->unitNum;
-                ms->Units[index].configDev  = unit->cd;
-                index++;
-            }
-        }
-
-        ms->numUnits = index;
-
-        ReleaseSemaphore(&mydev->ulSem);
-        if (ms->numUnits > 0) {
-            MountDrive(ms);
-        }
-
-        FreeMem(ms,ms_size);
+        MountDrive(&ms);
 
         if (!seg_list) // Only tweak if we're in boot
             TweakBootList(SysBase);
-
     }
 done:
     return (struct Library *)mydev;
