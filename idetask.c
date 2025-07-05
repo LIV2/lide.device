@@ -422,14 +422,13 @@ static BYTE init_units(struct IDETask *itask) {
 
     for (BYTE i=0; i < 2; i++) {
         struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
+
         if (unit != NULL) {
             // Setup each unit structure
             unit->itask             = itask;
             unit->unitNum           = ((itask->boardNum * 4) + (itask->channel << 1) + i);
             unit->SysBase           = SysBase;
-            unit->cd                = itask->cd;
             unit->primary           = ((i%2) == 1) ? false : true;
-            unit->channel           = itask->channel;
             unit->openCount         = 0;
             unit->changeCount       = 1;
             unit->deviceType        = DG_DIRECT_ACCESS;
@@ -449,7 +448,10 @@ static BYTE init_units(struct IDETask *itask) {
 
             Warn("testing unit %ld\n",unit->unitNum);
 
-            if (ata_init_unit(unit)) {
+            void *base = itask->cd->cd_BoardAddr;
+            base += (itask->channel == 0) ? CHANNEL_0 : CHANNEL_1;
+
+            if (ata_init_unit(unit,base)) {
                 if (unit->atapi) itask->hasRemovables = true;
                 num_units++;
                 itask->dev->numUnits++;
