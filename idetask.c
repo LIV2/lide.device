@@ -165,7 +165,7 @@ static BYTE scsi_read_capacity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_co
     if (cdb->flags & 0x01) {
         // Partial Medium Indicator - Return end of cylinder
         // Implement this so HDToolbox stops moaning about track size
-        ULONG spc = unit->cylinders * unit->heads;
+        ULONG spc = unit->sectorsPerTrack * unit->heads;
         data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
     } else {
         data->lba = (unit->logicalSectors) - 1;
@@ -213,7 +213,7 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
     UBYTE idx = 4;
     if (page == 0x3F || page == 0x03) {
         data[idx++] = 0x03; // Page Code: Format Parameters
-        data[idx++] = 0x18; // Page length
+        data[idx++] = 0x16; // Page length
         for (int i=0; i <8; i++) {
             data[idx++] = 0;
         }
@@ -221,19 +221,19 @@ static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_comma
         data[idx++] = unit->sectorsPerTrack;
         data[idx++] = (unit->blockSize >> 8);
         data[idx++] = unit->blockSize;
-        for (int i=0; i<12; i++) {
+        for (int i=0; i<10; i++) {
             data[idx++] = 0;
         }
     }
 
     if (page == 0x3F || page == 0x04) {
         data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
-        data[idx++] = 0x17; // Page length
+        data[idx++] = 0x16; // Page length
         data[idx++] = (unit->cylinders >> 16);
         data[idx++] = (unit->cylinders >> 8);
         data[idx++] = unit->cylinders;
         data[idx++] = unit->heads;
-        for (int i=0; i<19; i++) {
+        for (int i=0; i<18; i++) {
             data[idx++] = 0;
         }
     }
