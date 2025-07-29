@@ -339,7 +339,7 @@ static bool promptUser(struct Config *config, bool update) {
 /**
  * assemble_rom
  *
- * Given either lide.rom or lide-atbus.rom - adjust the file for the currebt board
+ * Given either lide.rom or lide-atbus.rom - adjust the file for the current board
  * This is needed because lideflash will update all compatible boards, and can only be supplied with one filename
 */
 static void assemble_rom(char *src_buffer, char *dst_buffer, ULONG bufSize, enum BOOTROM dstRomType) {
@@ -372,6 +372,90 @@ static void assemble_rom(char *src_buffer, char *dst_buffer, ULONG bufSize, enum
   }
 }
 
+/**
+ * find_lide_version
+ * 
+ * Search for the id string in the buffer and return the offset if found
+ * @param buffer the buffer to search
+ * @param romSize Size of the ROM
+ * @returns offset. negative if not found
+ */
+static int find_lide_version(const unsigned char *buffer, ULONG romSize) {
+  const char *needle = "lide ";
+  size_t needle_len = strlen(needle);
+
+  // We can only search up to (romSize - needle_len)
+  for (size_t i = 0; i <= romSize - needle_len; i++) {
+    if (memcmp(buffer + i, needle, needle_len) == 0) {
+      return (int)i;
+    }
+  }
+  return -1; // Not found
+}
+
+/**
+ * printVersion
+ * 
+ * Print the version string without the git information
+ * 
+ * @param version Pointer to the version string
+ */
+static void printVersion(char *version) {
+  char *temp;
+  int len = strcspn(version,")");
+  len++;                                    // Leave space for null terminator
+  if ((temp = AllocMem(len,MEMF_ANY))) {
+    temp[len] = 0;
+    strncpy(temp,version,len);
+    printf("%s\n",temp);
+    FreeMem(temp,len);
+  }
+}
+
+/**
+ * printCurrentVersion
+ * 
+ * Print the current version of lide the board is running
+ * It first tries to get this using the cd_Driver pointer in the struct
+ *
+ * Older driver versions didn't set this, in that case:
+ * 1. Traverse the eb_Mountlist looking for a device bound to this configDev
+ * 2. Peek into it's BootNode->DeviceNode->FSSM to get the device name
+ * 3. Find the device in SysBase->DeviceList
+ * 
+ * @param cd ConfigDev pointer
+ */
+void printCurrentVersion(struct ConfigDev *cd) {
+  struct BootNode *bn;
+  struct DeviceNode *dn;
+  struct FileSysStartupMsg *fssm;
+  struct Device *device;
+  char *deviceName = NULL;
+
+  if ((device = cd->cd_Driver) == NULL) { 
+    // Old version of lide didn't set cd_Driver
+    // Get it the hard way
+    for (bn = (struct BootNode *)ExpansionBase->MountList.lh_Head;
+        bn->bn_Node.ln_Succ;
+        bn = (struct BootNode *)bn->bn_Node.ln_Succ)
+    {
+      if (cd == (struct ConfigDev *)bn->bn_Node.ln_Name) {
+        dn = bn->bn_DeviceNode;
+        fssm = BADDR(dn->dn_Startup);
+        deviceName = (char *)BADDR(fssm->fssm_Device) + 1; // NULL terminated BSTR
+        device = (struct Device *)FindName(&SysBase->DeviceList,deviceName);
+        break;
+      }
+    }   
+  }
+
+  if (device) {
+    printVersion(device->dd_Library.lib_IdString);
+  } else {
+    printf("Unknown\n");
+  }
+}
+
 int main(int argc, char *argv[])
 {
   SysBase = *((struct ExecBase **)4UL);
@@ -383,6 +467,8 @@ int main(int argc, char *argv[])
   void *driver_buffer = NULL;
   void *driver_buffer2 = NULL;
   void *misc_buffer   = NULL;
+
+  char *ver = NULL;
 
   ULONG romSize    = 0;
   ULONG miscSize   = 0;
@@ -429,6 +515,15 @@ int main(int argc, char *argv[])
         rc = 5;
         goto exit;
       }
+      
+      int ver_offset = find_lide_version(driver_buffer,romSize);
+      if (ver_offset > 0) {
+        ver = (char *)driver_buffer + ver_offset;
+        if (ver) {
+          printf("New version: ");
+          printVersion(ver);
+        }
+      }
     }
 
     if (config->misc_filename) {
@@ -468,11 +563,12 @@ int main(int argc, char *argv[])
 
     devsInhibited = true;
 
+    printf("\n");
+
     if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) != NULL) {
 
       struct ConfigDev *cd = NULL;
       struct ideBoard board;
-
       while ((cd = FindConfigDev(cd,-1,-1)) != NULL) {
 
         board.cd = cd;
@@ -580,8 +676,15 @@ int main(int argc, char *argv[])
             continue; // Skip this board
         }
 
-        printf(" at Address 0x%06x\n",(int)cd->cd_BoardAddr);
+        printf(" at Address 0x%06X\n",(int)cd->cd_BoardAddr);
         boards_found++;
+        if (config->ide_rom_filename) {
+          printf("Current version: ");
+          printCurrentVersion(cd);
+
+        }
+
+        printf("\n");
         bool update = (config->ide_rom_filename != NULL|| config->misc_filename != NULL);
 
         // Ask the user if they wish to update this board
