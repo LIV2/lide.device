@@ -304,15 +304,20 @@ static void setup_liv2_board(struct ideBoard *board) {
 /**
  * promptUser
  *
- * Ask if the user wants to update this board
+ * Ask if the user wants to update/erase this board
  * @param config pointer to the config struct
  * @return boolean true / false
  */
-static bool promptUser(struct Config *config) {
+static bool promptUser(struct Config *config, bool update) {
   int c;
   char answer = 'y'; // Default to yes
 
-  printf("Update this device? (Y)es/(n)o/(a)ll: ");
+  if (update) {
+    printf("Update this device?");
+  } else {
+    printf("Erase flash?");
+  }
+  printf(" (Y)es/(n)o/(a)ll: ");
 
   if (config->assumeYes) {
     printf("y\n");
@@ -577,9 +582,10 @@ int main(int argc, char *argv[])
 
         printf(" at Address 0x%06x\n",(int)cd->cd_BoardAddr);
         boards_found++;
+        bool update = (config->ide_rom_filename != NULL|| config->misc_filename != NULL);
 
         // Ask the user if they wish to update this board
-        if (!promptUser(config)) continue;
+        if (!promptUser(config, update)) continue;
         
         suspend_lide(true);
 
