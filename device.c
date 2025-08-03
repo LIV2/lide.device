@@ -19,7 +19,7 @@
 #include "ata.h"
 #include "atapi.h"
 #include "device.h"
-#include "idetask.h"
+#include "iotask.h"
 #include "newstyle.h"
 #include "td64.h"
 #include "debug.h"
@@ -62,6 +62,7 @@ static const struct Resident romTag = {
 
 const char device_name[] = DEVICE_NAME;
 const char device_id_string[] = DEVICE_ID_STRING;
+
 /**
  * set_dev_name
  *
@@ -197,6 +198,15 @@ static BOOL FindCDFS() {
 }
 #endif
 
+/**
+ * ioreq_is_valid
+ * 
+ * Check if the supplied IOReq points to a valid unit
+ * 
+ * @param dev Pointer to DeviceBase
+ * @param ior The ioreq to test
+ * @returns bool
+ */
 static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
     struct ExecBase *SysBase = dev->SysBase;
     bool found = false;
@@ -239,14 +249,14 @@ static void Cleanup(struct DeviceBase *dev) {
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
 
-    struct IDETask *itask;
+    struct IOTask *itask;
 
-    for (itask = (struct IDETask *)dev->ideTasks.mlh_Head;
+    for (itask = (struct IOTask *)dev->ideTasks.mlh_Head;
          itask->mn_Node.mln_Succ != NULL;
-         itask = (struct IDETask *)itask->mn_Node.mln_Succ)
+         itask = (struct IOTask *)itask->mn_Node.mln_Succ)
     {
         itask->cd->cd_Flags |= CDF_CONFIGME;
-        FreeMem(itask,sizeof(struct IDETask));
+        FreeMem(itask,sizeof(struct IOTask));
     }
 
     // if devName doesn't point to the const device_name then we need to free up that memory
@@ -360,7 +370,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
         dev->ExpansionBase = ExpansionBase;
     }
 
-    struct IDETask *itask;
+    struct IOTask *itask;
     struct ConfigDev *cd;
     struct Task *self = FindTask(NULL);
 
@@ -375,7 +385,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
 
     cd = cb.cb_ConfigDev;
 
-    // Add an IDE Task for each board
+    // Add an IO Task for each channel of each board
     // When loaded from Autoconfig ROM this will still only attach to one board.
     // If the driver is loaded by BindDrivers though then this should attach to multiple boards.
     for (cd = cb.cb_ConfigDev; cd != NULL; cd = cd->cd_NextCD) {
@@ -408,9 +418,9 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
 
         for (int c=0; c < channels; c++) {
 
-            Info("Starting IDE Task %ld\n",dev->numTasks);
+            Info("Starting IO Task %ld\n",dev->numTasks);
 
-            itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+            itask = AllocMem(sizeof(struct IOTask), MEMF_ANY|MEMF_CLEAR);
 
             if (itask == NULL) {
                 Info("Couldn't allocate memory\n");
@@ -428,14 +438,14 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
 
             SetSignal(0,SIGF_SINGLE);
 
-            // Start the IDE Task
-            itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
+            // Start the IO Task
+            itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,io_task,TASK_STACK_SIZE,itask);
             if (itask->task == NULL) {
-                Info("IDE Task %ld failed\n",itask->taskNum);
-                FreeMem(itask,sizeof(struct IDETask));
+                Info("IO Task %ld failed\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IOTask));
                 continue;
             } else {
-                Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
+                Trace("IO Task %ld created!, waiting for init\n",itask->taskNum);
             }
 
             // Wait for task to init
@@ -443,8 +453,8 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
 
             // If itask->active has been set to false it means the task exited
             if (itask->active == false) {
-                Info("IDE Task %ld exited.\n",itask->taskNum);
-                FreeMem(itask,sizeof(struct IDETask));
+                Info("IO Task %ld exited.\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IOTask));
                 continue;
             }
 
@@ -704,7 +714,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
 
         if (unit->itask == NULL || unit->itask->active == false) {
 
-            // If the IDE task is dead then we can only throw an error and reply now.
+            // If the IO task is dead then we can only throw an error and reply now.
             ioreq->io_Error = IOERR_OPENFAIL;
 
             if (!(ioreq->io_Flags & IOF_QUICK)) {
@@ -1003,7 +1013,7 @@ static struct Library * init(BPTR seg_list asm("a0"))
         Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
 
-        struct IDETask *itask = (struct IDETask *)mydev->ideTasks.mlh_Head;
+        struct IOTask *itask = (struct IOTask *)mydev->ideTasks.mlh_Head;
 
         if (!itask->mn_Node.mln_Succ) goto done;
 

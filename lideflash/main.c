@@ -33,7 +33,7 @@
 #include "config.h"
 #include "matzetk.h"
 #include "../device.h"
-#include "../idetask.h"
+#include "../iotask.h"
 
 #define MANUF_ID_BSC  0x082C
 #define MANUF_ID_OAHR 5194

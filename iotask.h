@@ -14,4 +14,4 @@
 #define CMD_PAUSE (CMD_PIO + 1)
 #define CMD_RESUME (CMD_PAUSE + 1)
 
-void ide_task();
+void io_task();

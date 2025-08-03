@@ -45,7 +45,7 @@ struct Drive {
 struct IDEUnit {
     struct MinNode mn_Node;
     struct ExecBase *SysBase;
-    struct IDETask *itask;
+    struct IOTask *itask;
     struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
@@ -94,7 +94,7 @@ struct DeviceBase {
     struct MinList         ideTasks;
 };
 
-struct IDETask {
+struct IOTask {
     struct MinNode     mn_Node;
     struct Task        *task;
     struct Task        *parent;

@@ -13,7 +13,7 @@
 #include "atapi.h"
 #include "debug.h"
 #include "device.h"
-#include "idetask.h"
+#include "iotask.h"
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
@@ -23,7 +23,7 @@
 /**
  * create_timer
  *
- * Create and initialize the timer for the IDE task
+ * Create and initialize the timer for the IO task
  *
  * @param SysBase Pointer to the ExecBase
  * @param mp Pointer to the MsgPort
@@ -99,152 +99,6 @@ static void delete_timer(struct ExecBase *SysBase, struct MsgPort *mp, struct ti
 }
 
 /**
- * scsi_inquiry_ata
- *
- * Handle SCSI-Direct INQUIRY commands for ATA devices
- *
- * @param unit Pointer to an IDEUnit struct
- * @param scsi_command Pointer to a SCSICmd struct
-*/
-static BYTE scsi_inquiry_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
-    struct ExecBase *SysBase = unit->SysBase;
-
-    struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
-    BYTE error;
-
-    data->peripheral_type   = unit->deviceType;
-    data->removable_media   = 0;
-    data->version           = 2;
-    data->response_format   = 2;
-    data->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
-
-    UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
-    if (!identity) {
-        error = TDERR_NoMem;
-        scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
-
-   if (!(ata_identify(unit,identity))) {
-        error = HFERR_SelTimeout;
-        scsi_sense(scsi_command,0,0,error);
-        FreeMem(identity,512);
-        return error;
-    }
-
-    CopyMem(&identity[ata_identify_model],&data->vendor,24);
-    CopyMem(&identity[ata_identify_fw_rev],&data->revision,4);
-    CopyMem(&identity[ata_identify_serial],&data->serial,8);
-    FreeMem(identity,512);
-    scsi_command->scsi_Actual = scsi_command->scsi_Length;
-    return 0;
-}
-
-/**
- * scsi_read_capacity_ata
- *
- * Handle SCSI-Direct READ CAPACITY commands for ATA devices
- *
- * @param unit Pointer to an IDEUnit struct
- * @param scsi_command Pointer to a SCSICmd struct
-*/
-static BYTE scsi_read_capacity_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
-    struct SCSI_CAPACITY_10 *data = (struct SCSI_CAPACITY_10 *)scsi_command->scsi_Data;
-    BYTE error;
-
-    if (data == NULL) {
-        error = IOERR_BADADDRESS;
-        scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
-
-    struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)scsi_command->scsi_Command;
-
-    data->block_size = unit->blockSize;
-
-    if (cdb->flags & 0x01) {
-        // Partial Medium Indicator - Return end of cylinder
-        // Implement this so HDToolbox stops moaning about track size
-        ULONG spc = unit->sectorsPerTrack * unit->heads;
-        data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
-    } else {
-        data->lba = (unit->logicalSectors) - 1;
-    }
-
-
-    scsi_command->scsi_Actual = 8;
-
-    return 0;
-}
-
-/**
- * scsi_mode_sense_ata
- *
- * Handle SCSI-Direct MODE SENSE (6) commands for ATA devices
- *
- * @param unit Pointer to an IDEUnit struct
- * @param scsi_command Pointer to a SCSICmd struct
-*/
-static BYTE scsi_mode_sense_ata(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
-    BYTE error;
-    UBYTE *data    = (APTR)scsi_command->scsi_Data;
-    UBYTE *command = (APTR)scsi_command->scsi_Command;
-
-    if (data == NULL) {
-        return IOERR_BADADDRESS;
-    }
-
-    UBYTE page    = command[2] & 0x3F;
-    UBYTE subpage = command[3];
-
-    if (subpage != 0 || (page != 0x3F && page != 0x03 && page != 0x04)) {
-        error = HFERR_BadStatus;
-        scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
-
-    UBYTE *data_length = data;  // Mode data length
-    data[1] = unit->deviceType; // Mode parameter: Media type
-    data[2] = 0;                // DPOFUA
-    data[3] = 0;                // Block descriptor length
-
-    *data_length = 3;
-
-    UBYTE idx = 4;
-    if (page == 0x3F || page == 0x03) {
-        data[idx++] = 0x03; // Page Code: Format Parameters
-        data[idx++] = 0x16; // Page length
-        for (int i=0; i <8; i++) {
-            data[idx++] = 0;
-        }
-        data[idx++] = (unit->sectorsPerTrack >> 8);
-        data[idx++] = unit->sectorsPerTrack;
-        data[idx++] = (unit->blockSize >> 8);
-        data[idx++] = unit->blockSize;
-        for (int i=0; i<10; i++) {
-            data[idx++] = 0;
-        }
-    }
-
-    if (page == 0x3F || page == 0x04) {
-        data[idx++] = 0x04; // Page code: Rigid Drive Geometry Parameters
-        data[idx++] = 0x16; // Page length
-        data[idx++] = (unit->cylinders >> 16);
-        data[idx++] = (unit->cylinders >> 8);
-        data[idx++] = unit->cylinders;
-        data[idx++] = unit->heads;
-        for (int i=0; i<18; i++) {
-            data[idx++] = 0;
-        }
-    }
-
-    *data_length = idx - 1;
-    scsi_command->scsi_Actual = idx;
-    return 0;
-
-}
-
-/**
  * handle_scsi_command
  *
  * Handle SCSI Direct commands
@@ -267,9 +121,10 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
     Trace("SCSI: Command %lx\n",*scsi_command->scsi_Command);
 
-    if (unit->flags.atapi == false)
-    {
-        // Non-ATAPI drives - Translate SCSI CMD to ATA
+    if (unit->flags.atapi) {
+        error = atapi_handle_scsi_command(unit,scsi_command);
+    } else {
+        // Translate SCSI CMD to ATA
         switch (scsi_command->scsi_Command[0]) {
             case SCSI_CMD_ATA_PASSTHROUGH:
                 error = scsi_ata_passthrough(unit,scsi_command);
@@ -281,15 +136,15 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_INQUIRY:
-                error = scsi_inquiry_ata(unit,scsi_command);
+                error = scsi_inquiry_emu(unit,scsi_command);
                 break;
 
             case SCSI_CMD_MODE_SENSE_6:
-                error = scsi_mode_sense_ata(unit,scsi_command);
+                error = scsi_mode_sense_emu(unit,scsi_command);
                 break;
 
             case SCSI_CMD_READ_CAPACITY_10:
-                error = scsi_read_capacity_ata(unit,scsi_command);
+                error = scsi_read_capacity_emu(unit,scsi_command);
                 break;
 
             case SCSI_CMD_READ_6:
@@ -309,7 +164,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     do_scsi_transfer:
                 if (data == NULL || (lba + count) >= unit->logicalSectors) {
                     error = IOERR_BADADDRESS;
-                    scsi_sense(scsi_command,lba,count,error);
+                    fake_scsi_sense(scsi_command,lba,count,error);
                     break;
                 }
 
@@ -324,71 +179,20 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                     scsi_command->scsi_Actual = scsi_command->scsi_Length;
                 } else {
                     if (error == TDERR_NotSpecified) {
-                        scsi_sense(scsi_command,lba,
+                        fake_scsi_sense(scsi_command,lba,
                         (unit->last_error[0] << 8 | unit->last_error[4])
                         ,error);
                     } else {
-                        scsi_sense(scsi_command,lba,count,error);
+                        fake_scsi_sense(scsi_command,lba,count,error);
                     }
                 }
                 break;
 
             default:
                 error = IOERR_NOCMD;
-                scsi_sense(scsi_command,0,0,error);
+                fake_scsi_sense(scsi_command,0,0,error);
                 break;
         }
-    } else {
-        // SCSI command handling for ATAPI Drives
-
-        switch (scsi_command->scsi_Command[0]) {
-
-            case SCSI_CMD_INQUIRY:
-                // Fudge the SCSI version number for CD/DVDs
-                // Some software expects version 2 but ATAPI returns version 0
-                error = atapi_packet(scsi_command,unit);
-
-                if (error == 0 && unit->deviceType == DG_CDROM) {
-                    if ((scsi_command->scsi_Command[1] & 1) == 0) {
-                        ((struct SCSI_Inquiry *)scsi_command->scsi_Data)->version = 2;
-                    }
-                }
-                break;
-
-            case SCSI_CMD_READ_6:
-            case SCSI_CMD_WRITE_6:
-                // ATAPI devices don't support READ/WRITE(6) so translate it
-                error = atapi_scsi_read_write_6(scsi_command,unit);
-                break;
-
-            case SCSI_CMD_MODE_SENSE_6:
-                error = atapi_scsi_mode_sense_6(scsi_command,unit);
-                break;
-
-            case SCSI_CMD_MODE_SELECT_6:
-                error = atapi_scsi_mode_select_6(scsi_command,unit);
-                break;
-
-            case SCSI_CMD_PLAY_TRACK_INDEX:
-                error = atapi_translate_play_audio_index(scsi_command,unit);
-                break;
-
-            case SCSI_CMD_READ_CAPACITY_10:
-                // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
-                for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
-                    scsi_command->scsi_Command[i] = 0;
-                }
-
-            default:
-                if (!((ULONG)scsi_command->scsi_Data & 0x01)) { // Buffer is word-aligned?
-                    error = atapi_packet(scsi_command,unit);
-                } else {
-                    error = atapi_packet_unaligned(scsi_command,unit);
-                }
-
-                break;
-        }
-
     }
 
     // SCSI Command complete, handle any errors
@@ -415,7 +219,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
  * @param itask Pointer to an IDETask struct
  * @returns number of drives found
 */
-static BYTE init_units(struct IDETask *itask) {
+static BYTE init_units(struct IOTask *itask) {
     struct ExecBase *SysBase = itask->SysBase;
     UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
@@ -476,7 +280,7 @@ static BYTE init_units(struct IDETask *itask) {
  *
  * Clean up after the task, freeing resources etc back to the system
 */
-static void cleanup(struct IDETask *itask) {
+static void cleanup(struct IOTask *itask) {
     struct ExecBase *SysBase = itask->SysBase;
     if (itask->iomp)
         L_DeletePort(itask->iomp);
@@ -507,9 +311,9 @@ static void cleanup(struct IDETask *itask) {
  *
  * Check for disk changes and send interrupts if necessary
  *
- * @param itask Pointer to the IDE task
+ * @param itask Pointer to the IO task
  */
-static void diskchange_check(struct IDETask *itask) {
+static void diskchange_check(struct IOTask *itask) {
     Info("diskchange check...\n");
     struct ExecBase *SysBase = itask->SysBase;
     struct IDEUnit *unit;
@@ -559,12 +363,12 @@ static void diskchange_check(struct IDETask *itask) {
 /**
  * process_ioreq
  *
- * Process an IO request for the IDE task
+ * Process an IO request for the IO task
  *
  * @param ioreq Pointer to the IO request
- * @param itask Pointer to the IDE task
+ * @param itask Pointer to the IO task
  */
-static void process_ioreq(struct IDETask *itask, struct IOStdReq *ioreq) {
+static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
     struct ExecBase *SysBase = itask->SysBase;
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
@@ -719,7 +523,7 @@ transfer:
 
         /* CMD_DIE: Shut down this task and clean up */
         case CMD_DIE:
-            Info("Task: CMD_DIE: Shutting down IDE Task\n");
+            Info("Task: CMD_DIE: Shutting down IO Task\n");
             cleanup(itask);
             ReplyMsg(&ioreq->io_Message);
             RemTask(NULL);
@@ -740,22 +544,22 @@ transfer:
 }
 
 /**
- * ide_task
+ * io_task
  *
  * This is a task to complete IO Requests for all units
  * Requests are sent here from begin_io via the dev->IDETaskMP Message port
 */
-void __attribute__((noreturn)) ide_task () {
+void __attribute__((noreturn)) io_task () {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct Task *task = FindTask(NULL);
-    struct IDETask *itask = (struct IDETask *)task->tc_UserData;
+    struct IOTask *itask = (struct IOTask *)task->tc_UserData;
     struct IOStdReq *ioreq;
     ULONG signalsSet = 0;
     ULONG signalMask = 0;
 
     itask->task = task;
 
-    Trace("IDE Task: CreatePort()\n");
+    Trace("IO Task: CreatePort()\n");
     // Create the MessagePort used to send us requests
     if ((itask->iomp = L_CreatePort(NULL,0)) == NULL) {
         cleanup(itask);
@@ -765,7 +569,7 @@ void __attribute__((noreturn)) ide_task () {
 
     signalMask = (1 << itask->iomp->mp_SigBit);
 
-    Trace("IDE Task: CreatePort() ok\n");
+    Trace("IO Task: CreatePort() ok\n");
 
     if (!create_timer(SysBase,&itask->timermp,&itask->tr,UNIT_MICROHZ)) {
         cleanup(itask);
@@ -800,7 +604,7 @@ void __attribute__((noreturn)) ide_task () {
 
     while (1) {
         // Main loop, handle IO Requests as they come in.
-        Trace("IDE Task: WaitPort()\n");
+        Trace("IO Task: WaitPort()\n");
         signalsSet = Wait(signalMask);
 
         if (signalsSet & (1 << itask->iomp->mp_SigBit)) {

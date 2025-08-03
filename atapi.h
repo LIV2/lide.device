@@ -62,4 +62,5 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end);
 BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, struct SCSI_TRACK_MSF *end);
 BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit);
 BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit);
+BYTE atapi_handle_scsi_command(struct IDEUnit *unit, struct SCSICmd *scsi_command);
 #endif

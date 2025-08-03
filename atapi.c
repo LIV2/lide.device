@@ -555,7 +555,7 @@ end:
             Trace("Auto sense requested\n");
             if (ret == IOERR_UNITBUSY) {
                 // This was a timeout, fake the autosense data
-                scsi_sense(cmd,0,0,ret);
+                fake_scsi_sense(cmd,0,0,ret);
             } else {
                 atapi_autosense(cmd,unit);
             }
@@ -1365,4 +1365,68 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     } else {
         return TDERR_NoMem;
     }
+}
+
+/**
+ * atapi_handle_scsi_command
+ *
+ * Handles SCSI commands for ATAPI devices by translating unsupported commands
+ * and applying compatibility fixes for specific device types.
+ *
+ * @param unit Pointer to an IDEUnit struct representing the ATAPI device
+ * @param scsi_command Pointer to a SCSICmd struct containing the command to execute
+ * @return BYTE Error code (0 for success, non-zero for error)
+ */
+BYTE atapi_handle_scsi_command(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+    BYTE error = 0;
+
+    switch (scsi_command->scsi_Command[0]) {
+
+        case SCSI_CMD_INQUIRY:
+            // Fudge the SCSI version number for CD/DVDs
+            // Some software expects version 2 but ATAPI returns version 0
+            error = atapi_packet(scsi_command,unit);
+
+            if (error == 0 && unit->deviceType == DG_CDROM) {
+                if ((scsi_command->scsi_Command[1] & 1) == 0) {
+                    ((struct SCSI_Inquiry *)scsi_command->scsi_Data)->version = 2;
+                }
+            }
+            break;
+
+        case SCSI_CMD_READ_6:
+        case SCSI_CMD_WRITE_6:
+            // ATAPI devices don't support READ/WRITE(6) so translate it
+            error = atapi_scsi_read_write_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_MODE_SENSE_6:
+            error = atapi_scsi_mode_sense_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_MODE_SELECT_6:
+            error = atapi_scsi_mode_select_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_PLAY_TRACK_INDEX:
+            error = atapi_translate_play_audio_index(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_READ_CAPACITY_10:
+            // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
+            for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
+                scsi_command->scsi_Command[i] = 0;
+            }
+
+        default:
+            if (!((ULONG)scsi_command->scsi_Data & 0x01)) { // Buffer is word-aligned?
+                error = atapi_packet(scsi_command,unit);
+            } else {
+                error = atapi_packet_unaligned(scsi_command,unit);
+            }
+
+            break;
+    }
+
+    return error;
 }

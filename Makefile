@@ -69,7 +69,7 @@ OBJ = device.o \
       ata.o \
 	  atapi.o \
 	  scsi.o \
-	  idetask.o \
+	  iotask.o \
 	  lide_alib.o \
 	  mounter/mounter.o \
 	  debug.o
