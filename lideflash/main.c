@@ -27,6 +27,8 @@
 #include <dos/dos.h>
 #include <proto/alib.h>
 #include <dos/dosextens.h>
+#include <intuition/intuitionbase.h>
+#include <proto/intuition.h>
 
 #include "flash.h"
 #include "main.h"
@@ -475,6 +477,30 @@ int main(int argc, char *argv[])
 
   if (DosBase == NULL) {
     return(rc);
+  }
+
+  // Throw an alert if Kick < 1.3
+  if (SysBase->LibNode.lib_Version < 34) {
+    struct IntuitionBase *IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library",0);
+
+    // Screen mode is 64 columns with a 10x8 font
+    char AlertString[] = {
+      "\x00\x82" // X coord
+      "\x10"     // Y coord
+      "LIDE requires Kickstart 1.3 or higher!"
+      "\x00\x01" // Continue
+      "\x00\x64" // X coord
+      "\x1A"     // Y coord
+      "Please upgrade to a newer Kickstart version"
+      "\x00\x01" // Continue
+      "\x00\x8C" // X coord
+      "\x2E"     // Y coord
+      "Press left mouse button to continue."
+      "\x00\x00"
+    };
+
+    DisplayAlert(0,AlertString,58);
+    CloseLibrary((struct Library *)IntuitionBase);
   }
 
   printf("\n==== LIDE Flash Updater ====\n");
