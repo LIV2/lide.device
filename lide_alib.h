@@ -19,4 +19,6 @@ struct IOStdReq* L_CreateStdIO(struct MsgPort *mp);
 void L_DeleteExtIO(struct IORequest *ior);
 void L_DeleteStdIO(struct IOStdReq *ior);
 struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG stackSize, APTR userData);
+bool L_CompareBSTR(char *str1, char *str2);
+char L_UpperCase(char c);
 #endif

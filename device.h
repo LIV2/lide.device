@@ -25,6 +25,8 @@ enum xfer {
     longword_move
 };
 
+typedef void (*ata_xfer_func)(void * asm("a0"), void * asm("a1"));
+
 /**
  * Drive struct
  *
@@ -42,32 +44,20 @@ struct Drive {
 
 struct IDEUnit {
     struct MinNode mn_Node;
-    struct Unit io_unit;
-    struct ConfigDev *cd;
     struct ExecBase *SysBase;
-    struct IDETask *itask;
+    struct IOTask *itask;
     struct Drive drive;
     BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
     enum  xfer xferMethod;
-    void  (*read_fast)(void * asm("a0"), void * asm("a1"));
-    void  (*write_fast)(void * asm("a0"), void * asm("a1"));
-    void  (*read_unaligned)(void * asm("a0"), void * asm("a1"));
-    void  (*write_unaligned)(void * asm("a0"), void * asm("a1"));
+    ata_xfer_func read_fast;
+    ata_xfer_func write_fast;
+    ata_xfer_func read_unaligned;
+    ata_xfer_func write_unaligned;
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
-    volatile bool  deferTUR;
     UBYTE unitNum;
-    UBYTE channel;
     UBYTE deviceType;
     UBYTE last_error[6];
-    bool  primary;
-    bool  present;
-    bool  atapi;
-    bool  mediumPresent;
-    bool  mediumPresentPrev;
-    bool  xferMultiple;
-    bool  lba;
-    bool  lba48;
     UWORD openCount;
     UWORD changeCount;
     UWORD heads;
@@ -78,13 +68,22 @@ struct IDEUnit {
     ULONG logicalSectors;
     struct MinList changeInts;
     UBYTE multipleCount;
+    struct {
+        unsigned char primary : 1;
+        unsigned char present : 1;
+        unsigned char atapi : 1;
+        unsigned char mediumPresent : 1;
+        unsigned char mediumPresentPrev : 1;
+        unsigned char xferMultiple : 1;
+        unsigned char lba : 1;
+        unsigned char lba48 : 1;
+    } flags;
 };
 
 struct DeviceBase {
     struct Library         lib;
     struct ExecBase        *SysBase;
     struct Library         *ExpansionBase;
-    struct Task            *ChangeTask;
     BPTR                   saved_seg_list;
     bool                   isOpen;
     ULONG                  numUnits;
@@ -93,19 +92,24 @@ struct DeviceBase {
     struct MinList         units;
     struct SignalSemaphore ulSem;
     struct MinList         ideTasks;
-    volatile bool          hasRemovables; // modified by IDETask(s), Start the diskChange task? 
 };
 
-struct IDETask {
+struct IOTask {
     struct MinNode     mn_Node;
     struct Task        *task;
     struct Task        *parent;
+    struct ExecBase    *SysBase;
     struct DeviceBase  *dev;
     struct ConfigDev   *cd;
     struct MsgPort     *iomp;
     struct MsgPort     *timermp;
+    struct MsgPort     *dcTimerMp;
     struct timerequest *tr;
+    struct timerequest *dcTimerReq;
     volatile bool      active;
+    volatile bool      paused;
+    bool               hasRemovables;
+    bool               dcTimerArmed;
     UBYTE              shadowDevHead;
     UBYTE              boardNum;
     UBYTE              taskNum;

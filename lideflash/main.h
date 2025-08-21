@@ -45,14 +45,18 @@ enum BOOTROM {
   ATBUS
 };
 
+struct ideBoard;
+
+typedef void (*bs_func) (UBYTE, struct ideBoard *);
+typedef void (*we_func) (struct ideBoard *);
 struct ideBoard {
   struct ConfigDev *cd;
   enum BOOTROM bootrom;
   void * volatile flashbase;
   bool rebootRequired;
   uint8_t banks;
-  void (*bankSelect)(UBYTE, struct ideBoard *);
-  void (*writeEnable)(struct ideBoard *);
+  bs_func bankSelect;
+  we_func writeEnable;
 };
 
 struct dosDev {

@@ -18,7 +18,7 @@
 #include "atapi.h"
 #include "scsi.h"
 #include "string.h"
-#include "wait.h"
+#include "sleep.h"
 #include "blockcopy.h"
 #include "lide_alib.h"
 
@@ -31,9 +31,9 @@
  *
  * @param unit Pointer to an IDEUnit struct
 */
-static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUnit *unit) {
+static void atapi_status_reg_delay() {
     asm volatile (
-        "tst.b 0xBFEB01"
+        "tst.b 0xBFE001"
     );
 }
 /**
@@ -44,12 +44,14 @@ static void  __attribute__((always_inline)) atapi_status_reg_delay(struct IDEUni
  * @param tries Tries, sets the timeout
 */
 static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
+    UBYTE status;
     Trace("atapi_wait_drq enter\n");
-    struct timerequest *tr = unit->itask->tr;
-    atapi_status_reg_delay(unit);
+    atapi_status_reg_delay();
     for (int i=0; i < tries; i++) {
-        if ((*unit->drive.status_command & ata_flag_drq) != 0) return true;
-        wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
+        status = *unit->drive.status_command;
+        if ((status & ata_flag_drq) != 0) return true;
+        if (status & (ata_flag_error | ata_flag_df)) return false;
+        atapi_status_reg_delay();
     }
     Trace("atapi_wait_drq timeout\n");
     return false;
@@ -63,12 +65,11 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
  * @param tries Tries, sets the timeout
 */
 static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
-    struct timerequest *tr = unit->itask->tr;
-    atapi_status_reg_delay(unit);
+    atapi_status_reg_delay();
 
     for (int i=0; i < tries; i++) {
         if ((*unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == ata_flag_drq) return true;
-        wait_us(tr,ATAPI_DRQ_WAIT_LOOP_US);
+        atapi_status_reg_delay();
     }
     return false;
 }
@@ -76,17 +77,37 @@ static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
 /**
  * atapi_wait_not_bsy
  *
- * Poll BSY in the status register until clear or timeout
- * @param unit Pointer to an IDEUnit struct
- * @param tries Tries, sets the timeout
-*/
-static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
+ * Polls the BSY bit in the status register until cleared, an error occurs, or the timeout is reached.
+ *
+ * For long-running commands (e.g., FORMAT UNIT, BLANK, up to 30 minutes), uses timer-based waits (1 ms per poll) to yield to other tasks, ensuring AmigaOS multitasking friendliness. 
+ * For faster commands (e.g., READ (10), WRITE (10)), uses a ~1.4 µs delay via CIA register reads for CPU-independent timing and high throughput.
+ *
+ * Timeout durations:
+ * - Short (~40 seconds, CIA-based): For fast commands like READ (10), WRITE (10).
+ * - Medium (120 seconds, timer-based): For cache flushes (e.g., SYNCHRONIZE CACHE, CLOSE TRACK/SESSION).
+ * - Long (30 minutes, timer-based): For formatting (e.g., FORMAT UNIT, BLANK).
+ *
+ * Returns true if BSY clears, false on timeout or if error/device fault bits are set (ERR, DF).
+ *
+ * @param unit Pointer to an IDEUnit struct.
+ * @param tries Number of polling iterations—timeout depends on longDelay: ~1.4 µs/try (CIA) or 1 ms/try (timer).
+ * @param longDelay If true, uses timer.device (1 ms waits) for multitasking; if false, uses CIA (~1.4 µs) for speed.
+ */
+static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries, bool longDelay) {
     Trace("atapi_wait_not_bsy enter\n");
-    struct timerequest *tr = unit->itask->tr;
+    atapi_status_reg_delay();
 
-    for (int i=0; i < tries; i++) {
-        if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
-        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
+    if (longDelay) {
+        struct timerequest *tr = unit->itask->tr;
+        for (int i=0; i < tries; i++) {
+            if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
+            sleep_us(tr,ATAPI_BSY_WAIT_LOOP_LONG_US);
+        }
+    } else {
+        for (int i=0; i < tries; i++) {
+            if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
+            atapi_status_reg_delay();
+        }
     }
     Trace("atapi_wait_not_bsy timeout\n");
     return false;
@@ -101,12 +122,11 @@ static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries) {
 */
 static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
     Trace("atapi_wait_not_drqbsy enter\n");
-    struct timerequest *tr = unit->itask->tr;
-    atapi_status_reg_delay(unit);
 
+    atapi_status_reg_delay();
     for (int i=0; i < tries; i++) {
         if ((*(volatile BYTE *)unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == 0) return true;
-        wait_us(tr,ATAPI_BSY_WAIT_LOOP_US);
+        atapi_status_reg_delay();
     }
     Trace("atapi_wait_not_drqbsy timeout\n");
     return false;
@@ -125,12 +145,24 @@ static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
 */
 static bool atapi_check_ir(struct IDEUnit *unit, UBYTE mask, UBYTE value, UWORD tries) {
     for (int i=0; i<tries; i++) {
-        atapi_status_reg_delay(unit);
+        atapi_status_reg_delay();
         if ((*unit->drive.sectorCount & mask) == value) return true;
     }
 
     return false;
 }
+
+/**
+ * atapi_check_error
+ * *
+ * @param unit Pointer to an IDEUnit struct
+ * @returns True if error is indicated
+*/
+static bool atapi_check_error(struct IDEUnit *unit) {
+    atapi_status_reg_delay();
+    return (*unit->drive.status_command & (ata_flag_error | ata_flag_df));
+}
+
 
 /**
  * atapi_dev_reset
@@ -140,9 +172,9 @@ static bool atapi_check_ir(struct IDEUnit *unit, UBYTE mask, UBYTE value, UWORD 
 */
 void atapi_dev_reset(struct IDEUnit *unit) {
     Info("ATAPI: Resetting device\n");
-    atapi_wait_not_bsy(unit,10);
+    atapi_wait_not_bsy(unit,10000,true);
     *unit->drive.status_command = ATA_CMD_DEVICE_RESET;
-    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT);
+    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT,false);
 
 }
 
@@ -155,7 +187,7 @@ void atapi_dev_reset(struct IDEUnit *unit) {
 bool atapi_check_signature(struct IDEUnit *unit) {
 
     atapi_dev_reset(unit);
-    wait_us(unit->itask->tr,10000);
+    sleep_us(unit->itask->tr,10000);
     for (int i=0; i<20; i++) {
         if ((*unit->drive.lbaHigh == 0xEB) && (*unit->drive.lbaMid == 0x14)) return true;
     }
@@ -174,7 +206,7 @@ bool atapi_check_signature(struct IDEUnit *unit) {
 */
 bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 
-    UBYTE drvSel = (unit->primary) ? 0xE0 : 0xF0; // Select drive
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSel,false);
@@ -280,7 +312,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
                     case 0x02:                       // Unit not ready
                         if (asc == 0x4) {            // Becoming ready
                             ret = TDERR_DiskChanged;
-                            wait(unit->itask->tr,1);   // Wait
+                            sleep_s(unit->itask->tr,1);   // Wait
                             continue;                // and try again
                         } else {
                             ret = TDERR_DiskChanged; // No media
@@ -335,10 +367,14 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     Trace("atapi_packet\n");
     LONG byte_count = 0;
-    LONG remaining;
-    UWORD data;
+    LONG remaining = cmd->scsi_Length;
     BYTE ret = 0;
-    UBYTE senseKey;
+    UBYTE senseKey = 0;
+    UWORD data;
+    ULONG busy_wait;
+    bool busy_useTimer;
+
+    Trace("Length: %ld\n",cmd->scsi_Length);
     volatile UBYTE *status = unit->drive.status_command;
 
 
@@ -352,14 +388,34 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         goto end;
     }
 
+    // Adjust BSY wait timeout for long running commands
+    switch (cmd->scsi_Command[0]) {
+        case SCSI_CMD_FORMAT_UNIT:
+        case SCSI_CMD_BLANK:
+            busy_useTimer = true;
+            busy_wait = ATAPI_BSY_WAIT_COUNT_LONG; // Up to 30 mins
+            break;
+        case SCSI_CMD_SYNC_CACHE_10:
+        case SCSI_CMD_CLOSE_TRACK_SESS:
+        case SCSI_CMD_SEND_OPC_INFO:
+        case SCSI_CMD_REPAIR_TRACK:
+            busy_useTimer = true;
+            busy_wait = ATAPI_BSY_WAIT_COUNT_MEDIUM; // Up to 2 mins
+            break;
+        default:
+            busy_useTimer = false;
+            busy_wait = ATAPI_BSY_WAIT_COUNT_SHORT; // 30 seconds
+            break;
+    }
+
     cmd->scsi_Actual = 0;
 
-    UBYTE drvSelHead = ((unit->primary) ? 0xE0 : 0xF0);
+    UBYTE drvSelHead = ((unit->flags.primary) ? 0xE0 : 0xF0);
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
 
-    if (!atapi_wait_not_drqbsy(unit,ATAPI_BSY_WAIT_COUNT)) {
+    if (!atapi_wait_not_drqbsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT)) {
         ret = IOERR_UNITBUSY;
         goto end;
     }
@@ -376,13 +432,18 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     *unit->drive.devHead        = drvSelHead;
     *unit->drive.status_command = ATAPI_CMD_PACKET;
 
-    if (!atapi_wait_drq_not_bsy(unit,ATAPI_DRQ_WAIT_COUNT)) {
+    if (atapi_check_error(unit)) {
+        ret = IOERR_ABORTED;
+        goto ata_error;
+    }
+
+    if (!atapi_wait_drq_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT)) {
         Trace("ATAPI: Packet bsy timeout\n");
         ret = IOERR_UNITBUSY;
         goto end;
     }
 
-    if (!atapi_check_ir(unit,IR_STATUS,IR_COMMAND,10)) {
+    if (!atapi_check_ir(unit,IR_STATUS,IR_COMMAND,1000)) {
         Trace("ATAPI: Failed command phase\n");
         ret = HFERR_Phase;
         goto end;
@@ -404,33 +465,32 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         }
     }
 
-    if (*status & ata_flag_error) goto ata_error;
+    if (atapi_check_error(unit)) {
+        ret = IOERR_ABORTED;
+        goto ata_error;
+    }
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
 
     ULONG index = 0;
 
     while (1) {
-        atapi_status_reg_delay(unit);
-
-        if (!atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT)) {
+        if (!atapi_wait_not_bsy(unit,busy_wait,busy_useTimer)) {
           ret = IOERR_UNITBUSY;
           goto end;
         }
 
         if (cmd->scsi_Length == 0) break;
 
-        if ((atapi_check_ir(unit,0x03,IR_STATUS,1))) break;
+        if ((atapi_check_ir(unit,0x03,IR_STATUS,100))) break;
 
-        if (!(atapi_wait_drq(unit,10))) break;
+        if (!(atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT))) break;
 
 
         byte_count = *unit->drive.lbaHigh << 8 | *unit->drive.lbaMid;
         byte_count += (byte_count & 0x01); // Ensure that the byte count is always an even number
 
         while (byte_count > 0) {
-            remaining = cmd->scsi_Length - cmd->scsi_Actual;
-
             if ((byte_count >= 512 && remaining >= 512)) {
               // 512 or more bytes to transfer, use the fast ATA transfer routines
               if (cmd->scsi_Flags & SCSIF_READ) {
@@ -463,13 +523,14 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 byte_count -= 2;
             }
         }
+        remaining = cmd->scsi_Length - cmd->scsi_Actual;
     }
 
     if (unit->SysBase->LibNode.lib_Version > 36) {
         CacheClearE(cmd->scsi_Data,cmd->scsi_Length,CACRF_ClearI);
     }
 
-    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT);
+    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT,false);
     if (!atapi_check_ir(unit,atapi_flag_cd,IR_COMMAND,10)) {
         // Drive is still in the data phase but should be either reporting completion or ready for a command
         Warn("ATAPI: Completion not reported at end of command\n");
@@ -490,13 +551,18 @@ end:
         Warn("Status: %02lx\n",*status);
         Warn("Interrupt reason: %02lx\n",*unit->drive.sectorCount);
         cmd->scsi_Status = 2;
+        if (cmd->scsi_Flags & (SCSIF_AUTOSENSE)) {
+            Trace("Auto sense requested\n");
+            if (ret == IOERR_UNITBUSY) {
+                // This was a timeout, fake the autosense data
+                fake_scsi_sense(cmd,0,0,ret);
+            } else {
+                atapi_autosense(cmd,unit);
+            }
+        }
         if (ret == 0) ret = HFERR_BadStatus;
     }
-
-    if (ret == 0) {
-        atapi_do_defer_tur(unit,cmd->scsi_Command[0]);
-    }
-
+    Trace("Remaining: %ld\n",remaining);
     Trace("exit atapi_packet\n");
     return ret;
 }
@@ -508,14 +574,18 @@ end:
  * Send a TEST UNIT READY to the unit and update the media change count & presence
  *
  * @param unit Pointer to an IDEUnit struct
+ * @param immediate Don't wait for medium to become ready
  * @returns nonzero if there was an error
 */
-BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
+BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
     if (cmd == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
-    UBYTE senseError, senseKey, asc, asq = 0;
+    UBYTE senseError = 0;
+    UBYTE senseKey = 0;
+    UBYTE asc = 0;
+    UBYTE asq = 0;
     UBYTE ret = 0;
 
     for (int tries = 4; tries > 0; tries--) {
@@ -538,7 +608,8 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit) {
                         if (asc == 4) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (tries > 0) wait(unit->itask->tr,3);
+                            if (!immediate)
+                                if (tries > 0) sleep_s(unit->itask->tr,2);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;
@@ -658,14 +729,18 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     unit->logicalSectors  = 0;
     unit->blockShift      = 0;
 
-    if ((ret = atapi_packet(cmd,unit)) == 0) {
-        unit->logicalSectors  = capacity.logicalSectors + 1;
-        unit->blockSize       = capacity.blockSize;
-
-        while ((unit->blockSize >> unit->blockShift) > 1) {
-            unit->blockShift++;
+    for (int retry = 3; retry > 0; retry--) {
+        if ((ret = atapi_packet(cmd,unit)) == 0) {
+            unit->logicalSectors  = capacity.logicalSectors + 1;
+            unit->blockSize       = capacity.blockSize;
+    
+            while ((unit->blockSize >> unit->blockShift) > 1) {
+                unit->blockShift++;
+            }
+            break;
         }
     }
+
     Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
 
     DeleteSCSICmd(cmd);
@@ -745,7 +820,8 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_sense = MakeSCSICmd(SZ_CDB_10);
 
     if (cmd_sense == NULL) {
-        return TDERR_NoMem;
+        ret = TDERR_NoMem;
+        goto cleanup;
     }
 
     cmd_sense->scsi_Command[0] = SCSI_CMD_MODE_SENSE_10;
@@ -761,20 +837,25 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     ret = atapi_packet(cmd_sense,unit);
 
-
     if (ret == 0 && cmd_sense->scsi_Status == 0) {
-        // Translate the mode parameter header
-        dest[0] = (buf[1] - 3); // Length
-        dest[1] = buf[2];       // Medium type
-        dest[2] = buf[3];       // WP/DPOFUA Flags
-        dest[3] = buf[7];       // Block descriptor length
-
-        // Copy the mode sense data
-        for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
-            dest[i+4] = buf[i+8];
+        // Check that mode data is not too short and does not exceed mode sense(6) length and
+        if (cmd_sense->scsi_Actual < 8 || buf[0] || buf[6] || buf[1] < 3) {
+            cmd->scsi_Status = 2;
+            ret = IOERR_BADLENGTH;
+        } else {
+            // Translate the mode parameter header
+            dest[0] = (buf[1] - 3); // Length
+            dest[1] = buf[2];       // Medium type
+            dest[2] = buf[3];       // WP/DPOFUA Flags
+            dest[3] = buf[7];       // Block descriptor length
+    
+            // Copy the mode sense data
+            for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
+                dest[i+4] = buf[i+8];
+            }
+            cmd->scsi_Actual = cmd_sense->scsi_Actual - 4;
+            cmd->scsi_Status = 0;
         }
-        cmd->scsi_Actual = cmd_sense->scsi_Actual - 4;
-        cmd->scsi_Status = 0;
     } else {
         cmd->scsi_Status = 2;
     }
@@ -782,8 +863,9 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
 
-    FreeMem(buf,len);
-    DeleteSCSICmd(cmd_sense);
+cleanup:
+    if (buf) FreeMem(buf,len);
+    if (cmd_sense) DeleteSCSICmd(cmd_sense);
     return ret;
 }
 
@@ -792,7 +874,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
  *
  * ATAPI devices do not support MODE SELECT (6) so translate to a MODE SELECT (10)
  *
- * @param cmd Pointer to a SCSICmd struct containing a MODE SENSE (6) request
+ * @param cmd Pointer to a SCSICmd struct containing a MODE SELECT (6) request
  * @param unit Pointer to an IDEUnit struct
  * @returns non-zero on error, mode-sense data in cmd->scsi_Data
 */
@@ -821,7 +903,8 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_select = MakeSCSICmd(SZ_CDB_10);
 
     if (cmd_select == NULL) {
-        return TDERR_NoMem;
+        ret = TDERR_NoMem;
+        goto cleanup;
     }
 
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
@@ -836,10 +919,14 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd_select->scsi_SenseData   = cmd->scsi_SenseData;
     cmd_select->scsi_SenseLength = cmd->scsi_SenseLength;
 
+    // Copy Mode parameter header fields
+    dst[2] = src[1]; // Mediun Type
+    dst[3] = src[2]; // Device specific parameter
+    dst[7] = src[3]; // Block descriptor length
+  
     // Copy the Mode Parameters
-    dst += 4;
-    len = bufSize - 4;
-    CopyMem(src,dst,len);
+    len = bufSize - 8;
+    CopyMem(src + 4, dst + 8, len);
 
     ret = atapi_packet(cmd_select, unit);
     if (ret == 0 && cmd_select->scsi_Status == 0) {
@@ -852,8 +939,9 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_Actual      = cmd_select->scsi_Actual;
 
-    DeleteSCSICmd(cmd_select);
-    FreeMem(buf,bufSize);
+cleanup:
+    if (buf) FreeMem(buf,bufSize);
+    if (cmd_select) DeleteSCSICmd(cmd_select);
 
     return ret;
 }
@@ -945,23 +1033,49 @@ BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
  * @param loej loej bit of START STOP
  * @returns non-zero on error
 */
-BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej) {
-    struct SCSICmd *cmd = NULL;
+BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool immediate) {
     UBYTE operation = 0;
-    UBYTE ret;
+    UBYTE ret = 0;
 
     if (loej)  operation |= (1<<1);
     if (start) operation |= (1<<0);
+  
+    BYTE cdb[10] = {0};
+    struct SCSI_FIXED_SENSE sense;
+    memset(&sense,0,sizeof(struct SCSI_FIXED_SENSE));
+    
+    struct SCSICmd cmd = {
+        .scsi_Command     = (APTR)&cdb,
+        .scsi_CmdActual   = 0,
+        .scsi_CmdLength   = 10,
+        .scsi_Data        = NULL,
+        .scsi_Length      = 0,
+        .scsi_Flags       = SCSIF_AUTOSENSE,
+        .scsi_SenseData   = (APTR)&sense,
+        .scsi_SenseLength = sizeof(struct SCSI_FIXED_SENSE),
+        .scsi_SenseActual = 0,
+        .scsi_Status      = 0
+    };
 
-    if ((cmd = MakeSCSICmd(SZ_CDB_10)) == NULL) return TDERR_NoMem;
+    cdb[0] = SCSI_CMD_START_STOP_UNIT;
+    cdb[1] = (immediate) ? 1 : 0;
+    cdb[4] = operation;
 
-    cmd->scsi_Command[0] = SCSI_CMD_START_STOP_UNIT;
-    cmd->scsi_Command[1] = (1<<0); // Immediate bit set
-    cmd->scsi_Command[4] = operation;
+    ret = atapi_packet(&cmd,unit);
 
-    ret = atapi_packet(cmd,unit);
+    if (cmd.scsi_Status == 0x02) {
+        if (sense.senseKey == 0x02) {
+            if (sense.asc == 0x04) {
+                ret = 0; // Becoming ready
+            } else {
+                ret = TDERR_DiskChanged;
+            }
+        } else {
+            ret = TDERR_NotSpecified;
+        }
+    }
 
-    DeleteSCSICmd(cmd);
+    atapi_test_unit_ready(unit,true);
 
     return ret;
 }
@@ -1005,39 +1119,20 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 */
 bool atapi_update_presence(struct IDEUnit *unit, bool present) {
     bool ret = false;
-    if (present && unit->mediumPresent == false) {
+    if (present && unit->flags.mediumPresent == false) {
         unit->changeCount++;
-        unit->mediumPresent = true;
+        unit->flags.mediumPresent = true;
         atapi_get_capacity(unit);
         ret = true;
-    } else if (!present && unit->mediumPresent == true) {
+    } else if (!present && unit->flags.mediumPresent == true) {
         unit->changeCount++;
-        unit->mediumPresent  = false;
+        unit->flags.mediumPresent = false;
         unit->logicalSectors = 0;
         unit->blockShift     = 0;
         unit->blockSize      = 0;
         ret = true;
     }
     return ret;
-}
-
-/**
- * atapi_do_defer_tur
- *
- * If an access to the medium was successful then we know that it is present.
- * The diskchange task can then skip the next "Test Unit Ready" so it won't interrupt a transfer
- *
- * @param unit Pointer to an IDEUnit struct
- * @param cmd SCSI Command
-*/
-void atapi_do_defer_tur(struct IDEUnit *unit, UBYTE cmd) {
-
-    cmd &= 0x5F;
-    // If this is one of the various read/write/verify commands then we can defer TUR
-    if (cmd >= 0x08 && cmd <= 0x0F) {
-        unit->deferTUR = true;
-    }
-
 }
 
 /**
@@ -1242,22 +1337,96 @@ BYTE atapi_translate_play_audio_index(struct SCSICmd *cmd, struct IDEUnit *unit)
 */
 BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     UBYTE ret = 0;
+
+    if (scsi_command->scsi_SenseData == NULL || scsi_command->scsi_SenseLength == 0)
+        return IOERR_BADADDRESS;
+    
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
 
     if (cmd != NULL) {
-        cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
-        cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
-        cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
-        cmd->scsi_Length     = scsi_command->scsi_SenseLength;
-        cmd->scsi_Flags      = SCSIF_READ;
-        cmd->scsi_CmdLength  = 12;
+        for (int retry=3; retry > 0; retry--) {
+            cmd->scsi_Command[0] = SCSI_CMD_REQUEST_SENSE;
+            cmd->scsi_Command[4] = scsi_command->scsi_SenseLength & 0xFF;
+            cmd->scsi_Data       = (UWORD *)scsi_command->scsi_SenseData;
+            cmd->scsi_Length     = scsi_command->scsi_SenseLength;
+            cmd->scsi_Flags      = SCSIF_READ;
+            cmd->scsi_CmdLength  = 12;
+    
+            ret = atapi_packet(cmd,unit);
+            scsi_command->scsi_SenseActual = cmd->scsi_Actual;
 
-        ret = atapi_packet(cmd,unit);
-        scsi_command->scsi_SenseActual = cmd->scsi_Actual;
+            if (ret == 0) break;
+
+            sleep_us(unit->itask->tr,250000);
+        }
+
         DeleteSCSICmd(cmd);
-
         return ret;
     } else {
         return TDERR_NoMem;
     }
+}
+
+/**
+ * atapi_handle_scsi_command
+ *
+ * Handles SCSI commands for ATAPI devices by translating unsupported commands
+ * and applying compatibility fixes for specific device types.
+ *
+ * @param unit Pointer to an IDEUnit struct representing the ATAPI device
+ * @param scsi_command Pointer to a SCSICmd struct containing the command to execute
+ * @return BYTE Error code (0 for success, non-zero for error)
+ */
+BYTE atapi_handle_scsi_command(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+    BYTE error = 0;
+
+    switch (scsi_command->scsi_Command[0]) {
+
+        case SCSI_CMD_INQUIRY:
+            // Fudge the SCSI version number for CD/DVDs
+            // Some software expects version 2 but ATAPI returns version 0
+            error = atapi_packet(scsi_command,unit);
+
+            if (error == 0 && unit->deviceType == DG_CDROM) {
+                if ((scsi_command->scsi_Command[1] & 1) == 0) {
+                    ((struct SCSI_Inquiry *)scsi_command->scsi_Data)->version = 2;
+                }
+            }
+            break;
+
+        case SCSI_CMD_READ_6:
+        case SCSI_CMD_WRITE_6:
+            // ATAPI devices don't support READ/WRITE(6) so translate it
+            error = atapi_scsi_read_write_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_MODE_SENSE_6:
+            error = atapi_scsi_mode_sense_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_MODE_SELECT_6:
+            error = atapi_scsi_mode_select_6(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_PLAY_TRACK_INDEX:
+            error = atapi_translate_play_audio_index(scsi_command,unit);
+            break;
+
+        case SCSI_CMD_READ_CAPACITY_10:
+            // CDROMs don't support parameters for READ_CAPACITY_10 so clear them all
+            for (int i=1; i < scsi_command->scsi_CmdLength; i++) {
+                scsi_command->scsi_Command[i] = 0;
+            }
+
+        default:
+            if (!((ULONG)scsi_command->scsi_Data & 0x01)) { // Buffer is word-aligned?
+                error = atapi_packet(scsi_command,unit);
+            } else {
+                error = atapi_packet_unaligned(scsi_command,unit);
+            }
+
+            break;
+    }
+
+    return error;
 }

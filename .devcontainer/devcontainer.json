@@ -3,7 +3,7 @@
 {
 	"name": "amiga-gcc-amitools",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "stefanreinauer/amiga-gcc:latest",
+	"image": "liv2/amiga-gcc:latest",
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},

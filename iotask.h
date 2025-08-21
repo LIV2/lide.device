@@ -3,7 +3,6 @@
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
 #define ATA_TASK_NAME    "lide ata task"
-#define CHANGE_TASK_NAME "lide change task"
 #define TASK_PRIORITY 11
 #define TASK_STACK_SIZE 8192
 
@@ -12,7 +11,7 @@
 #define CMD_DIE  0x1000
 #define CMD_XFER (CMD_DIE + 1)
 #define CMD_PIO  (CMD_XFER + 1)
+#define CMD_PAUSE (CMD_PIO + 1)
+#define CMD_RESUME (CMD_PAUSE + 1)
 
-void ide_task();
-void diskchange_task();
-BYTE direct_changestate(struct IDEUnit *unit, struct DeviceBase *dev);
+void io_task();

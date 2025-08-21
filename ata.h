@@ -104,7 +104,7 @@ enum xfer_dir {
 #define ATA_RDY_WAIT_COUNT (ATA_RDY_WAIT_S * 1000 * (1000 / ATA_RDY_WAIT_LOOP_US))
 
 
-bool ata_init_unit(struct IDEUnit *);
+bool ata_init_unit(struct IDEUnit *unit, void *base);
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait);
 bool ata_identify(struct IDEUnit *, UWORD *);
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);

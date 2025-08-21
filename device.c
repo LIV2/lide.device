@@ -8,6 +8,7 @@
 #include <exec/errors.h>
 #include <exec/execbase.h>
 #include <exec/resident.h>
+#include <hardware/cia.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <resources/filesysres.h>
@@ -18,17 +19,21 @@
 #include "ata.h"
 #include "atapi.h"
 #include "device.h"
-#include "idetask.h"
+#include "iotask.h"
 #include "newstyle.h"
 #include "td64.h"
-#include "mounter.h"
 #include "debug.h"
 #include "lide_alib.h"
+#include "mounter/mounter.h"
 
 #ifdef NO_AUTOCONFIG
 extern UBYTE bootblock, bootblock_end;
 #endif
 
+extern const char device_name[];
+extern const char device_id_string[];
+extern int endskip;
+static struct Library * init(BPTR seg_list asm("a0"));
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
@@ -40,17 +45,20 @@ int __attribute__((no_reorder)) _start()
     return -1;
 }
 
-asm("romtag:                                \n"
-    "       dc.w    "XSTR(RTC_MATCHWORD)"   \n"
-    "       dc.l    romtag                  \n"
-    "       dc.l    _endskip                \n"
-    "       dc.b    "XSTR(RTF_COLDSTART)"   \n"
-    "       dc.b    "XSTR(DEVICE_VERSION)"  \n"
-    "       dc.b    "XSTR(NT_DEVICE)"       \n"
-    "       dc.b    "XSTR(DEVICE_PRIORITY)" \n"
-    "       dc.l    _device_name            \n"
-    "       dc.l    _device_id_string       \n"
-    "       dc.l    _init                   \n");
+
+__attribute__((used,no_reorder))
+static const struct Resident romTag = {
+    .rt_MatchWord = RTC_MATCHWORD,
+    .rt_MatchTag  = (APTR)&romTag,
+    .rt_EndSkip   = (APTR)&endskip,
+    .rt_Flags     = RTF_COLDSTART,
+    .rt_Version   = DEVICE_VERSION,
+    .rt_Type      = NT_DEVICE,
+    .rt_Pri       = DEVICE_PRIORITY,
+    .rt_Name      = (APTR)&device_name,
+    .rt_IdString  = (APTR)&device_id_string,
+    .rt_Init      = (APTR)init
+};
 
 const char device_name[] = DEVICE_NAME;
 const char device_id_string[] = DEVICE_ID_STRING;
@@ -73,9 +81,9 @@ char * set_dev_name(struct DeviceBase *dev) {
             if (i == 0) {
                 devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
                 if (devName == NULL) return NULL;
-                strncpy(devName + 4,device_name,sizeof(device_name));
+                strcpy(devName + 4,device_name);
             }
-            
+
             switch (i) {
                 case 0:
                     *(ULONG *)devName = device_prefix[0];
@@ -93,7 +101,10 @@ char * set_dev_name(struct DeviceBase *dev) {
             return devName;
         }
     }
+
     Info("Couldn't set device name.\n");
+    // if devName doesn't point to the const device_name then we need to free up that memory
+    if (devName != device_name) FreeMem(devName,sizeof(device_name)+4);
     return NULL;
 }
 
@@ -102,33 +113,36 @@ char * set_dev_name(struct DeviceBase *dev) {
  * CreateFakeConfigDev
  * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
  * Adapted from mounter.c by Toni Wilen
- * 
+ *
  * @param SysBase Pointer to SysBase
  * @param ExpansionBase Pointer to ExpansionBase
  * @returns Pointer to a ConfigDev struct
  */
 struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *ExpansionBase)
 {
-	struct ConfigDev *cd;
+    struct ConfigDev *cd;
 
-	cd = AllocConfigDev();
-	if (cd) {
-		cd->cd_BoardAddr = NULL;
-		cd->cd_BoardSize = 0;
-		cd->cd_Rom.er_Type = ERTF_DIAGVALID;
-		ULONG bbSize = &bootblock_end - &bootblock;
-		ULONG daSize = sizeof(struct DiagArea) + bbSize;
-		struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
-		if (diagArea) {
-			diagArea->da_Config     = DAC_CONFIGTIME;
-			diagArea->da_BootPoint  = sizeof(struct DiagArea);
-			diagArea->da_Size       = (UWORD)daSize;
+    cd = AllocConfigDev();
+    if (cd) {
+        cd->cd_BoardAddr = NULL;
+        cd->cd_BoardSize = 0;
+        cd->cd_Rom.er_Type = ERTF_DIAGVALID;
+        ULONG bbSize = &bootblock_end - &bootblock;
+        ULONG daSize = sizeof(struct DiagArea) + bbSize;
+        struct DiagArea *diagArea = AllocMem(daSize, MEMF_CLEAR | MEMF_PUBLIC);
+        if (diagArea) {
+            diagArea->da_Config     = DAC_CONFIGTIME;
+            diagArea->da_BootPoint  = sizeof(struct DiagArea);
+            diagArea->da_Size       = (UWORD)daSize;
             CopyMem(&bootblock, diagArea+1, bbSize);
-			// cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
-			ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
-			*da_Pointer = (ULONG)diagArea;
-		}
-	}
+            // cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
+            ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
+            *da_Pointer = (ULONG)diagArea;
+        }
+    } else {
+        FreeConfigDev(cd);
+        cd = NULL;
+    }
     return cd;
 }
 #endif
@@ -184,6 +198,15 @@ static BOOL FindCDFS() {
 }
 #endif
 
+/**
+ * ioreq_is_valid
+ * 
+ * Check if the supplied IOReq points to a valid unit
+ * 
+ * @param dev Pointer to DeviceBase
+ * @param ior The ioreq to test
+ * @returns bool
+ */
 static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
     struct ExecBase *SysBase = dev->SysBase;
     bool found = false;
@@ -222,33 +245,24 @@ static bool ioreq_is_valid(struct DeviceBase *dev, struct IORequest *ior) {
 static void Cleanup(struct DeviceBase *dev) {
     Info("Cleaning up...\n");
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-
-    struct IDEUnit *unit;
-
-    if (SysBase->LibNode.lib_Version >= 36) {
-        ObtainSemaphoreShared(&dev->ulSem);
-    } else {
-        ObtainSemaphore(&dev->ulSem);
-    }
-
-    for (unit = (struct IDEUnit *)dev->units.mlh_Head;
-         unit->mn_Node.mln_Succ != NULL;
-         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-        {
-            unit->cd->cd_Flags |= CDF_CONFIGME;
-        }
-
-    ReleaseSemaphore(&dev->ulSem);
+    char *devName = dev->lib.lib_Node.ln_Name;
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
 
-    struct IDETask *itask;
+    struct IOTask *itask;
 
-    for (itask = (struct IDETask *)dev->ideTasks.mlh_Head;
+    for (itask = (struct IOTask *)dev->ideTasks.mlh_Head;
          itask->mn_Node.mln_Succ != NULL;
-         itask = (struct IDETask *)itask->mn_Node.mln_Succ)
+         itask = (struct IOTask *)itask->mn_Node.mln_Succ)
     {
-        FreeMem(itask,sizeof(struct IDETask));
+        itask->cd->cd_Flags |= CDF_CONFIGME;
+        FreeMem(itask,sizeof(struct IOTask));
+    }
+
+    // if devName doesn't point to the const device_name then we need to free up that memory
+    if (devName != device_name) {
+        FreeMem(devName,sizeof(device_name)+4);
+        devName = NULL;
     }
 
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
@@ -320,8 +334,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
  *
  * Scan for drives and initialize the driver if any are found
 */
-struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
-//struct Library __attribute__((used)) * init_device(struct ExecBase *SysBase, BPTR seg_list, struct DeviceBase *dev)
+struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list asm("a0"), struct DeviceBase *dev asm("d0"))
 {
     dev->SysBase = SysBase;
     Trace("Init dev, base: %08lx\n",dev);
@@ -344,7 +357,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
     dev->isOpen        = FALSE;
     dev->numUnits      = 0;
     dev->numTasks      = 0;
-    dev->hasRemovables = false;
 
     L_NewList((struct List *)&dev->units);
     InitSemaphore(&dev->ulSem);
@@ -358,7 +370,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         dev->ExpansionBase = ExpansionBase;
     }
 
-    struct IDETask *itask;
+    struct IOTask *itask;
     struct ConfigDev *cd;
     struct Task *self = FindTask(NULL);
 
@@ -373,7 +385,7 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
     cd = cb.cb_ConfigDev;
 
-    // Add an IDE Task for each board
+    // Add an IO Task for each channel of each board
     // When loaded from Autoconfig ROM this will still only attach to one board.
     // If the driver is loaded by BindDrivers though then this should attach to multiple boards.
     for (cd = cb.cb_ConfigDev; cd != NULL; cd = cd->cd_NextCD) {
@@ -386,10 +398,6 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
             continue;
         }
 
-        Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
-        cd->cd_Flags &= ~(CDF_CONFIGME); // Claim the board
-        cd->cd_Driver = dev;
-
         numBoards++;
 #else
         /**
@@ -397,7 +405,11 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
          * If we are booting a non-autoconfig device we need to create a ConfigDev struct
          * This could also be done in mounter.c but that would create a new ConfigDev for each unit
          */
-        cd = CreateFakeConfigDev(SysBase,ExpansionBase);
+        if ((cd = CreateFakeConfigDev(SysBase,ExpansionBase)) == NULL) {
+            Info("Failed to create fake configdev\n");
+            Cleanup(dev);
+            return NULL;
+        }
         cd->cd_BoardAddr = (APTR)BOARD_BASE;
         cd->cd_BoardSize = 0x1000;
         numBoards = 1;
@@ -406,31 +418,34 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
         for (int c=0; c < channels; c++) {
 
-            Trace("Starting IDE Task %ld\n",numBoards);
+            Info("Starting IO Task %ld\n",dev->numTasks);
 
-            itask = AllocMem(sizeof(struct IDETask), MEMF_ANY|MEMF_CLEAR);
+            itask = AllocMem(sizeof(struct IOTask), MEMF_ANY|MEMF_CLEAR);
 
             if (itask == NULL) {
                 Info("Couldn't allocate memory\n");
                 break;
             }
 
-            itask->dev      = dev;
-            itask->cd       = cd;
-            itask->channel  = c;
-            itask->taskNum  = dev->numTasks;
-            itask->parent   = self;
-            itask->boardNum = (numBoards - 1);
+            itask->SysBase       = SysBase;
+            itask->dev           = dev;
+            itask->cd            = cd;
+            itask->channel       = c;
+            itask->taskNum       = dev->numTasks;
+            itask->parent        = self;
+            itask->boardNum      = (numBoards - 1);
+            itask->hasRemovables = false;
 
             SetSignal(0,SIGF_SINGLE);
 
-            // Start the IDE Task
-            itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,ide_task,TASK_STACK_SIZE,itask);
+            // Start the IO Task
+            itask->task = L_CreateTask(ATA_TASK_NAME,TASK_PRIORITY,io_task,TASK_STACK_SIZE,itask);
             if (itask->task == NULL) {
-                Info("IDE Task %ld failed\n",itask->taskNum);
+                Info("IO Task %ld failed\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IOTask));
                 continue;
             } else {
-                Trace("IDE Task %ld created!, waiting for init\n",itask->taskNum);
+                Trace("IO Task %ld created!, waiting for init\n",itask->taskNum);
             }
 
             // Wait for task to init
@@ -438,13 +453,18 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
 
             // If itask->active has been set to false it means the task exited
             if (itask->active == false) {
-                Info("IDE Task %ld exited.\n",itask->taskNum);
+                Info("IO Task %ld exited.\n",itask->taskNum);
+                FreeMem(itask,sizeof(struct IOTask));
                 continue;
             }
 
             // Add the task to the list
             AddTail((struct List *)&dev->ideTasks,(struct Node *)&itask->mn_Node);
             dev->numTasks++;
+
+            Trace("Claiming board %08lx\n",(ULONG)cd->cd_BoardAddr);
+            cd->cd_Flags &= ~(CDF_CONFIGME);
+            cd->cd_Driver = dev;
         }
 #ifndef NO_AUTOCONFIG
     }
@@ -456,77 +476,49 @@ struct Library __attribute__((used, saveds)) * init_device(struct ExecBase *SysB
         return NULL;
     }
 
-    if (dev->hasRemovables) dev->ChangeTask = L_CreateTask(CHANGE_TASK_NAME,0,diskchange_task,TASK_STACK_SIZE,dev);
-
     Info("Startup finished.\n");
     return (struct Library *)dev;
 
 }
 
-/* device dependent expunge function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Expunge at a time. */
-static BPTR __attribute__((used, saveds)) expunge(struct DeviceBase *dev asm("a6"))
+/*
+ * device dependent expunge function
+ * !!! CAUTION: This function runs in a forbidden state !!!
+ * This call is guaranteed to be single-threaded; only one task
+ * will execute your Expunge at a time.
+ *
+ * IMPORTANT: because Expunge is called from the memory allocator,
+ * it may NEVER Wait() or otherwise take long time to complete.
+*/
+static BPTR expunge(struct DeviceBase *dev asm("a6"))
 {
     Trace((CONST_STRPTR) "running expunge()\n");
 
     /**
      * Don't expunge
      *
-     * If expunged the driver will be gone until reboot
-     *
-     * Also need to figure out how to kill the disk change int task cleanly before this can be enabled
+     * If expunged the driver would be gone until reboot
     */
 
     dev->lib.lib_Flags |= LIBF_DELEXP;
     return 0;
 
-    // if (dev->lib.lib_OpenCnt != 0)
-    // {
-    //     dev->lib.lib_Flags |= LIBF_DELEXP;
-    //     return 0;
-    // }
-
-    // if (dev->IDETask != NULL && dev->IDETaskActive == true) {
-    //     // Shut down ide_task
-
-    //     struct MsgPort *mp = NULL;
-    //     struct IOStdReq *ioreq = NULL;
-
-    //     if ((mp = CreatePort(NULL,0)) == NULL)
-    //         return 0;
-    //     if ((ioreq = CreateStdIO(mp)) == NULL) {
-    //         DeletePort(mp);
-    //         return 0;
-    //     }
-
-    //     ioreq->io_Command = CMD_DIE; // Tell ide_task to shut down
-
-    //     PutMsg(dev->IDETaskMP,(struct Message *)ioreq);
-    //     WaitPort(mp);                // Wait for ide_task to signal that it is shutting down
-
-    //     if (ioreq) DeleteStdIO(ioreq);
-    //     if (mp) DeletePort(mp);
-    // }
-
-    // Cleanup(dev);
-    // BPTR seg_list = dev->saved_seg_list;
-    // Remove(&dev->lib.lib_Node);
-    // FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
-    // return seg_list;
 }
 
-/* device dependent open function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Open at a time. */
-static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
+/*
+* device dependent open function
+* !!! CAUTION: This function runs in a forbidden state !!!
+* This call is guaranteed to be single-threaded; only one task
+* will execute your Open at a time.
+*/
+static void open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"), ULONG unitnum asm("d0"), ULONG flags asm("d1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
     struct IDEUnit *unit = NULL;
     BYTE error = 0;
     bool found = false;
+
+    dev->lib.lib_OpenCnt++; // Make sure we're not Expunged during open()
 
     Trace((CONST_STRPTR) "running open() for unitnum %ld\n",unitnum);
 
@@ -567,7 +559,7 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
 
     ReleaseSemaphore(&dev->ulSem);
 
-    if (found == false || unit->present == false) {
+    if (found == false || unit->flags.present == false) {
         error = TDERR_BadUnitNum;
         goto exit;
     }
@@ -589,11 +581,8 @@ static void __attribute__((used, saveds)) open(struct DeviceBase *dev asm("a6"),
     */
     ioreq->io_Message.mn_Node.ln_Type = NT_REPLYMSG;
 
-    // Send a TD_CHANGESTATE ioreq for the unit if it is ATAPI and not already open
-    // This will update the media presence & geometry
-    if (unit->atapi && unit->openCount == 0) direct_changestate(unit,dev);
-
     unit->openCount++;
+    dev->lib.lib_OpenCnt++;
 
     dev->lib.lib_Flags &= ~LIBF_DELEXP;
 
@@ -607,19 +596,16 @@ exit:
         ioreq->io_Unit   = NULL;
         ioreq->io_Device = NULL;
     }
-    dev->lib.lib_OpenCnt++;
+
     ioreq->io_Error = error;
+
+    dev->lib.lib_OpenCnt--;
 }
 
 
 static void td_get_geometry(struct IOStdReq *ioreq) {
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
-
-    // if (unit->atapi && unit->mediumPresent == false) {
-    //     ioreq->io_Error = TDERR_DiskChanged;
-    //     return;
-    // }
 
     // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
     memset(geometry,0,sizeof(struct DriveGeometry));
@@ -632,17 +618,19 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
     geometry->dg_DeviceType   = unit->deviceType;
-    geometry->dg_Flags        = (unit->atapi) ? DGF_REMOVABLE : 0;
+    geometry->dg_Flags        = (unit->flags.atapi) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Actual = sizeof(struct DriveGeometry);
 }
 
 
-/* device dependent close function
-!!! CAUTION: This function runs in a forbidden state !!!
-This call is guaranteed to be single-threaded; only one task
-will execute your Close at a time. */
-static BPTR __attribute__((used, saveds)) close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
+/*
+ * device dependent close function
+ * !!! CAUTION: This function runs in a forbidden state !!!
+ * This call is guaranteed to be single-threaded; only one task
+ * will execute your Close at a time.
+ */
+static BPTR close(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("a1"))
 {
     if (ioreq_is_valid(dev,ioreq)) {
         struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
@@ -668,6 +656,8 @@ const UWORD supported_commands[] =
     CMD_UPDATE,
     CMD_READ,
     CMD_WRITE,
+    CMD_START,
+    CMD_STOP,
     TD_ADDCHANGEINT,
     TD_REMCHANGEINT,
     TD_REMOVE,
@@ -701,7 +691,7 @@ const UWORD supported_commands[] =
  *
  * Handle immediate requests and send any others to ide_task
 */
-static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
 
@@ -724,7 +714,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
 
         if (unit->itask == NULL || unit->itask->active == false) {
 
-            // If the IDE task is dead then we can only throw an error and reply now.
+            // If the IO task is dead then we can only throw an error and reply now.
             ioreq->io_Error = IOERR_OPENFAIL;
 
             if (!(ioreq->io_Flags & IOF_QUICK)) {
@@ -790,13 +780,37 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
                 Enable();
                 break;
 
+            case CMD_RESUME:
+                if (unit->itask->paused) {
+                    Signal(unit->itask->task,SIGBREAKF_CTRL_D);
+                    error = 0;
+                    unit->itask->paused = false;
+                } else {
+                    error = IOERR_ABORTED;
+                }
+                break;
 
-            case TD_CHANGESTATE:
+            case CMD_PAUSE:
+                if (unit->itask->paused) {
+                    error = IOERR_UNITBUSY;
+                    break;
+                }
+                goto sendToTask;
+
+            // Begin IO Task commands //
+            case CMD_START:
+            case CMD_STOP:
+                // Don't pass it to the task if it's not an atapi device
+                if (!unit->flags.atapi) {
+                    error = 0;
+                    break;
+                }
             case CMD_READ:
             case ETD_READ:
             case CMD_WRITE:
             case ETD_WRITE:
                 ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
+            case TD_CHANGESTATE:
             case TD_PROTSTATUS:
             case TD_EJECT:
             case TD_FORMAT:
@@ -812,11 +826,13 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
             case CMD_XFER:
             case CMD_PIO:
             case HD_SCSICMD:
+sendToTask:
                 // Send all of these to ide_task
                 ioreq->io_Flags &= ~IOF_QUICK;
                 PutMsg(unit->itask->iomp,&ioreq->io_Message);
                 Trace((CONST_STRPTR) "IO queued\n");
                 return;
+            // End IO Task commands //
 
             case NSCMD_DEVICEQUERY:
                 if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
@@ -858,7 +874,7 @@ static void __attribute__((used, saveds)) begin_io(struct DeviceBase *dev asm("a
  *
  * Abort io request
 */
-static ULONG __attribute__((used, saveds)) abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
+static ULONG abort_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq asm("a1"))
 {
     struct ExecBase *SysBase = dev->SysBase;
 
@@ -906,68 +922,116 @@ static const ULONG device_vectors[] =
     };
 
 /**
+ * AdjustBootPriority
+ *
+ * Adjusts the boot priority of the first matching device in a mount list. Searches
+ * for a device node with the specified name and increases its priority by the given
+ * increment. Optionally checks gameport 1 button state before applying changes.
+ * Re-orders the device in the priority list after modification.
+ *
+ * @param bootname BSTR name to match against device nodes
+ * @param MountList Pointer to the mount list to traverse
+ * @param checkFire If true, only modify when gameport 1 button is pressed
+ * @param increment Amount to increase both device and boot node priorities
+ */
+void AdjustBootPriority(struct ExecBase *SysBase, char *bootname, struct List *MountList, bool checkFire, int increment) {
+    volatile struct CIA *ciaa = (struct CIA *)0x0bfe001;
+    struct BootNode *bn;
+    struct DeviceNode *dn;
+
+    for (bn = (struct BootNode *)MountList->lh_Head;
+        bn->bn_Node.ln_Succ;
+        bn = (struct BootNode *)bn->bn_Node.ln_Succ)
+    {
+        dn = bn->bn_DeviceNode;
+        if (dn->dn_Priority != -128) 
+        {
+            if (L_CompareBSTR(BADDR(dn->dn_Name),bootname)) {
+                if(!checkFire || (ciaa->ciapra & CIAF_GAMEPORT1)==0) {
+                    dn->dn_Priority+=increment;
+                    bn->bn_Node.ln_Pri+=increment;
+                    Remove((struct Node *)bn);
+                    Enqueue(MountList,(struct Node *)bn);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * TweakBootList
+ *
+ * Modifies boot device priorities in the expansion library mount list. Traverses all
+ * boot nodes and increases priority (+1) for devices matching "BOOTxx" names (where xx
+ * is the expansion library major version). Additionally boosts priority (+2) for
+ * "BOOT00" devices when gameport 1 button is pressed. Skips devices with priority -128.
+ *
+ * @param SysBase Pointer to the ExecBase system library base
+ */
+void TweakBootList(struct ExecBase *SysBase) {
+    struct ExpansionBase *ExpansionBase;
+
+    if (ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) {
+        char bootname[] = "\6BOOT00"; // BSTR
+
+        UWORD major = (ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry
+
+        Forbid();
+
+        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,true,2);
+
+        bootname[5]=0x30+(major/10);
+        bootname[6]=0x30+(major%10);
+
+        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,false,1);
+
+        Permit();
+
+        CloseLibrary((struct Library *)ExpansionBase);
+    }
+}
+
+/**
  * init
  *
  * Create the device and add it to the system if init_device succeeds
 */
-static struct Library __attribute__((used)) * init(BPTR seg_list asm("a0"))
+static struct Library * init(BPTR seg_list asm("a0"))
 {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
-    struct MountStruct *ms = NULL;
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
                                                                 NULL,                      // InitStruct data
                                                                 (APTR)init_device,         // Init function
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
 
+    BOOL CDBoot = FindCDFS();
+
     if (mydev != NULL) {
-        ULONG ms_size = (sizeof(struct MountStruct) + (MAX_UNITS * sizeof(struct UnitStruct)));
         Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
 
-        if ((ms = AllocMem(ms_size,MEMF_ANY|MEMF_PUBLIC)) == NULL) goto done;
+        struct IOTask *itask = (struct IOTask *)mydev->ideTasks.mlh_Head;
 
-        ms->deviceName  = mydev->lib.lib_Node.ln_Name;
-        ms->creatorName = NULL;
-        ms->numUnits    = 0;
-        ms->SysBase     = SysBase;
+        if (!itask->mn_Node.mln_Succ) goto done;
 
-        UWORD index = 0;
-#if CDBOOT
-        BOOL CDBoot = FindCDFS();
-#endif
-        struct IDEUnit *unit;
+        struct MountStruct ms = {
+            .deviceName  = mydev->lib.lib_Node.ln_Name,
+            .creatorName = mydev->lib.lib_Node.ln_Name,
+            .SysBase     = SysBase,
+            .cdBoot      = CDBoot,
+            .luns        = false,
+            .slowSpinup  = false,
+            .ignoreLast  = true,
+            .configDev   = itask->cd
+        };
 
-        if (SysBase->LibNode.lib_Version >= 36) {
-            ObtainSemaphoreShared(&mydev->ulSem);
-        } else {
-            ObtainSemaphore(&mydev->ulSem);
-        }
+        MountDrive(&ms);
 
-        for (unit = (struct IDEUnit *)mydev->units.mlh_Head;
-             unit->mn_Node.mln_Succ != NULL;
-             unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-        {
-            if (unit->present == true) {
-#if CDBOOT
-                // If CDFS not resident don't bother adding the CDROM to the mountlist
-                if (unit->deviceType == DG_CDROM && !CDBoot) continue;
-#endif
-                ms->Units[index].unitNum    = unit->unitNum;
-                ms->Units[index].configDev  = unit->cd;
-                index++;
-            }
-        }
-
-        ms->numUnits = index;
-
-        ReleaseSemaphore(&mydev->ulSem);
-        if (ms->numUnits > 0) {
-            MountDrive(ms);
-        }
-
-        FreeMem(ms,ms_size);
+        if (!seg_list) // Only tweak if we're in boot
+            TweakBootList(SysBase);
     }
 done:
     return (struct Library *)mydev;
