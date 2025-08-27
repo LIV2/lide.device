@@ -123,7 +123,7 @@ Building this code will require the following
 The easiest way to get a working build environment is to use Docker
 You can build inside docker as follows:
 ```  
-docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} stefanreinauer/amiga-gcc:latest make clean all
+docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} liv2/amiga-gcc:latest make clean all
 ```
 
 If you are using VS Code you can install the "Dev containers" extension which will allow you to develop with the environment ready to go.

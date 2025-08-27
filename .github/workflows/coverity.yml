@@ -10,7 +10,7 @@ on:
 jobs:
   coverity:
     runs-on: ubuntu-latest
-    container: stefanreinauer/amiga-gcc
+    container: liv2/amiga-gcc
     steps:
     - uses: actions/checkout@v3
       with:

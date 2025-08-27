@@ -12,7 +12,7 @@ on:
 jobs:
   make_software:
     runs-on: ubuntu-latest
-    container: liv2/amiga-gcc-amitools
+    container: liv2/amiga-gcc
     steps:
       - name: Checkout
         uses: actions/checkout@v3
