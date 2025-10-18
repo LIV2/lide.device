@@ -33,6 +33,8 @@
 
 #define CMD_XFER 0x1001
 
+#define BIT(x) (1U << (x))
+
 const char ver[] = VERSION_STRING;
 
 struct ExecBase *SysBase;
@@ -226,6 +228,84 @@ BYTE setPio(struct IOStdReq *req,int pio) {
   return error;
 }
 
+static char *trim(char *str, int bytes)
+{
+    char *eptr = &str[bytes - 1];
+    while (eptr > str) {
+        if (*eptr == ' ')
+            *(eptr--) = '\0';
+        else
+            break;
+    }
+    while (*str == ' ')
+        str++;
+    return (str);
+}
+
+/**
+ * identify_decode
+ *
+ * Interpret the result data of an IDENTIFY DEVICE command.
+ *
+ * @param buf the 512-byte buffer
+ */
+static void identify_decode(UWORD *buf) {
+    int bit;
+    unsigned int atastd;
+    for (int i=0; i<256; i++)
+      buf[i] = __bswap16(buf[i]);
+
+    printf("ATA%s", (buf[0] & BIT(15)) ? "PI" : "");
+    printf(" Model=%.40s, FwRev=%.8s, SerialNo=%.20s\n",
+           trim((char *)&buf[27], 40),
+           trim((char *)&buf[23], 8),
+           trim((char *)&buf[10], 20));
+    printf("Raw C/H/S:    %u/%u/%u\n", buf[1], buf[3], buf[6]);
+    printf("Cur C/H/S:    %u/%u/%u\n", buf[54], buf[55], buf[56]);
+    printf("LBA Capacity: %u sec\n", buf[60] | (buf[61] << 16));
+    printf("Cur Capacity: %u sec\n", buf[57] | (buf[58] << 16));
+    printf("MaxMultSect:  %u [%s]\n", buf[59] & 0xff,
+           (buf[59] & BIT(8)) ? "enabled" : "disabled");
+    printf("PIO modes:   ");
+    for (bit = 0; bit < 8; bit++)
+      if (buf[64] & BIT(bit))
+        printf(" pio%u", bit);
+    if ((buf[64] & 0xff) == 0)
+      printf("<none>");
+    printf("\nDMA modes:   ");
+    for (bit = 0; bit < 8; bit++)
+      if (buf[63] & BIT(bit)) {
+        printf(" %smdma%u%s",
+               (buf[63] & BIT(8 + bit)) ? "[" : "",
+               bit,
+               (buf[63] & BIT(8 + bit)) ? "]" : "");
+      }
+    if ((buf[63] & 0xff) == 0)
+      printf("<none>");
+    printf("\nUDMA modes:  ");
+    for (bit = 0; bit < 8; bit++)
+      if (buf[88] & BIT(bit)) {
+        printf(" %sudma%u%s",
+               (buf[88] & BIT(8 + bit)) ? "[" : "",
+               bit,
+               (buf[88] & BIT(8 + bit)) ? "]" : "");
+      }
+    if ((buf[63] & 0xff) == 0)
+      printf("<none>");
+    printf("\nTiming:       tPIO=[min:%u,w/IORDY:%u}, tDMA={min:%u,rec:%u}\n",
+           buf[67], buf[68], buf[65], buf[66]);
+    atastd = buf[80];
+    if ((atastd != 0x0000) && (atastd != 0xffff)) {
+      printf("Standards:   ");
+      for (bit = 2; bit < 7; bit++)
+        if (atastd & BIT(bit))
+          printf(" ATA%u", bit);
+      printf("\n");
+    }
+    printf("IORDY:        %s\n",
+           (buf[49] & BIT(11)) ? (buf[49] & BIT(10) ? "on/off" : "on") : "?");
+}
+
 /**
  * ident
  * 
@@ -277,6 +357,7 @@ BYTE identify(struct IOStdReq *req) {
       if (cmd->scsi_Status)
         printf("SCSI Status: %d\n",cmd->scsi_Status);
 
+      identify_decode(buf);
       FreeMem(buf,512);
     }
     DeleteSCSICmd(cmd);
