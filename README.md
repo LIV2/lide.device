@@ -102,13 +102,14 @@ There are several options for larger drive support
 Also make sure to use the "Quick Format" option when formatting such partitions
 
 ## Hardware implementation
-* IDECS1 is asserted when A12 is low and the IDE device's base address is decoded
-* IDECS2 is asserted as above but when A13 is low rather than A12
-* IDECS2 can instead be routed to a second IDE channel as it's IDECS1 and the driver will detect this
-* IDE interface is byte-swapped
-* Buffered interface
+* IDECS1 asserted at offset 0x1000
+* IDECS2 asserted at offset 0x2000
+* A secondary channel is supported when the second channel's IDECS1 is decoded at offset 0x2000 and IDECS2 of both primary and secondary channels is pulled high
 * D15/14 pulled up with a 10K resistor to allow detection of floating bus when no drive present.
 * IDE A0/1/2 connected to CPU A9/10/11 providing 512 Byte separation of registers to allow for MOVEM trick
+* No interrupts
+* IDE interface is byte-swapped
+* Buffered interface
 * Configure as a 128K board to permit loading CDFS from ROM **(Optional)**
 * Hardware support of programming the flash **(Optional)**
 
