@@ -373,7 +373,7 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
     UWORD blockShift;
-    ULONG lba;
+    long long lba;
     ULONG count;
     BYTE  error = 0;
     enum xfer_dir direction = WRITE;
@@ -488,12 +488,12 @@ transfer:
             }
 
             if (unit->flags.atapi == true) {
-                error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
             } else {
                 if (direction == READ) {
-                    error  = ata_read(ioreq->io_Data, lba, count, unit);
+                    error  = ata_read(ioreq->io_Data, (ULONG)lba, count, unit);
                 } else {
-                    error  = ata_write(ioreq->io_Data, lba, count, unit);
+                    error  = ata_write(ioreq->io_Data, (ULONG)lba, count, unit);
                 }
                 ioreq->io_Actual = ioreq->io_Length;
             }
