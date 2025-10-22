@@ -294,6 +294,7 @@ RomFetch
 
 .RomFetchZ                 ; access type is Zorro
         move.l  d0,d3
+        moveq   #0,d0
 .nextnip
         lsl.l   #8,d0
         IFND BYTEWIDE
