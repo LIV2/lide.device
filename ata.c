@@ -229,14 +229,14 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 
 /**
  * ata_bench
- * 
+ *
  * Measure the amount of E Clock ticks taken to transfer 512K from the unit
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param xfer_routine Pointer to one of the transfer routines
  * @param buffer pointer to a 512 byte buffer
  * @return tick count
- * 
+ *
  */
 static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *buffer) {
     struct ExecBase *SysBase = unit->SysBase;
@@ -269,9 +269,9 @@ static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *b
 
 /**
  * ata_autoselect_xfer
- * 
+ *
  * Set the transfer method for the unit based on the CPU, Board type and benchmark result
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @return transfer method
  */
@@ -287,11 +287,11 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
     // longword_movem will always be faster on a standard 68000
     if ((SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) == 0)
         return longword_movem;
-    
+
     // ReadEClock needed by ata_bench not supported before Kick 2.0
     if (SysBase->LibNode.lib_Version < 36)
         return longword_movem;
-    
+
     if ((buf = AllocMem(512,MEMF_ANY))) {
         enum xfer method;
         ticks = ata_bench(unit,ata_read_long_movem,buf);
@@ -309,9 +309,9 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
 
 /**
  * ata_set_xfer
- * 
+ *
  * Sets the transfer routine for the unit
- * 
+ *
  * @param unit Pointer to an IDEUnit strict
  * @param method Transfer routine
  */
@@ -357,7 +357,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     UWORD *buf;
     bool dev_found = false;
-    
+
     unit->drive.data           = (UWORD*) (base + ata_reg_data);
     unit->drive.error_features = (UBYTE*) (base + ata_reg_error);
     unit->drive.sectorCount    = (UBYTE*) (base + ata_reg_sectorCount);

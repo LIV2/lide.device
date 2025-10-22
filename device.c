@@ -201,9 +201,9 @@ static BOOL FindCDFS() {
 
 /**
  * ioreq_is_valid
- * 
+ *
  * Check if the supplied IOReq points to a valid unit
- * 
+ *
  * @param dev Pointer to DeviceBase
  * @param ior The ioreq to test
  * @returns bool

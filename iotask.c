@@ -169,7 +169,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
             case SCSI_CMD_READ_16:
             case SCSI_CMD_WRITE_16:
                 lba   = ((struct SCSI_CDB_16 *)command)->lba;
-                count = ((struct SCSI_CDB_16 *)command)->length; 
+                count = ((struct SCSI_CDB_16 *)command)->length;
 
     do_scsi_transfer:
                 if (data == NULL || (lba + count) > unit->logicalSectors) {
@@ -613,7 +613,7 @@ void __attribute__((noreturn)) io_task () {
             RemTask(NULL);
             Wait(0);
         }
-        
+
         signalMask |= (1 << itask->dcTimerMp->mp_SigBit);
 
         run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
