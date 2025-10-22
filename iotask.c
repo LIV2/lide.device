@@ -172,7 +172,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 count = ((struct SCSI_CDB_16 *)command)->length; 
 
     do_scsi_transfer:
-                if (data == NULL || (lba + count) >= unit->logicalSectors) {
+                if (data == NULL || (lba + count) > unit->logicalSectors) {
                     error = IOERR_BADADDRESS;
                     fake_scsi_sense(scsi_command,lba,count,error);
                     break;
@@ -501,7 +501,7 @@ transfer:
             }
 
             if ((lba + count) > (unit->logicalSectors)) {
-                Trace("Read past end of device\n");
+                Trace("Access past end of device\n");
                 error  = IOERR_BADADDRESS;
                 break;
             }
