@@ -47,7 +47,7 @@ struct IDEUnit {
     struct ExecBase *SysBase;
     struct IOTask *itask;
     struct Drive drive;
-    BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, unsigned long long, UBYTE, UBYTE);
+    BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, uint64_t, UBYTE, UBYTE);
     enum  xfer xferMethod;
     ata_xfer_func read_fast;
     ata_xfer_func write_fast;
@@ -65,7 +65,7 @@ struct IDEUnit {
     UWORD blockSize;
     UWORD blockShift;
     ULONG cylinders;
-    unsigned long long logicalSectors;
+    uint64_t logicalSectors;
     struct MinList changeInts;
     UBYTE multipleCount;
     struct {

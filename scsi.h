@@ -72,12 +72,12 @@ struct __attribute__((packed)) SCSI_CDB_10 {
 };
 
 struct __attribute__((packed)) SCSI_CDB_16 {
-    UBYTE              operation;
-    UBYTE              flags;
-    unsigned long long lba;
-    ULONG              length;
-    UBYTE              group;
-    UBYTE              control;
+    UBYTE    operation;
+    UBYTE    flags;
+    uint64_t lba;
+    ULONG    length;
+    UBYTE    group;
+    UBYTE    control;
 };
 
 struct __attribute__((packed)) SCSI_READ_CAPACITY_10 {
@@ -89,12 +89,12 @@ struct __attribute__((packed)) SCSI_READ_CAPACITY_10 {
     UBYTE control;
 };
 struct __attribute__((packed)) SCSI_READ_CAPACITY_16 {
-    UBYTE              operation;
-    UBYTE              serviceAction;
-    unsigned long long lba;
-    ULONG              allocation;
-    UBYTE              flags;
-    UBYTE              control;
+    UBYTE    operation;
+    UBYTE    serviceAction;
+    uint64_t lba;
+    ULONG    allocation;
+    UBYTE    flags;
+    UBYTE    control;
 };
 
 struct __attribute__((packed)) SCSI_CAPACITY_10 {
@@ -103,9 +103,9 @@ struct __attribute__((packed)) SCSI_CAPACITY_10 {
 };
 
 struct __attribute__((packed)) SCSI_CAPACITY_16 {
-    unsigned long long lba;
-    ULONG              block_size;
-    char               reserved[3];
+    uint64_t lba;
+    ULONG    block_size;
+    char     reserved[3];
 };
 
 struct __attribute__((packed)) SCSI_FIXED_SENSE {

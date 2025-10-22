@@ -169,7 +169,7 @@ static void DumpUnit(struct IOStdReq *req) {
     printf("Supports LBA:        %s\n", (unit->flags.lba) ? "Yes" : "No");
     printf("Supports LBA48:      %s\n", (unit->flags.lba48) ? "Yes" : "No");
     printf("C/H/S:               %d/%d/%d\n", unit->cylinders, unit->heads, unit->sectorsPerTrack);
-    printf("Logical Sectors:     %llu\n", (unsigned long long)unit->logicalSectors);
+    printf("Logical Sectors:     %llu\n", (uint64_t)unit->logicalSectors);
     printf("READ/WRITE Multiple: %s\n", (unit->flags.xferMultiple) ? "Yes" : "No");
     printf("Multiple count:      %d\n", unit->multipleCount);
     printf("Last Error: ");

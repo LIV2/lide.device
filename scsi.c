@@ -225,19 +225,8 @@ BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_comman
         return error;
     }
 
-    struct SCSI_READ_CAPACITY_16 *cdb = (struct SCSI_READ_CAPACITY_16 *)scsi_command->scsi_Command;
-
     data->block_size = unit->blockSize;
-
-
-    if (cdb->flags & 0x01) {
-        // Partial Medium Indicator - Return end of cylinder
-        // Implement this so HDToolbox stops moaning about track size
-        ULONG spc = unit->sectorsPerTrack * unit->heads;
-        data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
-    } else {
-        data->lba = (unit->logicalSectors) - 1;
-    }
+    data->lba = unit->logicalSectors - 1;
 
     scsi_command->scsi_Actual = 8;
 

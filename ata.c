@@ -21,9 +21,9 @@
 #include "sleep.h"
 #include "lide_alib.h"
 
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, unsigned long long lba, UBYTE sectorCount, UBYTE features);
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, unsigned long long, UBYTE sectorCount, UBYTE features);
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, unsigned long long lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 
 /**
  * ata_status_reg_delay
@@ -416,9 +416,9 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             unit->flags.lba48 = true;
             Info("INIT: Large drive, using LBA48 mode \n");
             unit->logicalSectors = 0;
-            unit->logicalSectors |= ((unsigned long long)buf[ata_identify_lba48_sectors])   << 0;
-            unit->logicalSectors |= ((unsigned long long)buf[ata_identify_lba48_sectors+1]) << 16;
-            unit->logicalSectors |= ((unsigned long long)buf[ata_identify_lba48_sectors+2]) << 32;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors])   << 0;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors+1]) << 16;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors+2]) << 32;
 
             unit->write_taskfile = &write_taskfile_lba48;
 
@@ -439,15 +439,15 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
         if (unit->logicalSectors >= 267382800) {
             // For drives larger than 127GB fudge the geometry
-            unit->heads           = 63;
-            unit->sectorsPerTrack = 255;
-            unit->cylinders       = (unit->logicalSectors / (63*255));
+            unit->heads           = 64;
+            unit->sectorsPerTrack = 256;
+            unit->cylinders       = unit->logicalSectors >> 14;
         } else if (unit->logicalSectors >= 16514064) {
             // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
             // In this case generate a new Cylinders value
-            unit->heads = 16;
+            unit->heads           = 16;
             unit->sectorsPerTrack = 255;
-            unit->cylinders = (unit->logicalSectors / (16*255));
+            unit->cylinders       = ((ULONG)unit->logicalSectors / (16*255));
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
 
@@ -537,7 +537,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_read(void *buffer, unsigned long long lba, ULONG count, struct IDEUnit *unit) {
+BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -625,7 +625,7 @@ BYTE ata_read(void *buffer, unsigned long long lba, ULONG count, struct IDEUnit 
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_write(void *buffer, unsigned long long lba, ULONG count, struct IDEUnit *unit) {
+BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -746,10 +746,11 @@ void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, unsigned long long lba, UBYTE sectorCount, UBYTE features) {
-    UWORD cylinder = (lba / (unit->heads * unit->sectorsPerTrack));
-    UBYTE head     = ((lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
-    UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
+
+    UWORD cylinder = ((ULONG)lba / (unit->heads * unit->sectorsPerTrack));
+    UBYTE head     = (((ULONG)lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
+    UBYTE sector   = ((ULONG)lba % unit->sectorsPerTrack) + 1;
 
     BYTE devHead;
 
@@ -776,7 +777,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, unsigned lon
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, unsigned long long lba, UBYTE sectorCount, UBYTE features) {
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
     BYTE devHead;
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
@@ -802,7 +803,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, unsigned lon
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, unsigned long long lba, UBYTE sectorCount, UBYTE features) {
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;

@@ -111,7 +111,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     UBYTE *data    = (APTR)scsi_command->scsi_Data;
     UBYTE *command = (APTR)scsi_command->scsi_Command;
 
-    unsigned long long lba;
+    uint64_t lba;
     ULONG count;
     BYTE error = 0;
     scsi_command->scsi_SenseActual = 0;
@@ -383,7 +383,8 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
     UWORD blockShift;
-    unsigned long long lba;
+    uint64_t lba;
+    ULONG lba_high, lba_low;
     ULONG count;
     BYTE  error = 0;
     enum xfer_dir direction = WRITE;
@@ -483,7 +484,15 @@ transfer:
             }
 
             blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
-            lba = (((unsigned long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
+
+            // This looks like a lond-winded way to get the LBA doesn't it?
+            // Splitting up the operation like this results in smaller code size (avoids 64-bit math from libgcc)
+            lba_high = ioreq->io_Actual >> blockShift;
+            lba_low = ioreq->io_Actual << (32 - blockShift);
+            lba_low |= (ioreq->io_Offset >> blockShift);
+
+            lba = ((uint64_t)lba_high << 32 | lba_low);
+
             count = (ioreq->io_Length >> blockShift);
 
             if (count == 0) {
