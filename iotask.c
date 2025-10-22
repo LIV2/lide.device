@@ -111,7 +111,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     UBYTE *data    = (APTR)scsi_command->scsi_Data;
     UBYTE *command = (APTR)scsi_command->scsi_Command;
 
-    ULONG lba;
+    unsigned long long lba;
     ULONG count;
     BYTE error = 0;
     scsi_command->scsi_SenseActual = 0;
@@ -144,7 +144,11 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_READ_CAPACITY_10:
-                error = scsi_read_capacity_emu(unit,scsi_command);
+                error = scsi_read_capacity_10_emu(unit,scsi_command);
+                break;
+
+            case SCSI_CMD_READ_CAPACITY_16:
+                error = scsi_read_capacity_16_emu(unit,scsi_command);
                 break;
 
             case SCSI_CMD_READ_6:
@@ -158,8 +162,14 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
             case SCSI_CMD_READ_10:
             case SCSI_CMD_WRITE_10:
-                lba    = ((struct SCSI_CDB_10 *)command)->lba;
-                count  = ((struct SCSI_CDB_10 *)command)->length;
+                lba   = ((struct SCSI_CDB_10 *)command)->lba;
+                count = ((struct SCSI_CDB_10 *)command)->length;
+                goto do_scsi_transfer;
+
+            case SCSI_CMD_READ_16:
+            case SCSI_CMD_WRITE_16:
+                lba   = ((struct SCSI_CDB_16 *)command)->lba;
+                count = ((struct SCSI_CDB_16 *)command)->length; 
 
     do_scsi_transfer:
                 if (data == NULL || (lba + count) >= unit->logicalSectors) {
@@ -373,7 +383,7 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
     UWORD blockShift;
-    long long lba;
+    unsigned long long lba;
     ULONG count;
     BYTE  error = 0;
     enum xfer_dir direction = WRITE;
@@ -473,7 +483,7 @@ transfer:
             }
 
             blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
-            lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
+            lba = (((unsigned long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
             count = (ioreq->io_Length >> blockShift);
 
             if (count == 0) {
@@ -491,9 +501,9 @@ transfer:
                 error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
             } else {
                 if (direction == READ) {
-                    error  = ata_read(ioreq->io_Data, (ULONG)lba, count, unit);
+                    error  = ata_read(ioreq->io_Data, lba, count, unit);
                 } else {
-                    error  = ata_write(ioreq->io_Data, (ULONG)lba, count, unit);
+                    error  = ata_write(ioreq->io_Data, lba, count, unit);
                 }
                 ioreq->io_Actual = ioreq->io_Length;
             }

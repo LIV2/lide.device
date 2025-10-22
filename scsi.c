@@ -8,6 +8,7 @@
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <string.h>
+#include <limits.h>
 
 #include "ata.h"
 #include "debug.h"
@@ -16,7 +17,6 @@
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
-
 /**
  * fake_scsi_sense
  *
@@ -166,14 +166,14 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
 }
 
 /**
- * scsi_read_capacity_emu
+ * scsi_read_capacity_10_emu
  *
- * Emulate SCSI-Direct READ CAPACITY command
+ * Emulate SCSI-Direct READ CAPACITY (10) command
  *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
-BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_CAPACITY_10 *data = (struct SCSI_CAPACITY_10 *)scsi_command->scsi_Data;
     BYTE error;
 
@@ -187,6 +187,49 @@ BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) 
 
     data->block_size = unit->blockSize;
 
+    if (unit->logicalSectors < ULONG_MAX) {
+        if (cdb->flags & 0x01) {
+            // Partial Medium Indicator - Return end of cylinder
+            // Implement this so HDToolbox stops moaning about track size
+            ULONG spc = unit->sectorsPerTrack * unit->heads;
+            data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
+        } else {
+            data->lba = (unit->logicalSectors) - 1;
+        }
+    } else {
+        data->lba = ULONG_MAX;
+    }
+
+
+    scsi_command->scsi_Actual = 8;
+
+    return 0;
+}
+
+
+/**
+ * scsi_read_capacity_16_emu
+ *
+ * Emulate SCSI-Direct READ CAPACITY (16) command
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @param scsi_command Pointer to a SCSICmd struct
+*/
+BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+    struct SCSI_CAPACITY_16 *data = (struct SCSI_CAPACITY_16 *)scsi_command->scsi_Data;
+    BYTE error;
+
+    if (data == NULL) {
+        error = IOERR_BADADDRESS;
+        fake_scsi_sense(scsi_command,0,0,error);
+        return error;
+    }
+
+    struct SCSI_READ_CAPACITY_16 *cdb = (struct SCSI_READ_CAPACITY_16 *)scsi_command->scsi_Command;
+
+    data->block_size = unit->blockSize;
+
+
     if (cdb->flags & 0x01) {
         // Partial Medium Indicator - Return end of cylinder
         // Implement this so HDToolbox stops moaning about track size
@@ -195,7 +238,6 @@ BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) 
     } else {
         data->lba = (unit->logicalSectors) - 1;
     }
-
 
     scsi_command->scsi_Actual = 8;
 

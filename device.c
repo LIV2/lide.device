@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include "ata.h"
 #include "atapi.h"
@@ -610,8 +611,13 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
     memset(geometry,0,sizeof(struct DriveGeometry));
 
+    if (unit->logicalSectors > ULONG_MAX) {
+        geometry->dg_TotalSectors = ULONG_MAX;
+    } else {
+        geometry->dg_TotalSectors = unit->logicalSectors;
+    }
+
     geometry->dg_SectorSize   = unit->blockSize;
-    geometry->dg_TotalSectors = unit->logicalSectors;
     geometry->dg_Cylinders    = unit->cylinders;
     geometry->dg_CylSectors   = (unit->sectorsPerTrack * unit->heads);
     geometry->dg_Heads        = unit->heads;

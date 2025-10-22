@@ -26,6 +26,9 @@
 #define SCSI_CMD_MODE_SENSE_10    0x5A
 #define SCSI_CMD_CLOSE_TRACK_SESS 0x5B
 #define SCSI_CMD_START_STOP_UNIT  0x1B
+#define SCSI_CMD_READ_16          0x88
+#define SCSI_CMD_WRITE_16         0x8A
+#define SCSI_CMD_READ_CAPACITY_16 0x9E
 #define SCSI_CMD_BLANK            0xA1
 #define SCSI_CMD_ATA_PASSTHROUGH  0xA1
 #define SCSI_CHECK_CONDITION      0x02
@@ -68,6 +71,15 @@ struct __attribute__((packed)) SCSI_CDB_10 {
     UBYTE control;
 };
 
+struct __attribute__((packed)) SCSI_CDB_16 {
+    UBYTE              operation;
+    UBYTE              flags;
+    unsigned long long lba;
+    ULONG              length;
+    UBYTE              group;
+    UBYTE              control;
+};
+
 struct __attribute__((packed)) SCSI_READ_CAPACITY_10 {
     UBYTE operation;
     UBYTE reserved1;
@@ -76,10 +88,24 @@ struct __attribute__((packed)) SCSI_READ_CAPACITY_10 {
     UBYTE flags;
     UBYTE control;
 };
+struct __attribute__((packed)) SCSI_READ_CAPACITY_16 {
+    UBYTE              operation;
+    UBYTE              serviceAction;
+    unsigned long long lba;
+    ULONG              allocation;
+    UBYTE              flags;
+    UBYTE              control;
+};
 
 struct __attribute__((packed)) SCSI_CAPACITY_10 {
     ULONG lba;
     ULONG block_size;
+};
+
+struct __attribute__((packed)) SCSI_CAPACITY_16 {
+    unsigned long long lba;
+    ULONG              block_size;
+    char               reserved[3];
 };
 
 struct __attribute__((packed)) SCSI_FIXED_SENSE {
@@ -145,7 +171,8 @@ void fake_scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE e
 struct SCSICmd * MakeSCSICmd(ULONG cdbSize);
 void DeleteSCSICmd(struct SCSICmd *cmd);
 BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
-BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
+BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
+BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
 BYTE scsi_mode_sense_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
 
 #endif
