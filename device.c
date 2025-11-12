@@ -377,7 +377,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
     struct ConfigDev *cd;
     struct Task *self = FindTask(NULL);
 
-#ifndef NO_AUTOCONFIG
+#if !defined(BOARD_MANUF_ID) && !defined(BOARD_BASE)
 
     struct CurrentBinding cb;
 
@@ -482,7 +482,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
             cd->cd_Flags &= ~(CDF_CONFIGME);
             cd->cd_Driver = dev;
         }
-#ifndef NO_AUTOCONFIG
+#if !defined(BOARD_MANUF_ID) && !defined(BOARD_BASE)
     }
 #endif
     Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->numUnits, numBoards);

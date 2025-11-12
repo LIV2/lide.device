@@ -16,9 +16,10 @@
 #define MAX_UNITS 4
 
 #if AMIGAPCI
-// #define NO_AUTOCONFIG  1
-#define BOARD_MANUF_ID 600
-#define BOARD_PROD_ID  3
+// #define BOARD_BASE 0xEA0000
+#define FAKE_CONFIGDEV 1
+#define BOARD_MANUF_ID 5194
+#define BOARD_PROD_ID  7
 #endif
 
 #ifdef SIMPLE_IDE
