@@ -13,7 +13,7 @@ export GIT_REF
 CC=m68k-amigaos-gcc
 CFLAGS+=-nostartfiles -nostdlib -mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
-LDFLAGS=-lgcc -lc
+LDFLAGS=-lc
 AS=m68k-amigaos-as
 
 ifeq ($(shell uname),Darwin)
