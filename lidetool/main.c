@@ -252,6 +252,8 @@ static char *trim(char *str, int bytes)
 static void identify_decode(UWORD *buf) {
     int bit;
     unsigned int atastd;
+    int pio;
+  
     for (int i=0; i<256; i++)
       buf[i] = __bswap16(buf[i]);
 
@@ -267,11 +269,15 @@ static void identify_decode(UWORD *buf) {
     printf("MaxMultSect:  %u [%s]\n", buf[59] & 0xff,
            (buf[59] & BIT(8)) ? "enabled" : "disabled");
     printf("PIO modes:   ");
-    for (bit = 0; bit < 8; bit++)
-      if (buf[64] & BIT(bit))
-        printf(" pio%u", bit);
-    if ((buf[64] & 0xff) == 0)
+    if (buf[53] & BIT(1)) {             // PIO Fields valid?
+      pio = (buf[64] & 0x3) << 3 | 0x7; // A value of 0 means PIO 0,1 are supported
+      for (bit = 0; bit < 8; bit++)
+        if (pio & BIT(bit))
+          printf(" pio%u", bit);
+    } else {
       printf("<none>");
+    }
+
     printf("\nDMA modes:   ");
     for (bit = 0; bit < 8; bit++)
       if (buf[63] & BIT(bit)) {
