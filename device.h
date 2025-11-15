@@ -67,7 +67,6 @@ struct IDEUnit {
     ata_xfer_func read_unaligned;
     ata_xfer_func write_unaligned;
     volatile UBYTE *shadowDevHead;
-    volatile void  *changeInt;
     UBYTE unitNum;
     UBYTE deviceType;
     UBYTE last_error[6];
@@ -79,14 +78,10 @@ struct IDEUnit {
     UWORD blockShift;
     ULONG cylinders;
     uint64_t logicalSectors;
-    struct MinList changeInts;
     UBYTE multipleCount;
     struct {
         unsigned char primary : 1;
         unsigned char present : 1;
-        unsigned char atapi : 1;
-        unsigned char mediumPresent : 1;
-        unsigned char mediumPresentPrev : 1;
         unsigned char xferMultiple : 1;
         unsigned char lba : 1;
         unsigned char lba48 : 1;
@@ -116,13 +111,9 @@ struct IOTask {
     struct ConfigDev   *cd;
     struct MsgPort     *iomp;
     struct MsgPort     *timermp;
-    struct MsgPort     *dcTimerMp;
     struct timerequest *tr;
-    struct timerequest *dcTimerReq;
     volatile bool      active;
     volatile bool      paused;
-    bool               hasRemovables;
-    bool               dcTimerArmed;
     UBYTE              shadowDevHead;
     UBYTE              boardNum;
     UBYTE              taskNum;
@@ -139,7 +130,7 @@ struct IOTask {
 #define DEVICE_NAME "scsi.device"
 #endif
 
-#define DEVICE_ID_STRING "lide " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
+#define DEVICE_ID_STRING "lide slim " XSTR(DEVICE_VERSION) "." XSTR(DEVICE_REVISION) " (" XSTR(BUILD_DATE) ") " XSTR(GIT_REF)
 
 // The build process will define the version/revision based on the latest git tag
 #ifndef DEVICE_VERSION

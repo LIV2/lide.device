@@ -61,41 +61,32 @@ CFLAGS+= -DAMIGAPCI=1
 .PHONY: $(PROJECT)
 endif
 
-.PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
+.PHONY:	clean all lideflash disk lha lidetool/lidetool mounter
 
 all:	$(ROM) \
-		lideflash \
-		rename/renamelide \
-		lide-N2630-high.rom \
-		lide-N2630-low.rom \
-		AIDE-$(PROJECT) \
-		amigapci-$(PROJECT)
+		lideflash 
 
 OBJ = device.o \
       ata.o \
-	  atapi.o \
 	  scsi.o \
 	  iotask.o \
 	  lide_alib.o \
-	  mounter/mounter.o \
-	  debug.o
+	  debug.o \
+
 
 ASMOBJ = endskip.o
 
 SRCS = $(OBJ:%.o=%.c)
 SRCS += $(ASMOBJ:%.o=%.S)
 
-$(PROJECT): $(SRCS)
-	${CC} -o $@ $(CFLAGS) $(SRCS) $(LDFLAGS)
+mounter:
+	make -C mounter
+
+$(PROJECT): $(SRCS)	mounter
+	${CC} -o $@ $(CFLAGS) $(SRCS) mounter/obj/loadseg.o mounter/obj/mounter.o $(LDFLAGS)
 
 $(ROM): $(PROJECT)
 	make -C bootrom
-
-AIDE-$(PROJECT): $(SRCS)
-	${CC} -o $@ $(CFLAGS) -DSIMPLE_IDE=1 $(SRCS) bootblock.S $(LDFLAGS)
-
-amigapci-$(PROJECT): $(SRCS)
-	${CC} -o $@ $(CFLAGS) -DAMIGAPCI=1 $(SRCS) bootblock.S $(LDFLAGS)
 
 lideflash/lideflash:
 	make -C lideflash
@@ -105,16 +96,9 @@ lideflash: lideflash/lideflash
 lidetool/lidetool:
 	make -C lidetool
 
-rename/renamelide:
-	make -C rename
-
-$(BUILDDIR)/AIDE-boot-$(VERSION).adf: AIDE-$(PROJECT)
-	@make -C aide-boot
-	@mv aide-boot/aide-boot.adf $@
-
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 
-$(BUILDDIR)/$(DISK): $(ROM) lideflash/lideflash rename/renamelide lidetool/lidetool AIDE-lide.device
+$(BUILDDIR)/$(DISK): $(ROM) lideflash/lideflash lidetool/lidetool AIDE-lide.device
 	@mkdir -p $(BUILDDIR)
 	cp $(ROM) build
 	echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
@@ -123,45 +107,25 @@ $(BUILDDIR)/$(DISK): $(ROM) lideflash/lideflash rename/renamelide lidetool/lidet
 	                            write $(ROM) + \
 	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
-	                            write rename/renamelide renamelide + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence + \
 	                            makedir Expansion + \
 	                            write info/Expansion.info Expansion.info + \
 	                            write info/lide.device.info Expansion/lide.device.info + \
-	                            write lide.device Expansion/lide.device + \
-	                            write AIDE-lide.device AIDE-lide.device
+	                            write lide.device Expansion/lide.device
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info AIDE-lide.device
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) lidetool/lidetool lide.device info/lide.device.info AIDE-lide.device
 	@mkdir -p $(BUILDDIR)
 	cp $^ $(BUILDDIR)
 	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
 
 lha: $(BUILDDIR)/lide-update.lha 
 
-lide-N2630-high.rom: $(ROM)
-	srec_cat lide-word.rom -binary -split 2 0 1 -out $@ -binary
-
-lide-N2630-low.rom:  $(ROM)
-	srec_cat lide-word.rom -binary -split 2 1 1 -out $@ -binary
-
-lide-tk-29F010.rom: $(ROM)
-	@cat lide-atbus.rom lide-atbus.rom lide-atbus.rom lide-atbus.rom > $@
-
-lide-tk-29F020.rom: lide-tk-29F010.rom
-	@cat $< $< > $@
-
-lide-tk-29F040.rom: lide-tk-29F020.rom
-	@cat $< $< > $@
-
 clean:
 	-rm -f $(PROJECT)
-	-rm -f AIDE-$(PROJECT)
-	-rm -f amigapci-$(PROJECT)
+	make -C mounter clean
 	make -C bootrom clean
 	make -C lideflash clean
 	make -C lidetool clean
-	make -C rename clean
 	-rm -rf *.rom
 	-rm -rf $(BUILDDIR)
-	make -C aide-boot clean

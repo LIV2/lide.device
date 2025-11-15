@@ -18,7 +18,6 @@
 #include <limits.h>
 
 #include "ata.h"
-#include "atapi.h"
 #include "device.h"
 #include "iotask.h"
 #include "newstyle.h"
@@ -82,7 +81,7 @@ char * set_dev_name(struct DeviceBase *dev) {
             if (i == 0) {
                 devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
                 if (devName == NULL) return NULL;
-                strcpy(devName + 4,device_name);
+                CopyMem(device_name,devName + 4,sizeof(device_name) + 4);
             }
 
             switch (i) {
@@ -175,29 +174,6 @@ static void sleep(ULONG seconds, ULONG microseconds) {
         L_DeletePort(iomp);
     }
 }
-
-#if CDBOOT
-/**
- * FindCDFS
- *
- * Look for a CD Filesystem in FileSystem.resource
- *
- * @return BOOL True if CDFS found
-*/
-static BOOL FindCDFS() {
-    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
-    struct FileSysResource *fsr = OpenResource(FSRNAME);
-    struct FileSysEntry *fse;
-
-    if (fsr == NULL) return false;
-
-    for (fse = (struct FileSysEntry *)fsr->fsr_FileSysEntries.lh_Head; fse->fse_Node.ln_Succ != NULL; fse = (struct FileSysEntry *)fse->fse_Node.ln_Succ) {
-        if (fse->fse_DosType == 'CD01') return true;
-    }
-
-    return false;
-}
-#endif
 
 /**
  * ioreq_is_valid
@@ -450,7 +426,6 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
             itask->taskNum       = dev->numTasks;
             itask->parent        = self;
             itask->boardNum      = (numBoards - 1);
-            itask->hasRemovables = false;
 
             SetSignal(0,SIGF_SINGLE);
 
@@ -543,8 +518,13 @@ static void open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("
      * HDToolbox scans each LUN of a unit and stops searching if it sees an error other than TDERR_BadUnitNum
      * So if this is not returned, only one drive will ever be detected
     */
-    UBYTE lun = unitnum / 10;
-    unitnum = (unitnum % 10);
+    if (unitnum > UINT16_MAX) {
+        error = TDERR_BadUnitNum;
+        goto exit;
+    }
+
+    UBYTE lun = (UWORD)unitnum / 10;
+    unitnum = ((UWORD)unitnum % 10);
 
     if (lun != 0) {
         // No LUNs for IDE drives
@@ -639,7 +619,7 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_TrackSectors = unit->sectorsPerTrack;
     geometry->dg_BufMemType   = MEMF_PUBLIC;
     geometry->dg_DeviceType   = unit->deviceType;
-    geometry->dg_Flags        = (unit->flags.atapi) ? DGF_REMOVABLE : 0;
+    geometry->dg_Flags        = 0;
 
     ioreq->io_Actual = sizeof(struct DriveGeometry);
 }
@@ -677,15 +657,9 @@ const UWORD supported_commands[] =
     CMD_UPDATE,
     CMD_READ,
     CMD_WRITE,
-    CMD_START,
-    CMD_STOP,
-    TD_ADDCHANGEINT,
-    TD_REMCHANGEINT,
-    TD_REMOVE,
     TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
-    TD_EJECT,
     TD_GETDRIVETYPE,
     TD_GETGEOMETRY,
     TD_MOTOR,
@@ -770,37 +744,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 error = 0;
                 break;
 
-            case TD_REMOVE:
-                unit->changeInt = ioreq->io_Data;
-                error           = 0;
-                break;
-
-
-            case TD_ADDCHANGEINT:
-                Info("Addchangeint\n");
-
-                ioreq->io_Flags |= IOF_QUICK; // Must not Reply to this request
-                error = 0;
-
-                Disable();
-                AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
-                Enable();
-                break;
-
-            case TD_REMCHANGEINT:
-                error = 0;
-                struct MinNode *changeint;
-                // Must Disable() rather than Forbid()!
-                Disable();
-                for (changeint = unit->changeInts.mlh_Head; changeint->mln_Succ != NULL; changeint = changeint->mln_Succ) {
-                    if (ioreq == (struct IOStdReq *)changeint) {
-                        Remove(&ioreq->io_Message.mn_Node);
-                        break;
-                    }
-                }
-                Enable();
-                break;
-
             case CMD_RESUME:
                 if (unit->itask->paused) {
                     Signal(unit->itask->task,SIGBREAKF_CTRL_D);
@@ -819,13 +762,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 goto sendToTask;
 
             // Begin IO Task commands //
-            case CMD_START:
-            case CMD_STOP:
-                // Don't pass it to the task if it's not an atapi device
-                if (!unit->flags.atapi) {
-                    error = 0;
-                    break;
-                }
             case CMD_READ:
             case ETD_READ:
             case CMD_WRITE:
@@ -833,7 +769,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
             case TD_CHANGESTATE:
             case TD_PROTSTATUS:
-            case TD_EJECT:
             case TD_FORMAT:
             case TD_READ64:
             case TD_WRITE64:
@@ -844,7 +779,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
             case NSCMD_ETD_READ64:
             case NSCMD_ETD_WRITE64:
             case NSCMD_ETD_FORMAT64:
-            case CMD_XFER:
             case CMD_PIO:
             case HD_SCSICMD:
 sendToTask:
@@ -943,82 +877,6 @@ static const ULONG device_vectors[] =
     };
 
 /**
- * AdjustBootPriority
- *
- * Adjusts the boot priority of the first matching device in a mount list. Searches
- * for a device node with the specified name and increases its priority by the given
- * increment. Optionally checks gameport 1 button state before applying changes.
- * Re-orders the device in the priority list after modification.
- *
- * @param bootname BSTR name to match against device nodes
- * @param MountList Pointer to the mount list to traverse
- * @param checkFire If true, only modify when gameport 1 button is pressed
- * @param increment Amount to increase both device and boot node priorities
- */
-void AdjustBootPriority(struct ExecBase *SysBase, char *deviceName, char *bootname, struct List *MountList, bool checkFire, int increment) {
-    volatile struct CIA *ciaa = (struct CIA *)0x0bfe001;
-    struct BootNode *bn;
-    struct DeviceNode *dn;
-    struct FileSysStartupMsg *fssm;
-
-    for (bn = (struct BootNode *)MountList->lh_Head;
-        bn->bn_Node.ln_Succ;
-        bn = (struct BootNode *)bn->bn_Node.ln_Succ)
-    {
-        dn = bn->bn_DeviceNode;
-        fssm = BADDR(dn->dn_Startup);
-        char *bn_deviceName = (char *)BADDR(fssm->fssm_Device) + 1;
-
-        // Only tweak boot nodes created by this instance
-        if (strcmp(bn_deviceName,deviceName) != 0)
-            continue;
-
-        if (dn->dn_Priority != -128 && L_CompareBSTR(BADDR(dn->dn_Name),bootname)) {
-            if(!checkFire || (ciaa->ciapra & CIAF_GAMEPORT1)==0) {
-                dn->dn_Priority+=increment;
-                bn->bn_Node.ln_Pri+=increment;
-                Remove((struct Node *)bn);
-                Enqueue(MountList,(struct Node *)bn);
-                break;
-            }
-        }
-    }
-}
-
-/**
- * TweakBootList
- *
- * Modifies boot device priorities in the expansion library mount list. Traverses all
- * boot nodes and increases priority (+1) for devices matching "BOOTxx" names (where xx
- * is the expansion library major version). Additionally boosts priority (+2) for
- * "BOOT00" devices when gameport 1 button is pressed. Skips devices with priority -128.
- *
- * @param SysBase Pointer to the ExecBase system library base
- */
-void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
-    struct ExpansionBase *ExpansionBase;
-
-    if (ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) {
-        char bootname[] = "\6BOOT00"; // BSTR
-
-        UWORD major = (ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry
-
-        Forbid();
-
-        AdjustBootPriority(SysBase,deviceName,bootname,&ExpansionBase->MountList,true,2);
-
-        bootname[5]=0x30+(major/10);
-        bootname[6]=0x30+(major%10);
-
-        AdjustBootPriority(SysBase,deviceName,bootname,&ExpansionBase->MountList,false,1);
-
-        Permit();
-
-        CloseLibrary((struct Library *)ExpansionBase);
-    }
-}
-
-/**
  * init
  *
  * Create the device and add it to the system if init_device succeeds
@@ -1033,32 +891,11 @@ static struct Library * init(BPTR seg_list asm("a0"))
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
 
-    BOOL CDBoot = FindCDFS();
-
     if (mydev != NULL) {
         Info("Add Device.\n");
         AddDevice((struct Device *)mydev);
-
-        struct IOTask *itask = (struct IOTask *)mydev->ideTasks.mlh_Head;
-
-        if (!itask->mn_Node.mln_Succ) goto done;
-
-        struct MountStruct ms = {
-            .deviceName  = mydev->lib.lib_Node.ln_Name,
-            .creatorName = mydev->lib.lib_Node.ln_Name,
-            .SysBase     = SysBase,
-            .cdBoot      = CDBoot,
-            .luns        = false,
-            .slowSpinup  = false,
-            .ignoreLast  = true,
-            .configDev   = itask->cd
-        };
-
-        MountDrive(&ms);
-
-        if (!seg_list) // Only tweak if we're in boot
-            TweakBootList(SysBase,mydev->lib.lib_Node.ln_Name);
+        mount(mydev->lib.lib_Node.ln_Name,NULL,SysBase);
     }
-done:
+
     return (struct Library *)mydev;
 }

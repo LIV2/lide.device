@@ -14,7 +14,6 @@
 #include "debug.h"
 #include "device.h"
 #include "ata.h"
-#include "atapi.h"
 #include "scsi.h"
 #include "string.h"
 #include "blockcopy.h"
@@ -23,7 +22,6 @@
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 
 /**
  * ata_status_reg_delay
@@ -228,57 +226,15 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 }
 
 /**
- * ata_bench
- *
- * Measure the amount of E Clock ticks taken to transfer 512K from the unit
- *
- * @param unit Pointer to an IDEUnit struct
- * @param xfer_routine Pointer to one of the transfer routines
- * @param buffer pointer to a 512 byte buffer
- * @return tick count
- *
- */
-static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *buffer) {
-    struct ExecBase *SysBase = unit->SysBase;
-    struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
-    struct EClockVal *startTime;
-    struct EClockVal *endTime;
-    ULONG ticks = 0;
-
-    if (TimerBase->dd_Library.lib_Version < 36) return 0;
-
-    if (buffer) {
-        ata_xfer_func do_xfer = xfer_routine;
-        if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-            if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-                ReadEClock(startTime);
-
-                for (int i=0; i<1024; i++) {
-                    do_xfer((void *)unit->drive.status_command,buffer);
-                }
-
-                ReadEClock(endTime);
-                ticks =  (*(uint64_t *)endTime) - (*(uint64_t *)startTime);
-                FreeMem(endTime,sizeof(struct EClockVal));
-            }
-            FreeMem(startTime,sizeof(struct EClockVal));
-        }
-    }
-    return ticks;
-}
-
-/**
  * ata_autoselect_xfer
  *
- * Set the transfer method for the unit based on the CPU, Board type and benchmark result
+ * Set the transfer method for the unit based on the CPU, Board type
  *
  * @param unit Pointer to an IDEUnit struct
  * @return transfer method
  */
 static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
-    ULONG ticks;
-    void *buf;
 
     // longword_movem requires 512 Byte register spacing
     if ((unit->drive.lbaMid - unit->drive.lbaLow) != 512)
@@ -288,23 +244,7 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
     if ((SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) == 0)
         return longword_movem;
 
-    // ReadEClock needed by ata_bench not supported before Kick 2.0
-    if (SysBase->LibNode.lib_Version < 36)
-        return longword_movem;
-
-    if ((buf = AllocMem(512,MEMF_ANY))) {
-        enum xfer method;
-        ticks = ata_bench(unit,ata_read_long_movem,buf);
-        if (ticks > 0 && ata_bench(unit,ata_read_long_move,buf) < ticks) {
-            method = longword_move;
-        } else {
-            method = longword_movem;
-        }
-        FreeMem(buf,512);
-        return method;
-    } else {
-        return longword_movem;
-    }
+    return longword_move;
 }
 
 /**
@@ -353,7 +293,6 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     unit->sectorsPerTrack     = 0;
     unit->blockSize           = 0;
     unit->flags.present       = false;
-    unit->flags.mediumPresent = false;
 
     UWORD *buf;
     bool dev_found = false;
@@ -400,7 +339,6 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         unit->blockSize           = 512;
         unit->logicalSectors      = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
         unit->blockShift          = 0;
-        unit->flags.mediumPresent = true;
         unit->multipleCount       = buf[ata_identify_multiple] & 0xFF;
 
         if (unit->multipleCount > 0 && (ata_set_multiple(unit,unit->multipleCount) == 0)) {
@@ -429,8 +367,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         } else {
             // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
-            unit->write_taskfile = &write_taskfile_chs;
-            unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
+            goto ident_failed;
         }
 
         Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
@@ -455,24 +392,15 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
-    } else if (atapi_check_signature(unit)) { // Check for ATAPI Signature
-        if (atapi_identify(unit,buf) && (buf[0] & 0xC000) == 0x8000) {
-            Info("INIT: ATAPI Drive found!\n");
-
-                unit->deviceType      = (buf[0] >> 8) & 0x1F;
-                unit->flags.atapi     = true;
-
-                atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
-        } else {
+    } else {
 ident_failed:
             Warn("INIT: IDENTIFY failed\n");
             // Command failed with a timeout or error
             FreeMem(buf,512);
             return false;
-        }
     }
 
-    if (unit->flags.atapi == false && unit->blockSize == 0) {
+    if (unit->blockSize == 0) {
         Warn("INIT: Error! blockSize is 0\n");
         if (buf) FreeMem(buf,512);
         return false;
@@ -523,9 +451,6 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 
     return 0;
 }
-
-#pragma GCC push_options
-#pragma GCC optimize ("-O3")
 
 /**
  * ata_read
@@ -741,37 +666,6 @@ void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"
 }
 
 /**
- * write_taskfile_chs
- *
- * @param unit Pointer to an IDEUnit struct
- * @param lba  Pointer to the LBA variable
-*/
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
-
-    UWORD cylinder = ((ULONG)lba / (unit->heads * unit->sectorsPerTrack));
-    UBYTE head     = (((ULONG)lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
-    UBYTE sector   = ((ULONG)lba % unit->sectorsPerTrack) + 1;
-
-    BYTE devHead;
-
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
-        return HFERR_SelTimeout;
-
-    devHead = ((unit->flags.primary) ? 0xA0 : 0xB0) | (head & 0x0F);
-
-    *unit->shadowDevHead         = devHead;
-    *unit->drive.devHead        = devHead;
-    *unit->drive.sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
-    *unit->drive.lbaLow         = (UBYTE)(sector);
-    *unit->drive.lbaMid         = (UBYTE)(cylinder);
-    *unit->drive.lbaHigh        = (UBYTE)(cylinder >> 8);
-    *unit->drive.error_features = features;
-    *unit->drive.status_command = command;
-
-    return 0;
-}
-
-/**
  * write_taskfile_lba
  *
  * @param unit Pointer to an IDEUnit struct
@@ -822,8 +716,6 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t l
     return 0;
 }
 
-#pragma GCC pop_options
-
 /**
  * ata_set_pio
  *
@@ -844,117 +736,6 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
         return error;
 
     if (ata_check_error(unit)) return IOERR_BADLENGTH;
-
-    return 0;
-}
-
-/**
- * scsi_ata_passthrough
- *
- * Handle SCSI ATA PASSTHROUGH (12) command to send ATA commands to the drive
- *
- * @param unit Pointer to an IDEUnit struct
- * @param cmd Pointer to a SCSICmd struct
- * @return non-zero on error
-*/
-BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
-    struct SCSI_CDB_ATA *cdb = (struct SCSI_CDB_ATA *)cmd->scsi_Command;
-
-    bool byt_blok  = (cdb->length & ATA_BYT_BLOK) ? true : false;
-    UBYTE protocol = (cdb->protocol >> 1) & 0x0F;
-    UBYTE t_length = cdb->length & ATA_TLEN_MASK;
-
-    ULONG lba   = (cdb->lbaHigh << 16 | cdb->lbaMid << 8 | cdb->lbaLow);
-    ULONG count = 0;
-    BYTE  error = 0;
-
-    UWORD *src  = NULL;
-    UWORD *dest = NULL;
-
-    cmd->scsi_CmdActual = cmd->scsi_CmdLength;
-
-    switch (t_length) {
-        case 0x00: // No Data transferred
-            break;
-        case 0x01: // Transfer length in feature field
-            count = cdb->features;
-            cdb->features = 0;
-            break;
-        case 0x02: // Transfer length in sector_count field
-            count = cdb->sectorCount;
-            cdb->sectorCount = 0;
-            break;
-        default:
-            return IOERR_BADLENGTH;
-    }
-
-    if (byt_blok) count *= unit->blockSize;
-
-    if (count > (512*256)) return IOERR_BADLENGTH; // Can't be bothered supporting larger transfers
-
-    if (count > cmd->scsi_Length) return IOERR_BADLENGTH;
-
-    switch (protocol) {
-        case ATA_NODATA:
-            break;
-
-        case ATA_PIO_IN: // Data to Host
-            if (count < 2) return IOERR_BADLENGTH;
-            src = (UWORD *)unit->drive.data;
-            dest = cmd->scsi_Data;
-            break;
-
-        case ATA_PIO_OUT: // Data to Drive
-            if (count < 2) return IOERR_BADLENGTH;
-            src = cmd->scsi_Data;
-            dest = (UWORD *)unit->drive.data;
-            break;
-
-        default:
-            return IOERR_NOCMD;
-
-    }
-
-    count += (count & 1); // Ensure byte count is even
-
-    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
-
-    ata_select(unit,drvSel,true);
-
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
-        ata_save_error(unit);
-        return HFERR_SelTimeout;
-    }
-
-    if ((error = write_taskfile_lba(unit,cdb->command,lba,cdb->sectorCount,cdb->features)) != 0) {
-        ata_save_error(unit);
-        return error;
-    }
-
-    if (protocol == ATA_PIO_IN || protocol == ATA_PIO_OUT) {
-        for (int i = 0; i < count/2; i++) {
-            if (i % 512 == 0) {
-                if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
-                    ata_save_error(unit);
-                    return IOERR_UNITBUSY;
-                }
-            }
-
-                dest[i] = src[i];
-        }
-    }
-
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
-        ata_save_error(unit);
-        return HFERR_BadStatus;
-    }
-
-    if (ata_check_error(unit)){
-        ata_save_error(unit);
-        return IOERR_ABORTED;
-    }
-
-    cmd->scsi_Actual = cmd->scsi_Length;
 
     return 0;
 }

@@ -5,17 +5,12 @@ SECTIONS {
     } = 0xFFFF
     .bootldr 0x04: {
         *(BOOTLDR);
-        RESERVE(0x800-.);
     }
-    .reserved 0x800: {
-        FILL8(0xFF);
-        RESERVE(0x1000-.);
-    }
-    .device 0x1000 : {
+    .device : {
         *(DEVICE)
     }
     .fill : {
-        RESERVE(0x8000-4-.);
+        RESERVE(0x4000-4-.);
         LONG(0x4C494445);
     } =0xffff
 }

@@ -10,7 +10,6 @@
 #include <proto/expansion.h>
 
 #include "ata.h"
-#include "atapi.h"
 #include "debug.h"
 #include "device.h"
 #include "iotask.h"
@@ -54,23 +53,6 @@ static bool create_timer(struct ExecBase *SysBase, struct MsgPort **mp, struct t
     Trace("create_timer failed\n");
 
     return false;
-}
-
-/**
- * run_timer
- *
- * Run the timer to signal the task periodically
- *
- * @param SysBase Pointer to the ExecBase
- * @param tr Pointer to the timerequest
- * @param secs Seconds to wait
- * @param micros Microseconds to wait
- */
-static void run_timer(struct ExecBase *SysBase, struct timerequest *tr, ULONG secs, ULONG micros) {
-    tr->tr_node.io_Command = TR_ADDREQUEST;
-    tr->tr_time.tv_sec   = secs;
-    tr->tr_time.tv_micro = micros;
-    SendIO((struct IORequest *)tr);
 }
 
 /**
@@ -121,88 +103,80 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
     Trace("SCSI: Command %lx\n",*scsi_command->scsi_Command);
 
-    if (unit->flags.atapi) {
-        error = atapi_handle_scsi_command(unit,scsi_command);
-    } else {
-        // Translate SCSI CMD to ATA
-        switch (scsi_command->scsi_Command[0]) {
-            case SCSI_CMD_ATA_PASSTHROUGH:
-                error = scsi_ata_passthrough(unit,scsi_command);
+    // Translate SCSI CMD to ATA
+    switch (scsi_command->scsi_Command[0]) {
+        case SCSI_CMD_TEST_UNIT_READY:
+            scsi_command->scsi_Actual = 0;
+            error = 0;
+            break;
+
+        case SCSI_CMD_INQUIRY:
+            error = scsi_inquiry_emu(unit,scsi_command);
+            break;
+
+        case SCSI_CMD_MODE_SENSE_6:
+            error = scsi_mode_sense_emu(unit,scsi_command);
+            break;
+
+        case SCSI_CMD_READ_CAPACITY_10:
+            error = scsi_read_capacity_10_emu(unit,scsi_command);
+            break;
+
+        case SCSI_CMD_READ_CAPACITY_16:
+            error = scsi_read_capacity_16_emu(unit,scsi_command);
+            break;
+
+        case SCSI_CMD_READ_6:
+        case SCSI_CMD_WRITE_6:
+            lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
+                    ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
+                    ((struct SCSI_CDB_6 *)command)->lba_low);
+
+            count = ((struct SCSI_CDB_6 *)command)->length;
+            goto do_scsi_transfer;
+
+        case SCSI_CMD_READ_10:
+        case SCSI_CMD_WRITE_10:
+            lba   = ((struct SCSI_CDB_10 *)command)->lba;
+            count = ((struct SCSI_CDB_10 *)command)->length;
+            goto do_scsi_transfer;
+
+        case SCSI_CMD_READ_16:
+        case SCSI_CMD_WRITE_16:
+            lba   = ((struct SCSI_CDB_16 *)command)->lba;
+            count = ((struct SCSI_CDB_16 *)command)->length;
+
+do_scsi_transfer:
+            if (data == NULL || (lba + count) > unit->logicalSectors) {
+                error = IOERR_BADADDRESS;
+                fake_scsi_sense(scsi_command,lba,count,error);
                 break;
+            }
 
-            case SCSI_CMD_TEST_UNIT_READY:
-                scsi_command->scsi_Actual = 0;
-                error = 0;
-                break;
+            direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
 
-            case SCSI_CMD_INQUIRY:
-                error = scsi_inquiry_emu(unit,scsi_command);
-                break;
-
-            case SCSI_CMD_MODE_SENSE_6:
-                error = scsi_mode_sense_emu(unit,scsi_command);
-                break;
-
-            case SCSI_CMD_READ_CAPACITY_10:
-                error = scsi_read_capacity_10_emu(unit,scsi_command);
-                break;
-
-            case SCSI_CMD_READ_CAPACITY_16:
-                error = scsi_read_capacity_16_emu(unit,scsi_command);
-                break;
-
-            case SCSI_CMD_READ_6:
-            case SCSI_CMD_WRITE_6:
-                lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
-                        ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
-                        ((struct SCSI_CDB_6 *)command)->lba_low);
-
-                count = ((struct SCSI_CDB_6 *)command)->length;
-                goto do_scsi_transfer;
-
-            case SCSI_CMD_READ_10:
-            case SCSI_CMD_WRITE_10:
-                lba   = ((struct SCSI_CDB_10 *)command)->lba;
-                count = ((struct SCSI_CDB_10 *)command)->length;
-                goto do_scsi_transfer;
-
-            case SCSI_CMD_READ_16:
-            case SCSI_CMD_WRITE_16:
-                lba   = ((struct SCSI_CDB_16 *)command)->lba;
-                count = ((struct SCSI_CDB_16 *)command)->length;
-
-    do_scsi_transfer:
-                if (data == NULL || (lba + count) > unit->logicalSectors) {
-                    error = IOERR_BADADDRESS;
+            if (direction == READ) {
+                error = ata_read(data,lba,count,unit);
+            } else {
+                error = ata_write(data,lba,count,unit);
+            }
+            if (error == 0) {
+                scsi_command->scsi_Actual = scsi_command->scsi_Length;
+            } else {
+                if (error == TDERR_NotSpecified) {
+                    fake_scsi_sense(scsi_command,lba,
+                    (unit->last_error[0] << 8 | unit->last_error[4])
+                    ,error);
+                } else {
                     fake_scsi_sense(scsi_command,lba,count,error);
-                    break;
                 }
+            }
+            break;
 
-                direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
-
-                if (direction == READ) {
-                    error = ata_read(data,lba,count,unit);
-                } else {
-                    error = ata_write(data,lba,count,unit);
-                }
-                if (error == 0) {
-                    scsi_command->scsi_Actual = scsi_command->scsi_Length;
-                } else {
-                    if (error == TDERR_NotSpecified) {
-                        fake_scsi_sense(scsi_command,lba,
-                        (unit->last_error[0] << 8 | unit->last_error[4])
-                        ,error);
-                    } else {
-                        fake_scsi_sense(scsi_command,lba,count,error);
-                    }
-                }
-                break;
-
-            default:
-                error = IOERR_NOCMD;
-                fake_scsi_sense(scsi_command,0,0,error);
-                break;
-        }
+        default:
+            error = IOERR_NOCMD;
+            fake_scsi_sense(scsi_command,0,0,error);
+            break;
     }
 
     // SCSI Command complete, handle any errors
@@ -246,19 +220,11 @@ static BYTE init_units(struct IOTask *itask) {
             unit->openCount               = 0;
             unit->changeCount             = 1;
             unit->deviceType              = DG_DIRECT_ACCESS;
-            unit->flags.mediumPresent     = false;
-            unit->flags.mediumPresentPrev = false;
             unit->flags.present           = false;
-            unit->flags.atapi             = false;
             unit->flags.xferMultiple      = false;
             unit->multipleCount           = 0;
             unit->shadowDevHead           = &itask->shadowDevHead;
             *unit->shadowDevHead          = 0;
-
-            // Initialize the change int list
-            unit->changeInts.mlh_Tail     = NULL;
-            unit->changeInts.mlh_Head     = (struct MinNode *)&unit->changeInts.mlh_Tail;
-            unit->changeInts.mlh_TailPred = (struct MinNode *)&unit->changeInts;
 
             Warn("testing unit %ld\n",unit->unitNum);
 
@@ -266,7 +232,6 @@ static BYTE init_units(struct IOTask *itask) {
             base += (itask->channel == 0) ? CHANNEL_0 : CHANNEL_1;
 
             if (ata_init_unit(unit,base)) {
-                if (unit->flags.atapi) itask->hasRemovables = true;
                 num_units++;
                 itask->dev->numUnits++;
                 dev->highestUnit = unit->unitNum;
@@ -296,7 +261,6 @@ static void cleanup(struct IOTask *itask) {
         L_DeletePort(itask->iomp);
 
     delete_timer(SysBase,itask->timermp,itask->tr,false);
-    delete_timer(SysBase,itask->dcTimerMp,itask->dcTimerReq,itask->dcTimerArmed);
 
     struct IDEUnit *unit;
 
@@ -314,60 +278,6 @@ static void cleanup(struct IOTask *itask) {
     itask->active = false;
     itask->task   = NULL;
     Signal(itask->parent, SIGF_SINGLE);
-}
-
-/**
- * diskchange_check
- *
- * Check for disk changes and send interrupts if necessary
- *
- * @param itask Pointer to the IO task
- */
-static void diskchange_check(struct IOTask *itask) {
-    Info("diskchange check...\n");
-    struct ExecBase *SysBase = itask->SysBase;
-    struct IDEUnit *unit;
-    struct IOStdReq *intreq = NULL;
-    bool present;
-
-    if (SysBase->LibNode.lib_Version >= 36) {
-        ObtainSemaphoreShared(&itask->dev->ulSem);
-    } else {
-        ObtainSemaphore(&itask->dev->ulSem);
-    }
-
-    for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
-        unit->mn_Node.mln_Succ != NULL;
-        unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
-    {
-        if (unit->flags.present && unit->flags.atapi) {
-
-            present = (atapi_test_unit_ready(unit,true) == 0) ? true : false;
-
-            if (present != unit->flags.mediumPresentPrev) {
-
-                Forbid();
-                if (unit->changeInt != NULL)
-                    Cause((struct Interrupt *)unit->changeInt); // TD_REMOVE
-
-                for (intreq = (struct IOStdReq *)unit->changeInts.mlh_Head;
-                     intreq->io_Message.mn_Node.ln_Succ != NULL;
-                     intreq = (struct IOStdReq *)intreq->io_Message.mn_Node.ln_Succ) {
-
-                    if (intreq->io_Data) {
-                        Cause(intreq->io_Data);
-                    }
-                }
-                Permit();
-            }
-
-            unit->flags.mediumPresentPrev = present;
-
-
-        }
-    }
-
-    ReleaseSemaphore(&itask->dev->ulSem);
 }
 
 /**
@@ -401,48 +311,13 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
             Wait(SIGBREAKF_CTRL_D);
             return;
 
-        case CMD_START:
-            if (unit->flags.atapi) {
-                error = atapi_start_stop_unit(unit,true,false,false);
-            }
-            break;
-
-        case CMD_STOP:
-            if (unit->flags.atapi) {
-                error = atapi_start_stop_unit(unit,false,false,false);
-            }
-            break;
-
-        case TD_EJECT:
-            if (!unit->flags.atapi) {
-                error  = IOERR_NOCMD;
-                break;
-            }
-            ioreq->io_Actual = (unit->flags.mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
-
-            bool insert = (ioreq->io_Length == 0) ? true : false;
-
-            error = atapi_start_stop_unit(unit,insert,1,false);
-            break;
-
         case TD_CHANGESTATE:
             error   = 0;
             ioreq->io_Actual = 0;
-            if (unit->flags.atapi) {
-                ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
-                break;
-            }
             break;
 
         case TD_PROTSTATUS:
             error  = 0;
-            if (unit->flags.atapi) {
-                if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
-                    error  = 0;
-                    ioreq->io_Actual = 1;
-                    break;
-                }
-            }
             ioreq->io_Actual = 0; // Not protected
             break;
 
@@ -477,12 +352,6 @@ validate_etd:
         case NSCMD_TD_FORMAT64:
             direction = WRITE;
 transfer:
-            if (unit->flags.atapi == true && unit->flags.mediumPresent == false) {
-                Trace("Access attempt without media\n");
-                error  = TDERR_DiskChanged;
-                break;
-            }
-
             blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
 
             // This looks like a lond-winded way to get the LBA doesn't it?
@@ -506,30 +375,17 @@ transfer:
                 break;
             }
 
-            if (unit->flags.atapi == true) {
-                error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
+            if (direction == READ) {
+                error  = ata_read(ioreq->io_Data, lba, count, unit);
             } else {
-                if (direction == READ) {
-                    error  = ata_read(ioreq->io_Data, lba, count, unit);
-                } else {
-                    error  = ata_write(ioreq->io_Data, lba, count, unit);
-                }
-                ioreq->io_Actual = ioreq->io_Length;
+                error  = ata_write(ioreq->io_Data, lba, count, unit);
             }
+            ioreq->io_Actual = ioreq->io_Length;
             break;
 
         /* SCSI Direct */
         case HD_SCSICMD:
             error = handle_scsi_command(ioreq);
-            break;
-
-        case CMD_XFER:
-            if (ioreq->io_Length < 3) {
-                ata_set_xfer(unit,ioreq->io_Length);
-                error = 0;
-            } else {
-                error = IOERR_ABORTED;
-            }
             break;
 
         case CMD_PIO:
@@ -606,21 +462,6 @@ void __attribute__((noreturn)) io_task () {
     itask->paused = false;
     Signal(itask->parent,SIGF_SINGLE);
 
-    if (itask->hasRemovables) {
-
-        if (!create_timer(SysBase,&itask->dcTimerMp,&itask->dcTimerReq,UNIT_VBLANK)) {
-            cleanup(itask);
-            RemTask(NULL);
-            Wait(0);
-        }
-
-        signalMask |= (1 << itask->dcTimerMp->mp_SigBit);
-
-        run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
-        itask->dcTimerArmed = true;
-    }
-
-
     while (1) {
         // Main loop, handle IO Requests as they come in.
         Trace("IO Task: WaitPort()\n");
@@ -632,16 +473,5 @@ void __attribute__((noreturn)) io_task () {
             }
         }
 
-        if (itask->hasRemovables) {
-            if (signalsSet & (1 << itask->dcTimerMp->mp_SigBit)) {
-                WaitIO((struct IORequest *)itask->dcTimerReq);
-                itask->dcTimerArmed = false;
-
-                diskchange_check(itask);
-                run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
-
-                itask->dcTimerArmed = true;
-            }
-        }
     }
 }
