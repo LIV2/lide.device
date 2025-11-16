@@ -425,17 +425,18 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         } else if (unit->flags.lba == true) {
             // LBA-28 up to 127GB
             unit->write_taskfile = &write_taskfile_lba;
-
         } else {
             // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
             unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
         }
-
-        Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
-
-        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
+        
+        if (unit->flags.lba48) {
+            Info("INIT: Logical sectors: 0x%lx%08lx\n",(uint64_t)unit->logicalSectors);
+        } else {
+            Info("INIT: Logical sectors: %ld\n",(ULONG)unit->logicalSectors);
+        }
 
         if (unit->logicalSectors >= 267382800) {
             // For drives larger than 127GB fudge the geometry
@@ -451,6 +452,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
 
+        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
 
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
@@ -481,7 +483,11 @@ ident_failed:
     Info("INIT: Blockshift: %ld\n",unit->blockShift);
     unit->flags.present = true;
 
-    Info("INIT: LBAs %lld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
+    if (unit->flags.lba48) {
+        Info("INIT: LBAs 0x%lx%08lx Blocksize: %ld\n",(uint64_t)unit->logicalSectors,unit->blockSize);
+    } else{
+        Info("INIT: LBAs %ld Blocksize: %ld\n",(ULONG)unit->logicalSectors,unit->blockSize);
+    }
 
     if (buf) FreeMem(buf,512);
     return true;
