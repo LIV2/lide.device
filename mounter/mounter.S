@@ -18,6 +18,8 @@
     include libraries/expansionbase.i
     include resources/filesysres.i
 
+    section .text,code
+
 ; Frame pointer vars
 MB_CD           EQU -4                      ; ConfigDev
 MB_DEVICE       EQU MB_CD-4                 ; Device Name

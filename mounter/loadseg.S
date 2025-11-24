@@ -11,6 +11,8 @@
     include dos/filehandler.i
     include libraries/expansionbase.i
 
+    section .text,code
+
 ;******************************************************************************
 ;
 ; LOADSEG.S - Amiga Executable Hunk Loader and Relocator
