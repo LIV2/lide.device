@@ -6,12 +6,15 @@
 
 VERSION      = 1
 REVISION     = 1
+        IFD SLIM
+DRIVEROFFSET = ((EndCopy-DiagStart)+2)*4
+        ELSE
         IFND WORDWIDE
 DRIVEROFFSET = $2000
         ELSE
 DRIVEROFFSET = $1000
         ENDIF
-
+        ENDIF
 *******  DiagStart  **************************************************
 DiagStart
         ; This is the DiagArea structure whose relative offset from
@@ -128,6 +131,9 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
 .even 
         and.l   #$F000,d1                     ; Add any other offset
         add.l   d1,d2
+
+        IFND SLIM
+
         cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
         bne     .loaddriver
 .loadcdfs
@@ -189,8 +195,9 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         add.l   #RIDE_BANKREG,a1
         and.b   #$3F,(a1)           ; Point back at Bank #0
         add.l   #$10000,d2          ; Set Offset to upper window
-        ENDIF
+        ENDIF ; End WORDWIDE
 
+        ENDIF ; End SLIM
 .loaddriver:
         move.l  BoardBase(PC),a0
 

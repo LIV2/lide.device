@@ -6,13 +6,23 @@ LINKER=vlink
 LINKFLAGS=-brawbin1 -s -sc -sd -mrel -lamiga -lauto -L/opt/amiga/m68k-amigaos/vbcc/lib
 OBJDIR=obj
 
+ifdef SLIM
+ASFLAGS+= -DSLIM
+endif
+
 .PHONY: all clean rom ../lide.device checksize
 
 SRCS = bootldr.S \
        endrom.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
+ifndef SLIM
 all:	../$(PROJECT).rom ../$(PROJECT)-atbus.rom ../$(PROJECT)-word.rom
+LINKCONF = rom.ld
+else
+all:    ../$(PROJECT).rom
+LINKCONF = rom_slim.ld
+endif
 
 checksize:
 	./checksize.sh ../lide.device
@@ -42,7 +52,7 @@ $(OBJDIR)/assets.o: assets.S $(OBJDIR)/bootnibbles ../lide.device
 $(OBJDIR)/assets-word.o: assets.S $(OBJDIR)/bootldr-word ../lide.device
 
 ../$(PROJECT).rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
-	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets.o
+	$(LINKER) $(LINKFLAGS) -T${LINKCONF} -o $@ $(OBJDIR)/assets.o
 
 ../$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
 	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $(OBJDIR)/assets.o

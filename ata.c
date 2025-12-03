@@ -484,6 +484,8 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
                 atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
         } else {
+#else
+    } else {
 #endif
 ident_failed:
             Warn("INIT: IDENTIFY failed\n");
