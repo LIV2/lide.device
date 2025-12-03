@@ -2,3 +2,4 @@
 *.rom
 build/**
 **/.DS_Store
+**/*.o

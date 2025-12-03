@@ -6,13 +6,16 @@ LINKER=vlink
 LINKFLAGS=-brawbin1 -s -sc -sd -mrel -lamiga -lauto -L/opt/amiga/m68k-amigaos/vbcc/lib
 OBJDIR=obj
 
-.PHONY: all clean rom ../lide.device
+.PHONY: all clean rom ../lide.device checksize
 
 SRCS = bootldr.S \
        endrom.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
 all:	../$(PROJECT).rom ../$(PROJECT)-atbus.rom ../$(PROJECT)-word.rom
+
+checksize:
+	./checksize.sh ../lide.device
 
 # Nibble-wide boot loader with Byte-wide driver
 $(OBJDIR)/%.o: %.S
@@ -38,13 +41,13 @@ $(OBJDIR)/assets.o: assets.S $(OBJDIR)/bootnibbles ../lide.device
 
 $(OBJDIR)/assets-word.o: assets.S $(OBJDIR)/bootldr-word ../lide.device
 
-../$(PROJECT).rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o
+../$(PROJECT).rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets.o
 
-../$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o
+../$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
 	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $(OBJDIR)/assets.o
 
-../$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o
+../$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o | checksize
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets-word.o
 
 clean:
