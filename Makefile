@@ -17,7 +17,7 @@ export BUILD_DATE
 export GIT_REF
 
 CC=m68k-amigaos-gcc
-CFLAGS+=-mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
+CFLAGS+=-mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-unused-value -s -Os -fomit-frame-pointer -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LD=m68k-amigaos-ld
 LDFLAGS=-lc
@@ -56,6 +56,17 @@ all:	$(PROJECT) \
 OBJDIR = obj/$(TARGET)
 
 SRCS = device.c ata.c atapi.c scsi.c iotask.c lide_alib.c mounter/mounter.c debug.c
+
+ifdef NO_ATAPI
+CFLAGS+= -DNO_ATAPI=1 -DCDBOOT=0
+SRCS := $(filter-out atapi.c,$(SRCS))
+else
+CFLAGS+= -DCDBOOT=1
+endif
+
+ifdef SLIM
+CFLAGS+= -DSLIM=1
+endif
 
 OBJ = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:%c=%o)))
 

@@ -23,7 +23,12 @@
 
 static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+
+#ifndef SLIM
+
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+
+#endif
 
 /**
  * ata_status_reg_delay
@@ -227,6 +232,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     return true;
 }
 
+#ifndef SLIM
 /**
  * ata_bench
  *
@@ -306,6 +312,7 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
         return longword_movem;
     }
 }
+#endif
 
 /**
  * ata_set_xfer
@@ -318,6 +325,7 @@ static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
     switch (method) {
         default:
+#ifndef SLIM
         case longword_movem:
             unit->read_fast       = ata_read_long_movem;
             unit->read_unaligned  = ata_read_unaligned_long;
@@ -326,6 +334,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 
             unit->xferMethod = longword_movem;
             break;
+#endif
         case longword_move:
             unit->read_fast       = ata_read_long_move;
             unit->read_unaligned  = ata_read_unaligned_long;
@@ -369,8 +378,12 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     *unit->shadowDevHead = *unit->drive.devHead = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
+#ifdef SLIM
+    ata_set_xfer(unit,longword_move);
+#else
     enum xfer method = ata_autoselect_xfer(unit);
     ata_set_xfer(unit,method);
+#endif
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
@@ -398,7 +411,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         unit->heads               = buf[ata_identify_heads];
         unit->sectorsPerTrack     = buf[ata_identify_sectors];
         unit->blockSize           = 512;
-        unit->logicalSectors      = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
+        unit->logicalSectors      = ((uint64_t)buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors]);
         unit->blockShift          = 0;
         unit->flags.mediumPresent = true;
         unit->multipleCount       = buf[ata_identify_multiple] & 0xFF;
@@ -428,8 +441,12 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         } else {
             // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
+#ifdef SLIM
+            goto ident_failed;
+#else
             unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
+#endif
         }
         
         if (unit->flags.lba48) {
@@ -457,6 +474,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
+#ifndef NO_ATAPI
     } else if (atapi_check_signature(unit)) { // Check for ATAPI Signature
         if (atapi_identify(unit,buf) && (buf[0] & 0xC000) == 0x8000) {
             Info("INIT: ATAPI Drive found!\n");
@@ -466,12 +484,15 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
                 atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
         } else {
+#endif
 ident_failed:
             Warn("INIT: IDENTIFY failed\n");
             // Command failed with a timeout or error
             FreeMem(buf,512);
             return false;
+#ifndef NO_ATAPI
         }
+#endif
     }
 
     if (unit->flags.atapi == false && unit->blockSize == 0) {
@@ -530,8 +551,11 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     return 0;
 }
 
+
 #pragma GCC push_options
+#ifndef SLIM
 #pragma GCC optimize ("-O3")
+#endif
 
 /**
  * ata_read
@@ -746,6 +770,7 @@ void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"
     }
 }
 
+#ifndef SLIM
 /**
  * write_taskfile_chs
  *
@@ -776,6 +801,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba
 
     return 0;
 }
+#endif
 
 /**
  * write_taskfile_lba
@@ -854,6 +880,7 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
     return 0;
 }
 
+#ifndef SLIM
 /**
  * scsi_ata_passthrough
  *
@@ -964,3 +991,4 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     return 0;
 }
+#endif

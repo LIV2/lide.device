@@ -823,6 +823,7 @@ static BOOL CompareBSTRNoCase(const UBYTE *src1, const UBYTE *src2)
 	return TRUE;
 }
 
+#if CDBOOT
 // Check for duplicate device names
 static bool CheckDevName(struct MountData *md, UBYTE *bname)
 {
@@ -845,6 +846,7 @@ static bool CheckDevName(struct MountData *md, UBYTE *bname)
 	Permit();
 	return found;
 }
+#endif
 
 // Check for duplicate device names
 static void CheckAndFixDevName(struct MountData *md, UBYTE *bname)
@@ -1037,6 +1039,7 @@ static LONG ScanRDSK(struct MountData *md)
 	return ret;
 }
 
+#if CDBOOT
 static struct FileSysEntry *find_filesystem(ULONG id1, ULONG id2, struct ExecBase *SysBase)
 {
 	struct FileSysResource *FileSysResBase = NULL;
@@ -1251,7 +1254,7 @@ static LONG ScanCDROM(struct MountData *md)
 
 	return 1;
 }
-
+#endif
 #ifdef DISKLABELS
 
 static void
@@ -1517,6 +1520,7 @@ next_lun:
 								md->unitnum    = unitNum;
 
 								switch (geom.dg_DeviceType & SID_TYPE) {
+#if CDBOOT
 								case DG_CDROM:
 								case DG_WORM:
 								case DG_OPTICAL_DISK:
@@ -1526,7 +1530,7 @@ next_lun:
 									}
 									ret = ScanCDROM(md);
 									break;
-
+#endif
 								case DG_DIRECT_ACCESS: // DISK
 									ret = ScanRDSK(md);
 #ifdef DISKLABELS

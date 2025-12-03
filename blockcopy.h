@@ -2,6 +2,8 @@
 #define _BLOCK_COPY_H
 #pragma GCC push_options
 #pragma GCC optimize ("-fomit-frame-pointer")
+
+#ifndef SLIM
 /**
  * ata_read_long_movem
  *
@@ -60,6 +62,8 @@ static inline void ata_write_long_movem (void *source asm("a0"), void *destinati
     :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
     );
 }
+
+#endif
 
 /**
  * ata_read_long_move

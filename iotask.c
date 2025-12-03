@@ -56,6 +56,7 @@ static bool create_timer(struct ExecBase *SysBase, struct MsgPort **mp, struct t
     return false;
 }
 
+#ifndef NO_ATAPI
 /**
  * run_timer
  *
@@ -72,6 +73,7 @@ static void run_timer(struct ExecBase *SysBase, struct timerequest *tr, ULONG se
     tr->tr_time.tv_micro = micros;
     SendIO((struct IORequest *)tr);
 }
+#endif
 
 /**
  * delete_timer
@@ -122,14 +124,19 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     Trace("SCSI: Command %lx\n",*scsi_command->scsi_Command);
 
     if (unit->flags.atapi) {
+#ifndef NO_ATAPI
         error = atapi_handle_scsi_command(unit,scsi_command);
+#else
+        error = IOERR_NOCMD;
+#endif
     } else {
         // Translate SCSI CMD to ATA
         switch (scsi_command->scsi_Command[0]) {
+#ifndef SLIM
             case SCSI_CMD_ATA_PASSTHROUGH:
                 error = scsi_ata_passthrough(unit,scsi_command);
                 break;
-
+#endif
             case SCSI_CMD_TEST_UNIT_READY:
                 scsi_command->scsi_Actual = 0;
                 error = 0;
@@ -296,7 +303,10 @@ static void cleanup(struct IOTask *itask) {
         L_DeletePort(itask->iomp);
 
     delete_timer(SysBase,itask->timermp,itask->tr,false);
+
+#ifndef NO_ATAPI
     delete_timer(SysBase,itask->dcTimerMp,itask->dcTimerReq,itask->dcTimerArmed);
+#endif
 
     struct IDEUnit *unit;
 
@@ -316,6 +326,7 @@ static void cleanup(struct IOTask *itask) {
     Signal(itask->parent, SIGF_SINGLE);
 }
 
+#ifndef NO_ATAPI
 /**
  * diskchange_check
  *
@@ -370,6 +381,8 @@ static void diskchange_check(struct IOTask *itask) {
     ReleaseSemaphore(&itask->dev->ulSem);
 }
 
+#endif
+
 /**
  * process_ioreq
  *
@@ -402,15 +415,19 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
             return;
 
         case CMD_START:
+#ifndef NO_ATAPI
             if (unit->flags.atapi) {
                 error = atapi_start_stop_unit(unit,true,false,false);
             }
+#endif
             break;
 
         case CMD_STOP:
+#ifndef NO_ATAPI
             if (unit->flags.atapi) {
                 error = atapi_start_stop_unit(unit,false,false,false);
             }
+#endif
             break;
 
         case TD_EJECT:
@@ -418,24 +435,29 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
                 error  = IOERR_NOCMD;
                 break;
             }
+#ifndef NO_ATAPI
             ioreq->io_Actual = (unit->flags.mediumPresent) ? 0 : 1;   // io_Actual reflects the previous state
 
             bool insert = (ioreq->io_Length == 0) ? true : false;
 
             error = atapi_start_stop_unit(unit,insert,1,false);
+#endif
             break;
 
         case TD_CHANGESTATE:
             error   = 0;
             ioreq->io_Actual = 0;
+#ifndef NO_ATAPI
             if (unit->flags.atapi) {
                 ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
                 break;
             }
+#endif
             break;
 
         case TD_PROTSTATUS:
             error  = 0;
+#ifndef NO_ATAPI
             if (unit->flags.atapi) {
                 if ((error  = atapi_check_wp(unit)) == TDERR_WriteProt) {
                     error  = 0;
@@ -443,6 +465,7 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
                     break;
                 }
             }
+#endif
             ioreq->io_Actual = 0; // Not protected
             break;
 
@@ -505,9 +528,12 @@ transfer:
                 error  = IOERR_BADADDRESS;
                 break;
             }
-
             if (unit->flags.atapi == true) {
+#ifndef NO_ATAPI
                 error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
+#else
+                error = IOERR_NOCMD;
+#endif
             } else {
                 if (direction == READ) {
                     error  = ata_read(ioreq->io_Data, lba, count, unit);
@@ -523,6 +549,7 @@ transfer:
             error = handle_scsi_command(ioreq);
             break;
 
+#ifndef SLIM
         case CMD_XFER:
             if (ioreq->io_Length < 3) {
                 ata_set_xfer(unit,ioreq->io_Length);
@@ -531,7 +558,7 @@ transfer:
                 error = IOERR_ABORTED;
             }
             break;
-
+#endif
         case CMD_PIO:
             if (ioreq->io_Length <= 4) {
                 error = ata_set_pio(unit,ioreq->io_Length);
@@ -606,6 +633,7 @@ void __attribute__((noreturn)) io_task () {
     itask->paused = false;
     Signal(itask->parent,SIGF_SINGLE);
 
+#ifndef NO_ATAPI
     if (itask->hasRemovables) {
 
         if (!create_timer(SysBase,&itask->dcTimerMp,&itask->dcTimerReq,UNIT_VBLANK)) {
@@ -619,7 +647,7 @@ void __attribute__((noreturn)) io_task () {
         run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);
         itask->dcTimerArmed = true;
     }
-
+#endif
 
     while (1) {
         // Main loop, handle IO Requests as they come in.
@@ -632,6 +660,7 @@ void __attribute__((noreturn)) io_task () {
             }
         }
 
+#ifndef NO_ATAPI
         if (itask->hasRemovables) {
             if (signalsSet & (1 << itask->dcTimerMp->mp_SigBit)) {
                 WaitIO((struct IORequest *)itask->dcTimerReq);
@@ -643,5 +672,6 @@ void __attribute__((noreturn)) io_task () {
                 itask->dcTimerArmed = true;
             }
         }
+#endif
     }
 }

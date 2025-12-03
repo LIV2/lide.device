@@ -2,6 +2,7 @@
 /* This file is part of lide.device
  * Copyright (C) 2023 Matthew Harlum <matt@harlum.net>
  */
+
 #include <exec/types.h>
 #include <exec/lists.h>
 #include <exec/nodes.h>
@@ -195,6 +196,8 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         return task;
 }
 
+#ifndef SLIM
+
 /**
  * L_Uppercase
  * Convert lowercase char to uppercase
@@ -233,3 +236,4 @@ bool L_CompareBSTR(char *str1, char *str2) {
 
     return true;
 }
+#endif

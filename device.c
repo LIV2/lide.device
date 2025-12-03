@@ -82,7 +82,7 @@ char * set_dev_name(struct DeviceBase *dev) {
             if (i == 0) {
                 devName = AllocMem(sizeof(device_name)+4,MEMF_ANY|MEMF_CLEAR);
                 if (devName == NULL) return NULL;
-                strcpy(devName + 4,device_name);
+                CopyMem(devName + 4,(char *)device_name, sizeof(devName));
             }
 
             switch (i) {
@@ -543,8 +543,13 @@ static void open(struct DeviceBase *dev asm("a6"), struct IORequest *ioreq asm("
      * HDToolbox scans each LUN of a unit and stops searching if it sees an error other than TDERR_BadUnitNum
      * So if this is not returned, only one drive will ever be detected
     */
-    UBYTE lun = unitnum / 10;
-    unitnum = (unitnum % 10);
+    if (unitnum > UINT16_MAX) {
+        error = TDERR_BadUnitNum;
+        goto exit;
+    }
+
+    UBYTE lun = (UWORD)unitnum / 10;
+    unitnum = ((UWORD)unitnum % 10);
 
     if (lun != 0) {
         // No LUNs for IDE drives
@@ -677,15 +682,17 @@ const UWORD supported_commands[] =
     CMD_UPDATE,
     CMD_READ,
     CMD_WRITE,
+#ifndef NO_ATAPI
     CMD_START,
     CMD_STOP,
     TD_ADDCHANGEINT,
     TD_REMCHANGEINT,
     TD_REMOVE,
+    TD_EJECT,
+#endif
     TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
-    TD_EJECT,
     TD_GETDRIVETYPE,
     TD_GETGEOMETRY,
     TD_MOTOR,
@@ -770,11 +777,11 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 error = 0;
                 break;
 
+#ifndef NO_ATAPI
             case TD_REMOVE:
                 unit->changeInt = ioreq->io_Data;
                 error           = 0;
                 break;
-
 
             case TD_ADDCHANGEINT:
                 Info("Addchangeint\n");
@@ -800,7 +807,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 }
                 Enable();
                 break;
-
+#endif
             case CMD_RESUME:
                 if (unit->itask->paused) {
                     Signal(unit->itask->task,SIGBREAKF_CTRL_D);
@@ -819,6 +826,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 goto sendToTask;
 
             // Begin IO Task commands //
+#ifndef NO_ATAPI
             case CMD_START:
             case CMD_STOP:
                 // Don't pass it to the task if it's not an atapi device
@@ -826,6 +834,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                     error = 0;
                     break;
                 }
+#endif
             case CMD_READ:
             case ETD_READ:
             case CMD_WRITE:
@@ -942,6 +951,7 @@ static const ULONG device_vectors[] =
         -1 //function table end marker
     };
 
+#ifndef SLIM
 /**
  * AdjustBootPriority
  *
@@ -1018,6 +1028,8 @@ void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
     }
 }
 
+#endif
+
 /**
  * init
  *
@@ -1032,8 +1044,10 @@ static struct Library * init(BPTR seg_list asm("a0"))
                                                                 (APTR)init_device,         // Init function
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
-
-    BOOL CDBoot = FindCDFS();
+    BOOL CDBoot = false;
+#ifndef NO_ATAPI
+    CDBoot = FindCDFS();
+#endif
 
     if (mydev != NULL) {
         Info("Add Device.\n");
@@ -1055,9 +1069,10 @@ static struct Library * init(BPTR seg_list asm("a0"))
         };
 
         MountDrive(&ms);
-
+#ifndef SLIM
         if (!seg_list) // Only tweak if we're in boot
             TweakBootList(SysBase,mydev->lib.lib_Node.ln_Name);
+#endif
     }
 done:
     return (struct Library *)mydev;
