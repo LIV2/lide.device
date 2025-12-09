@@ -2,7 +2,7 @@
 RED='\033[1;31m'
 RESET='\033[0m'
 
-SIZE=$(stat -c %s $1)
+SIZE=$(wc -c $1 | awk '{print $1}')
 
 if [[ ${SIZE} -gt 28668 ]]
 then

@@ -23,16 +23,11 @@ LD=m68k-amigaos-ld
 LDFLAGS=-lc
 AS=m68k-amigaos-as
 
-ifeq ($(shell uname),Darwin)
-GREP=ggrep
-else
-GREP=grep
-endif
-
 ifneq ($(VERSION),)
 DISK=lide-update-$(VERSION).adf
-DEVICE_VERSION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\K\d+')
-DEVICE_REVISION=$(shell echo $(VERSION) | $(GREP) -oP '^(\w+-)?\d+\.\K\d+')
+DEVICE_VERSION=$(shell echo $(VERSION) | awk -F'-' '{split($$1,a,".");print a[1]}')
+DEVICE_REVISION=$(shell echo $(VERSION) | awk -F'-' '{split($$1,a,".");print a[2]}')
+#$(shell echo $(VERSION) | )
 CFLAGS+=-DDEVICE_VERSION=$(DEVICE_VERSION) -DDEVICE_REVISION=$(DEVICE_REVISION)
 
 export DEVICE_REVISION
