@@ -108,6 +108,8 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
+    if (!scsi_command) return IOERR_BADADDRESS;
+
     UBYTE *data    = (APTR)scsi_command->scsi_Data;
     UBYTE *command = (APTR)scsi_command->scsi_Command;
 

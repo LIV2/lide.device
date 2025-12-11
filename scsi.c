@@ -137,6 +137,10 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
     BYTE error;
 
+    if (data == NULL) {
+        return IOERR_BADADDRESS;
+    }
+
     data->peripheral_type   = unit->deviceType;
     data->removable_media   = 0;
     data->version           = 2;
@@ -159,7 +163,14 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
 
     CopyMem(&identity[ata_identify_model],&data->vendor,24);
     CopyMem(&identity[ata_identify_fw_rev],&data->revision,4);
-    CopyMem(&identity[ata_identify_serial],&data->serial,8);
+
+    scsi_command->scsi_Actual = 36;
+
+    if (scsi_command->scsi_Length >= sizeof(struct SCSI_Inquiry)) {
+        CopyMem(&identity[ata_identify_serial],&data->serial,8);
+        scsi_command->scsi_Actual += 8;
+    }
+
     FreeMem(identity,512);
     scsi_command->scsi_Actual = scsi_command->scsi_Length;
     return 0;
