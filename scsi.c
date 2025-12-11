@@ -270,6 +270,9 @@ BYTE scsi_mode_sense_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
         return error;
     }
 
+    if (scsi_command->scsi_Length < ((page == 0x03 || page == 0x04) ? 28 : (page == 0x3f ? 52 : 0)))
+        return IOERR_BADLENGTH;
+
     UBYTE *data_length = data;  // Mode data length
     data[1] = unit->deviceType; // Mode parameter: Media type
     data[2] = 0;                // DPOFUA
