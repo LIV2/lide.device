@@ -16,6 +16,7 @@ BUILD_DATE := $(shell date  +"%d.%m.%Y")
 export BUILD_DATE
 export GIT_REF
 
+MAKE=make -j -s
 CC=m68k-amigaos-gcc
 CFLAGS+=-mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -Wno-unused-value -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
@@ -78,15 +79,15 @@ build: $(OBJ) | $(ASMOBJ)
 
 lide.device: $(SRCS)
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -s TARGET=lide.device build
+	@${MAKE} TARGET=lide.device build
 
 amigapci-lide.device: $(SRCS)
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -s TARGET=amigapci-lide.device AMIGAPCI=1 build
+	@${MAKE} TARGET=amigapci-lide.device AMIGAPCI=1 build
  
 AIDE-lide.device: $(SRCS)
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -s TARGET=AIDE-lide.device SIMPLE_IDE=1 build
+	@${MAKE} TARGET=AIDE-lide.device SIMPLE_IDE=1 build
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(OBJDIR)
@@ -105,28 +106,28 @@ $(OBJDIR)/%.o: %.S
 
 $(ROM): $(PROJECT)
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -sC bootrom
+	@${MAKE} -C bootrom
 
 lideflash/lideflash:
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -sC lideflash
+	@${MAKE} -C lideflash
 	@echo "Done."
 
 lideflash: lideflash/lideflash
 
 lidetool/lidetool:
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -sC lidetool
+	@${MAKE} -C lidetool
 	@echo "Done."
 
 rename/renamelide:
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -sC rename
+	@${MAKE} -C rename
 	@echo "Done."
 
 $(BUILDDIR)/AIDE-boot-$(VERSION).adf: AIDE-$(PROJECT)
 	@echo "${WHITE}#### Building $@ ####${NC}"
-	@make -sC aide-boot
+	@${MAKE} -C aide-boot
 	@mkdir -p $(BUILDDIR)
 	@mv aide-boot/aide-boot.adf $@
 
@@ -180,9 +181,9 @@ clean:
 	@-rm -rf obj
 	@-rm -f *.device
 	@-rm -f *.rom
-	@make -sC bootrom clean
-	@make -sC lideflash clean
-	@make -sC lidetool clean
-	@make -sC rename clean
+	@${MAKE} -C bootrom clean
+	@${MAKE} -C lideflash clean
+	@${MAKE} -C lidetool clean
+	@${MAKE} -C rename clean
 	@-rm -rf $(BUILDDIR)
-	@make -sC aide-boot clean
+	@${MAKE} -C aide-boot clean
