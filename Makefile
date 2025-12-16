@@ -28,7 +28,6 @@ ifneq ($(VERSION),)
 DISK=lide-update-$(VERSION).adf
 DEVICE_VERSION=$(shell echo $(VERSION) | awk -F'-' '{split($$1,a,".");print a[1]}')
 DEVICE_REVISION=$(shell echo $(VERSION) | awk -F'-' '{split($$1,a,".");print a[2]}')
-#$(shell echo $(VERSION) | )
 CFLAGS+=-DDEVICE_VERSION=$(DEVICE_VERSION) -DDEVICE_REVISION=$(DEVICE_REVISION)
 
 export DEVICE_REVISION
@@ -137,7 +136,7 @@ $(BUILDDIR)/$(DISK): $(ROM) AIDE-lide.device lideflash/lideflash rename/renameli
 	@echo "${WHITE}#### Building $@ ####${NC}"
 	@mkdir -p $(BUILDDIR)
 	@cp $(ROM) build
-	@echo -n 'lideflash -I $(ROM)\n' > $(BUILDDIR)/startup-sequence
+	@echo 'lideflash -I $(ROM)' > $(BUILDDIR)/startup-sequence
 	@xdftool $(BUILDDIR)/$(DISK) format lide-update + \
 	                            boot install + \
 	                            write $(ROM) + \
@@ -151,7 +150,7 @@ $(BUILDDIR)/$(DISK): $(ROM) AIDE-lide.device lideflash/lideflash rename/renameli
 	                            write info/lide.device.info Expansion/lide.device.info + \
 	                            write lide.device Expansion/lide.device + \
 	                            write AIDE-lide.device AIDE-lide.device
-	@echo -n "Done."
+	@echo "Done."
 
 $(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info AIDE-lide.device
 	@mkdir -p $(BUILDDIR)
