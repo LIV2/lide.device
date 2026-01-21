@@ -417,7 +417,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
         struct ConfigDev *realcd;
 
         if (!(realcd = FindConfigDev(NULL,BOARD_MANUF_ID,BOARD_PROD_ID))) {
-            Info("AmigaPCI IDE not found\n");
+            Info("IDE interface not found\n");
             Cleanup(dev);
             return NULL;
         }

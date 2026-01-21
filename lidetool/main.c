@@ -190,13 +190,18 @@ static void DumpUnit(struct IOStdReq *req) {
 BYTE setTransferMode(struct IOStdReq *req) {
   BYTE error = 0;
 
+  if (config->Mode == 'a'-'0') {
+    req->io_Length = (SysBase->AttnFlags & (AFF_68030 | AFF_68040 | AFF_68060)) ? longword_move : longword_movem;
+  } else {
+      req->io_Length = config->Mode;
+  }
+
   req->io_Data    = NULL;
   req->io_Offset  = 0;
-  req->io_Length  = config->Mode;
   req->io_Command = CMD_XFER;
   error = DoIO((struct IORequest *)req);
   if (error == 0) {
-    printf("Transfer mode configured for unit %d\n",config->Unit);
+    printf("Transfer mode %s configured for unit %d\n",(req->io_Length == longword_move) ? "longword_move" : "longword_movem", config->Unit);
   } else {
     printf("IO Error %d\n", error);
   }

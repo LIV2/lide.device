@@ -228,86 +228,6 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 }
 
 /**
- * ata_bench
- *
- * Measure the amount of E Clock ticks taken to transfer 512K from the unit
- *
- * @param unit Pointer to an IDEUnit struct
- * @param xfer_routine Pointer to one of the transfer routines
- * @param buffer pointer to a 512 byte buffer
- * @return tick count
- *
- */
-static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *buffer) {
-    struct ExecBase *SysBase = unit->SysBase;
-    struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
-    struct EClockVal *startTime;
-    struct EClockVal *endTime;
-    ULONG ticks = 0;
-
-    if (TimerBase->dd_Library.lib_Version < 36) return 0;
-
-    if (buffer) {
-        ata_xfer_func do_xfer = xfer_routine;
-        if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-            if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-                ReadEClock(startTime);
-
-                for (int i=0; i<1024; i++) {
-                    do_xfer((void *)unit->drive.status_command,buffer);
-                }
-
-                ReadEClock(endTime);
-                ticks =  (*(uint64_t *)endTime) - (*(uint64_t *)startTime);
-                FreeMem(endTime,sizeof(struct EClockVal));
-            }
-            FreeMem(startTime,sizeof(struct EClockVal));
-        }
-    }
-    return ticks;
-}
-
-/**
- * ata_autoselect_xfer
- *
- * Set the transfer method for the unit based on the CPU, Board type and benchmark result
- *
- * @param unit Pointer to an IDEUnit struct
- * @return transfer method
- */
-static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
-    struct ExecBase *SysBase = unit->SysBase;
-    ULONG ticks;
-    void *buf;
-
-    // longword_movem requires 512 Byte register spacing
-    if ((unit->drive.lbaMid - unit->drive.lbaLow) != 512)
-        return longword_move;
-
-    // longword_movem will always be faster on a standard 68000
-    if ((SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) == 0)
-        return longword_movem;
-
-    // ReadEClock needed by ata_bench not supported before Kick 2.0
-    if (SysBase->LibNode.lib_Version < 36)
-        return longword_movem;
-
-    if ((buf = AllocMem(512,MEMF_ANY))) {
-        enum xfer method;
-        ticks = ata_bench(unit,ata_read_long_movem,buf);
-        if (ticks > 0 && ata_bench(unit,ata_read_long_move,buf) < ticks) {
-            method = longword_move;
-        } else {
-            method = longword_movem;
-        }
-        FreeMem(buf,512);
-        return method;
-    } else {
-        return longword_movem;
-    }
-}
-
-/**
  * ata_set_xfer
  *
  * Sets the transfer routine for the unit
@@ -369,8 +289,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     *unit->shadowDevHead = *unit->drive.devHead = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
-    enum xfer method = ata_autoselect_xfer(unit);
-    ata_set_xfer(unit,method);
+    ata_set_xfer(unit,longword_movem);
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
