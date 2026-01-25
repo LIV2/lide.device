@@ -312,12 +312,12 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     if (ata_identify(unit,buf) == true) {
         Info("INIT: ATA Drive found!\n");
 
-        unit->flags.lba            = (buf[ata_identify_capabilities] & ata_capability_lba) != 0;
+        unit->flags.lba           = (buf[ata_identify_capabilities] & ata_capability_lba) != 0;
         unit->cylinders           = buf[ata_identify_cylinders];
         unit->heads               = buf[ata_identify_heads];
         unit->sectorsPerTrack     = buf[ata_identify_sectors];
         unit->blockSize           = 512;
-        unit->logicalSectors      = buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
+        unit->logicalSectors      = (uint64_t)buf[ata_identify_logical_sectors+1] << 16 | buf[ata_identify_logical_sectors];
         unit->blockShift          = 0;
         unit->flags.mediumPresent = true;
         unit->multipleCount       = buf[ata_identify_multiple] & 0xFF;
