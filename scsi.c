@@ -8,6 +8,7 @@
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <string.h>
+#include <limits.h>
 
 #include "ata.h"
 #include "debug.h"
@@ -16,7 +17,6 @@
 #include "newstyle.h"
 #include "scsi.h"
 #include "td64.h"
-
 /**
  * fake_scsi_sense
  *
@@ -137,6 +137,10 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
     BYTE error;
 
+    if (data == NULL) {
+        return IOERR_BADADDRESS;
+    }
+
     data->peripheral_type   = unit->deviceType;
     data->removable_media   = 0;
     data->version           = 2;
@@ -159,21 +163,28 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
 
     CopyMem(&identity[ata_identify_model],&data->vendor,24);
     CopyMem(&identity[ata_identify_fw_rev],&data->revision,4);
-    CopyMem(&identity[ata_identify_serial],&data->serial,8);
+
+    scsi_command->scsi_Actual = 36;
+
+    if (scsi_command->scsi_Length >= sizeof(struct SCSI_Inquiry)) {
+        CopyMem(&identity[ata_identify_serial],&data->serial,8);
+        scsi_command->scsi_Actual += 8;
+    }
+
     FreeMem(identity,512);
     scsi_command->scsi_Actual = scsi_command->scsi_Length;
     return 0;
 }
 
 /**
- * scsi_read_capacity_emu
+ * scsi_read_capacity_10_emu
  *
- * Emulate SCSI-Direct READ CAPACITY command
+ * Emulate SCSI-Direct READ CAPACITY (10) command
  *
  * @param unit Pointer to an IDEUnit struct
  * @param scsi_command Pointer to a SCSICmd struct
 */
-BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_CAPACITY_10 *data = (struct SCSI_CAPACITY_10 *)scsi_command->scsi_Data;
     BYTE error;
 
@@ -187,15 +198,46 @@ BYTE scsi_read_capacity_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) 
 
     data->block_size = unit->blockSize;
 
-    if (cdb->flags & 0x01) {
-        // Partial Medium Indicator - Return end of cylinder
-        // Implement this so HDToolbox stops moaning about track size
-        ULONG spc = unit->sectorsPerTrack * unit->heads;
-        data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
+    if (unit->logicalSectors < ULONG_MAX) {
+        if (cdb->flags & 0x01) {
+            // Partial Medium Indicator - Return end of cylinder
+            // Implement this so HDToolbox stops moaning about track size
+            ULONG spc = unit->sectorsPerTrack * unit->heads;
+            data->lba = (((cdb->lba / spc) + 1) * spc) - 1;
+        } else {
+            data->lba = (unit->logicalSectors) - 1;
+        }
     } else {
-        data->lba = (unit->logicalSectors) - 1;
+        data->lba = ULONG_MAX;
     }
 
+
+    scsi_command->scsi_Actual = 8;
+
+    return 0;
+}
+
+
+/**
+ * scsi_read_capacity_16_emu
+ *
+ * Emulate SCSI-Direct READ CAPACITY (16) command
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @param scsi_command Pointer to a SCSICmd struct
+*/
+BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
+    struct SCSI_CAPACITY_16 *data = (struct SCSI_CAPACITY_16 *)scsi_command->scsi_Data;
+    BYTE error;
+
+    if (data == NULL) {
+        error = IOERR_BADADDRESS;
+        fake_scsi_sense(scsi_command,0,0,error);
+        return error;
+    }
+
+    data->block_size = unit->blockSize;
+    data->lba = unit->logicalSectors - 1;
 
     scsi_command->scsi_Actual = 8;
 
@@ -227,6 +269,9 @@ BYTE scsi_mode_sense_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
         fake_scsi_sense(scsi_command,0,0,error);
         return error;
     }
+
+    if (scsi_command->scsi_Length < ((page == 0x03 || page == 0x04) ? 28 : (page == 0x3f ? 52 : 0)))
+        return IOERR_BADLENGTH;
 
     UBYTE *data_length = data;  // Mode data length
     data[1] = unit->deviceType; // Mode parameter: Media type

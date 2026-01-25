@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include "ata.h"
 #include "atapi.h"
@@ -26,7 +27,7 @@
 #include "lide_alib.h"
 #include "mounter/mounter.h"
 
-#ifdef NO_AUTOCONFIG
+#ifdef FAKE_CONFIGDEV
 extern UBYTE bootblock, bootblock_end;
 #endif
 
@@ -108,7 +109,7 @@ char * set_dev_name(struct DeviceBase *dev) {
     return NULL;
 }
 
-#ifdef NO_AUTOCONFIG
+#ifdef FAKE_CONFIGDEV
 /**
  * CreateFakeConfigDev
  * Create fake ConfigDev and DiagArea to support autoboot without requiring real autoconfig device.
@@ -200,9 +201,9 @@ static BOOL FindCDFS() {
 
 /**
  * ioreq_is_valid
- * 
+ *
  * Check if the supplied IOReq points to a valid unit
- * 
+ *
  * @param dev Pointer to DeviceBase
  * @param ior The ioreq to test
  * @returns bool
@@ -268,6 +269,7 @@ static void Cleanup(struct DeviceBase *dev) {
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
+#ifndef ATA_CHANNELS
 /**
  * detectChannels
  *
@@ -328,6 +330,7 @@ static BYTE detectChannels(struct ConfigDev *cd) {
     return 1;
 
 }
+#endif
 
 /**
  * init_device
@@ -374,7 +377,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
     struct ConfigDev *cd;
     struct Task *self = FindTask(NULL);
 
-#ifndef NO_AUTOCONFIG
+#if !defined(BOARD_MANUF_ID) && !defined(BOARD_BASE)
 
     struct CurrentBinding cb;
 
@@ -410,12 +413,25 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
             Cleanup(dev);
             return NULL;
         }
+#ifdef BOARD_MANUF_ID
+        struct ConfigDev *realcd;
+
+        if (!(realcd = FindConfigDev(NULL,BOARD_MANUF_ID,BOARD_PROD_ID))) {
+            Info("IDE interface not found\n");
+            Cleanup(dev);
+            return NULL;
+        }
+        APTR BOARD_BASE = realcd->cd_BoardAddr;
+#endif
         cd->cd_BoardAddr = (APTR)BOARD_BASE;
         cd->cd_BoardSize = 0x1000;
         numBoards = 1;
 #endif
+#ifndef ATA_CHANNELS
         UBYTE channels = detectChannels(cd);
-
+#else
+        UBYTE channels = ATA_CHANNELS;
+#endif
         for (int c=0; c < channels; c++) {
 
             Info("Starting IO Task %ld\n",dev->numTasks);
@@ -466,7 +482,7 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
             cd->cd_Flags &= ~(CDF_CONFIGME);
             cd->cd_Driver = dev;
         }
-#ifndef NO_AUTOCONFIG
+#if !defined(BOARD_MANUF_ID) && !defined(BOARD_BASE)
     }
 #endif
     Info("Detected %ld drives, %ld boards\n",((volatile struct DeviceBase *)dev)->numUnits, numBoards);
@@ -610,8 +626,13 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     // Clear the geometry struct beforehand to make sure reserved / unused parts are zero
     memset(geometry,0,sizeof(struct DriveGeometry));
 
+    if (unit->logicalSectors > ULONG_MAX) {
+        geometry->dg_TotalSectors = ULONG_MAX;
+    } else {
+        geometry->dg_TotalSectors = unit->logicalSectors;
+    }
+
     geometry->dg_SectorSize   = unit->blockSize;
-    geometry->dg_TotalSectors = unit->logicalSectors;
     geometry->dg_Cylinders    = unit->cylinders;
     geometry->dg_CylSectors   = (unit->sectorsPerTrack * unit->heads);
     geometry->dg_Heads        = unit->heads;
@@ -934,26 +955,31 @@ static const ULONG device_vectors[] =
  * @param checkFire If true, only modify when gameport 1 button is pressed
  * @param increment Amount to increase both device and boot node priorities
  */
-void AdjustBootPriority(struct ExecBase *SysBase, char *bootname, struct List *MountList, bool checkFire, int increment) {
+void AdjustBootPriority(struct ExecBase *SysBase, char *deviceName, char *bootname, struct List *MountList, bool checkFire, int increment) {
     volatile struct CIA *ciaa = (struct CIA *)0x0bfe001;
     struct BootNode *bn;
     struct DeviceNode *dn;
+    struct FileSysStartupMsg *fssm;
 
     for (bn = (struct BootNode *)MountList->lh_Head;
         bn->bn_Node.ln_Succ;
         bn = (struct BootNode *)bn->bn_Node.ln_Succ)
     {
         dn = bn->bn_DeviceNode;
-        if (dn->dn_Priority != -128) 
-        {
-            if (L_CompareBSTR(BADDR(dn->dn_Name),bootname)) {
-                if(!checkFire || (ciaa->ciapra & CIAF_GAMEPORT1)==0) {
-                    dn->dn_Priority+=increment;
-                    bn->bn_Node.ln_Pri+=increment;
-                    Remove((struct Node *)bn);
-                    Enqueue(MountList,(struct Node *)bn);
-                    break;
-                }
+        fssm = BADDR(dn->dn_Startup);
+        char *bn_deviceName = (char *)BADDR(fssm->fssm_Device) + 1;
+
+        // Only tweak boot nodes created by this instance
+        if (strcmp(bn_deviceName,deviceName) != 0)
+            continue;
+
+        if (dn->dn_Priority != -128 && L_CompareBSTR(BADDR(dn->dn_Name),bootname)) {
+            if(!checkFire || (ciaa->ciapra & CIAF_GAMEPORT1)==0) {
+                dn->dn_Priority+=increment;
+                bn->bn_Node.ln_Pri+=increment;
+                Remove((struct Node *)bn);
+                Enqueue(MountList,(struct Node *)bn);
+                break;
             }
         }
     }
@@ -969,7 +995,7 @@ void AdjustBootPriority(struct ExecBase *SysBase, char *bootname, struct List *M
  *
  * @param SysBase Pointer to the ExecBase system library base
  */
-void TweakBootList(struct ExecBase *SysBase) {
+void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
     struct ExpansionBase *ExpansionBase;
 
     if (ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) {
@@ -979,12 +1005,12 @@ void TweakBootList(struct ExecBase *SysBase) {
 
         Forbid();
 
-        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,true,2);
+        AdjustBootPriority(SysBase,deviceName,bootname,&ExpansionBase->MountList,true,2);
 
         bootname[5]=0x30+(major/10);
         bootname[6]=0x30+(major%10);
 
-        AdjustBootPriority(SysBase,bootname,&ExpansionBase->MountList,false,1);
+        AdjustBootPriority(SysBase,deviceName,bootname,&ExpansionBase->MountList,false,1);
 
         Permit();
 
@@ -1031,7 +1057,7 @@ static struct Library * init(BPTR seg_list asm("a0"))
         MountDrive(&ms);
 
         if (!seg_list) // Only tweak if we're in boot
-            TweakBootList(SysBase);
+            TweakBootList(SysBase,mydev->lib.lib_Node.ln_Name);
     }
 done:
     return (struct Library *)mydev;

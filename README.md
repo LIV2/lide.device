@@ -19,7 +19,7 @@
 ## Features
 * Autoboot
 * Works with Kickstart 1.3 and up
-* [Supports up to 2TB drives*](#large-drive-4gb-support)
+* [Supports 2TB+ drives*](#large-drive-4gb-support)
 * Supports ATAPI Devices (CD/DVD-ROM, Zip disk etc)
 * Boot from ZIP/LS-120 etc
 * [Boot from CD-ROM*](#boot-from-cd-rom)
@@ -92,6 +92,8 @@ This can be achieved on RIPPLE and 68EC020-TK boards using `lideflash` i.e
 ## Large drive (>4GB) support
 For drives larger than 4GB it is required to use a Filesystem that supports TD64, NSD or SCSI-Direct  
 The default FFS in OS 3.1 does **not** support these, and use of this above the 4GB boundary will result in data corruption!
+
+**For drives larger than 2TB do not place partitions past the 2TB boundary! this will lead to filesystem corruption**
 
 There are several options for larger drive support
 * [PFS3](https://aminet.net/package/disk/misc/pfs3aio)

@@ -16,8 +16,6 @@
 
 #ifdef SIMPLE_IDE
 
-#define NO_AUTOCONFIG
-
 #define BOARD_BASE 0xEF0000
 #define CHANNEL_0  0x2000
 #define CHANNEL_1  0x1000
@@ -110,8 +108,8 @@ bool ata_identify(struct IDEUnit *, UWORD *);
 bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
-BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit);
-BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit);
+BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit);
+BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit);
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 

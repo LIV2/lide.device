@@ -21,9 +21,9 @@
 #include "sleep.h"
 #include "lide_alib.h"
 
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 
 /**
  * ata_status_reg_delay
@@ -228,90 +228,10 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 }
 
 /**
- * ata_bench
- * 
- * Measure the amount of E Clock ticks taken to transfer 512K from the unit
- * 
- * @param unit Pointer to an IDEUnit struct
- * @param xfer_routine Pointer to one of the transfer routines
- * @param buffer pointer to a 512 byte buffer
- * @return tick count
- * 
- */
-static ULONG ata_bench(struct IDEUnit *unit, ata_xfer_func xfer_routine, void *buffer) {
-    struct ExecBase *SysBase = unit->SysBase;
-    struct Device *TimerBase = unit->itask->tr->tr_node.io_Device;
-    struct EClockVal *startTime;
-    struct EClockVal *endTime;
-    ULONG ticks = 0;
-
-    if (TimerBase->dd_Library.lib_Version < 36) return 0;
-
-    if (buffer) {
-        ata_xfer_func do_xfer = xfer_routine;
-        if ((startTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-            if ((endTime = (struct EClockVal *)AllocMem(sizeof(struct EClockVal),MEMF_ANY|MEMF_CLEAR))) {
-                ReadEClock(startTime);
-
-                for (int i=0; i<1024; i++) {
-                    do_xfer((void *)unit->drive.status_command,buffer);
-                }
-
-                ReadEClock(endTime);
-                ticks =  (*(uint64_t *)endTime) - (*(uint64_t *)startTime);
-                FreeMem(endTime,sizeof(struct EClockVal));
-            }
-            FreeMem(startTime,sizeof(struct EClockVal));
-        }
-    }
-    return ticks;
-}
-
-/**
- * ata_autoselect_xfer
- * 
- * Set the transfer method for the unit based on the CPU, Board type and benchmark result
- * 
- * @param unit Pointer to an IDEUnit struct
- * @return transfer method
- */
-static enum xfer ata_autoselect_xfer(struct IDEUnit *unit) {
-    struct ExecBase *SysBase = unit->SysBase;
-    ULONG ticks;
-    void *buf;
-
-    // longword_movem requires 512 Byte register spacing
-    if ((unit->drive.lbaMid - unit->drive.lbaLow) != 512)
-        return longword_move;
-
-    // longword_movem will always be faster on a standard 68000
-    if ((SysBase->AttnFlags & (AFF_68020 | AFF_68030 | AFF_68040 | AFF_68060)) == 0)
-        return longword_movem;
-    
-    // ReadEClock needed by ata_bench not supported before Kick 2.0
-    if (SysBase->LibNode.lib_Version < 36)
-        return longword_movem;
-    
-    if ((buf = AllocMem(512,MEMF_ANY))) {
-        enum xfer method;
-        ticks = ata_bench(unit,ata_read_long_movem,buf);
-        if (ticks > 0 && ata_bench(unit,ata_read_long_move,buf) < ticks) {
-            method = longword_move;
-        } else {
-            method = longword_movem;
-        }
-        FreeMem(buf,512);
-        return method;
-    } else {
-        return longword_movem;
-    }
-}
-
-/**
  * ata_set_xfer
- * 
+ *
  * Sets the transfer routine for the unit
- * 
+ *
  * @param unit Pointer to an IDEUnit strict
  * @param method Transfer routine
  */
@@ -357,7 +277,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     UWORD *buf;
     bool dev_found = false;
-    
+
     unit->drive.data           = (UWORD*) (base + ata_reg_data);
     unit->drive.error_features = (UBYTE*) (base + ata_reg_error);
     unit->drive.sectorCount    = (UBYTE*) (base + ata_reg_sectorCount);
@@ -369,8 +289,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     *unit->shadowDevHead = *unit->drive.devHead = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
-    enum xfer method = ata_autoselect_xfer(unit);
-    ata_set_xfer(unit,method);
+    ata_set_xfer(unit,longword_movem);
 
     for (int i=0; i<(8*NEXT_REG); i+=NEXT_REG) {
         // Check if the bus is floating (D7/6 pulled-up with resistors)
@@ -412,47 +331,47 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
         // Support LBA-48 but only up to 2TB
         if ((buf[ata_identify_features] & ata_feature_lba48) && unit->logicalSectors >= 0xFFFFFFF) {
-            if (buf[ata_identify_lba48_sectors + 2] > 0 ||
-                buf[ata_identify_lba48_sectors + 3] > 0) {
-                Info("INIT: Rejecting drive larger than 2TB\n");
-                goto ident_failed;
-            }
 
             unit->flags.lba48 = true;
-            Info("INIT: Drive supports LBA48 mode \n");
-            unit->logicalSectors = (buf[ata_identify_lba48_sectors + 1] << 16 |
-                                    buf[ata_identify_lba48_sectors]);
+            Info("INIT: Large drive, using LBA48 mode \n");
+            unit->logicalSectors = 0;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors])   << 0;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors+1]) << 16;
+            unit->logicalSectors |= ((uint64_t)buf[ata_identify_lba48_sectors+2]) << 32;
+
             unit->write_taskfile = &write_taskfile_lba48;
 
         } else if (unit->flags.lba == true) {
             // LBA-28 up to 127GB
             unit->write_taskfile = &write_taskfile_lba;
-
         } else {
             // CHS Mode
             Warn("INIT: Drive doesn't support LBA mode\n");
             unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
         }
-
-        Info("INIT: Logical sectors: %ld\n",unit->logicalSectors);
-
-        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
+        
+        if (unit->flags.lba48) {
+            Info("INIT: Logical sectors: 0x%lx%08lx\n",(uint64_t)unit->logicalSectors);
+        } else {
+            Info("INIT: Logical sectors: %ld\n",(ULONG)unit->logicalSectors);
+        }
 
         if (unit->logicalSectors >= 267382800) {
             // For drives larger than 127GB fudge the geometry
-            unit->heads           = 63;
-            unit->sectorsPerTrack = 255;
-            unit->cylinders       = (unit->logicalSectors / (63*255));
+            unit->heads           = 64;
+            unit->sectorsPerTrack = 256;
+            unit->cylinders       = unit->logicalSectors >> 14;
         } else if (unit->logicalSectors >= 16514064) {
             // If a drive is larger than 8GB then the drive will report a geometry of 16383/16/63 (CHS)
             // In this case generate a new Cylinders value
-            unit->heads = 16;
+            unit->heads           = 16;
             unit->sectorsPerTrack = 255;
-            unit->cylinders = (unit->logicalSectors / (16*255));
+            unit->cylinders       = ((ULONG)unit->logicalSectors / (16*255));
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
 
+        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
 
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
@@ -483,7 +402,11 @@ ident_failed:
     Info("INIT: Blockshift: %ld\n",unit->blockShift);
     unit->flags.present = true;
 
-    Info("INIT: LBAs %ld Blocksize: %ld\n",unit->logicalSectors,unit->blockSize);
+    if (unit->flags.lba48) {
+        Info("INIT: LBAs 0x%lx%08lx Blocksize: %ld\n",(uint64_t)unit->logicalSectors,unit->blockSize);
+    } else{
+        Info("INIT: LBAs %ld Blocksize: %ld\n",(ULONG)unit->logicalSectors,unit->blockSize);
+    }
 
     if (buf) FreeMem(buf,512);
     return true;
@@ -539,7 +462,7 @@ bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
+BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -627,7 +550,7 @@ BYTE ata_read(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_write(void *buffer, ULONG lba, ULONG count, struct IDEUnit *unit) {
+BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -748,10 +671,11 @@ void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
-    UWORD cylinder = (lba / (unit->heads * unit->sectorsPerTrack));
-    UBYTE head     = ((lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
-    UBYTE sector   = (lba % unit->sectorsPerTrack) + 1;
+static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
+
+    UWORD cylinder = ((ULONG)lba / (unit->heads * unit->sectorsPerTrack));
+    UBYTE head     = (((ULONG)lba / unit->sectorsPerTrack) % unit->heads) & 0xF;
+    UBYTE sector   = ((ULONG)lba % unit->sectorsPerTrack) + 1;
 
     BYTE devHead;
 
@@ -778,7 +702,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
+static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
     BYTE devHead;
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
@@ -804,14 +728,14 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, ULONG lba, U
  * @param unit Pointer to an IDEUnit struct
  * @param lba  Pointer to the LBA variable
 */
-static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba, UBYTE sectorCount, UBYTE features) {
+static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features) {
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
         return HFERR_SelTimeout;
 
     *unit->drive.sectorCount    = (sectorCount == 0) ? 1 : 0;
-    *unit->drive.lbaHigh        = 0;
-    *unit->drive.lbaMid         = 0;
+    *unit->drive.lbaHigh        = (UBYTE)(lba >> 40);
+    *unit->drive.lbaMid         = (UBYTE)(lba >> 32);
     *unit->drive.lbaLow         = (UBYTE)(lba >> 24);
     *unit->drive.sectorCount    = sectorCount; // Count value of 0 indicates to transfer 256 sectors
     *unit->drive.lbaHigh        = (UBYTE)(lba >> 16);
@@ -828,7 +752,7 @@ static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, ULONG lba,
 /**
  * ata_set_pio
  *
- * @param unit Pointer t oan IDEUnit struct
+ * @param unit Pointer to an IDEUnit struct
  * @param pio pio mode
 */
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {

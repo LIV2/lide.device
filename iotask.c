@@ -108,10 +108,12 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
     struct SCSICmd *scsi_command = ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
+    if (!scsi_command) return IOERR_BADADDRESS;
+
     UBYTE *data    = (APTR)scsi_command->scsi_Data;
     UBYTE *command = (APTR)scsi_command->scsi_Command;
 
-    ULONG lba;
+    uint64_t lba;
     ULONG count;
     BYTE error = 0;
     scsi_command->scsi_SenseActual = 0;
@@ -144,7 +146,11 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_READ_CAPACITY_10:
-                error = scsi_read_capacity_emu(unit,scsi_command);
+                error = scsi_read_capacity_10_emu(unit,scsi_command);
+                break;
+
+            case SCSI_CMD_READ_CAPACITY_16:
+                error = scsi_read_capacity_16_emu(unit,scsi_command);
                 break;
 
             case SCSI_CMD_READ_6:
@@ -158,11 +164,17 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
             case SCSI_CMD_READ_10:
             case SCSI_CMD_WRITE_10:
-                lba    = ((struct SCSI_CDB_10 *)command)->lba;
-                count  = ((struct SCSI_CDB_10 *)command)->length;
+                lba   = ((struct SCSI_CDB_10 *)command)->lba;
+                count = ((struct SCSI_CDB_10 *)command)->length;
+                goto do_scsi_transfer;
+
+            case SCSI_CMD_READ_16:
+            case SCSI_CMD_WRITE_16:
+                lba   = ((struct SCSI_CDB_16 *)command)->lba;
+                count = ((struct SCSI_CDB_16 *)command)->length;
 
     do_scsi_transfer:
-                if (data == NULL || (lba + count) >= unit->logicalSectors) {
+                if (data == NULL || (lba + count) > unit->logicalSectors) {
                     error = IOERR_BADADDRESS;
                     fake_scsi_sense(scsi_command,lba,count,error);
                     break;
@@ -373,7 +385,8 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
     struct IOExtTD *iotd;
     struct IDEUnit *unit;
     UWORD blockShift;
-    ULONG lba;
+    uint64_t lba;
+    ULONG lba_high, lba_low;
     ULONG count;
     BYTE  error = 0;
     enum xfer_dir direction = WRITE;
@@ -473,7 +486,15 @@ transfer:
             }
 
             blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
-            lba = (((long long)ioreq->io_Actual << 32 | ioreq->io_Offset) >> blockShift);
+
+            // This looks like a lond-winded way to get the LBA doesn't it?
+            // Splitting up the operation like this results in smaller code size (avoids 64-bit math from libgcc)
+            lba_high = ioreq->io_Actual >> blockShift;
+            lba_low = ioreq->io_Actual << (32 - blockShift);
+            lba_low |= (ioreq->io_Offset >> blockShift);
+
+            lba = ((uint64_t)lba_high << 32 | lba_low);
+
             count = (ioreq->io_Length >> blockShift);
 
             if (count == 0) {
@@ -482,13 +503,13 @@ transfer:
             }
 
             if ((lba + count) > (unit->logicalSectors)) {
-                Trace("Read past end of device\n");
+                Trace("Access past end of device\n");
                 error  = IOERR_BADADDRESS;
                 break;
             }
 
             if (unit->flags.atapi == true) {
-                error  = atapi_translate(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
+                error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
             } else {
                 if (direction == READ) {
                     error  = ata_read(ioreq->io_Data, lba, count, unit);
@@ -594,7 +615,7 @@ void __attribute__((noreturn)) io_task () {
             RemTask(NULL);
             Wait(0);
         }
-        
+
         signalMask |= (1 << itask->dcTimerMp->mp_SigBit);
 
         run_timer(SysBase,itask->dcTimerReq,CHANGEINT_INTERVAL,0);

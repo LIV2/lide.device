@@ -15,6 +15,19 @@
 
 #define MAX_UNITS 4
 
+#if AMIGAPCI
+#define BOARD_BASE 0xDB0000
+#define FAKE_CONFIGDEV 1
+#endif
+
+#ifdef SIMPLE_IDE
+#define NO_AUTOCONFIG 1
+#endif
+
+#ifdef NO_AUTOCONFIG
+#define FAKE_CONFIGDEV 1
+#endif
+
 // VSCode C/C++ extension doesn't like the asm("<reg>") syntax
 #ifdef __INTELLISENSE__
 #define asm(x)
@@ -47,7 +60,7 @@ struct IDEUnit {
     struct ExecBase *SysBase;
     struct IOTask *itask;
     struct Drive drive;
-    BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, ULONG, UBYTE, UBYTE);
+    BYTE  (*write_taskfile)(struct IDEUnit *, UBYTE, uint64_t, UBYTE, UBYTE);
     enum  xfer xferMethod;
     ata_xfer_func read_fast;
     ata_xfer_func write_fast;
@@ -65,7 +78,7 @@ struct IDEUnit {
     UWORD blockSize;
     UWORD blockShift;
     ULONG cylinders;
-    ULONG logicalSectors;
+    uint64_t logicalSectors;
     struct MinList changeInts;
     UBYTE multipleCount;
     struct {

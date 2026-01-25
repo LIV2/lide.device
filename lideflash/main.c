@@ -452,9 +452,8 @@ void printCurrentVersion(struct ConfigDev *cd) {
   }
 
   if (device) {
+    printf("Current version: ");
     printVersion(device->dd_Library.lib_IdString);
-  } else {
-    printf("Unknown\n");
   }
 }
 
@@ -705,7 +704,6 @@ int main(int argc, char *argv[])
         printf(" at Address 0x%06X\n",(int)cd->cd_BoardAddr);
         boards_found++;
         if (config->ide_rom_filename) {
-          printf("Current version: ");
           printCurrentVersion(cd);
 
         }

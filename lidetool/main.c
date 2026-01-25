@@ -169,7 +169,7 @@ static void DumpUnit(struct IOStdReq *req) {
     printf("Supports LBA:        %s\n", (unit->flags.lba) ? "Yes" : "No");
     printf("Supports LBA48:      %s\n", (unit->flags.lba48) ? "Yes" : "No");
     printf("C/H/S:               %d/%d/%d\n", unit->cylinders, unit->heads, unit->sectorsPerTrack);
-    printf("Logical Sectors:     %ld\n", (long int)unit->logicalSectors);
+    printf("Logical Sectors:     %llu\n", (uint64_t)unit->logicalSectors);
     printf("READ/WRITE Multiple: %s\n", (unit->flags.xferMultiple) ? "Yes" : "No");
     printf("Multiple count:      %d\n", unit->multipleCount);
     printf("Last Error: ");
@@ -190,13 +190,18 @@ static void DumpUnit(struct IOStdReq *req) {
 BYTE setTransferMode(struct IOStdReq *req) {
   BYTE error = 0;
 
+  if (config->Mode == 'a'-'0') {
+    req->io_Length = (SysBase->AttnFlags & (AFF_68030 | AFF_68040 | AFF_68060)) ? longword_move : longword_movem;
+  } else {
+      req->io_Length = config->Mode;
+  }
+
   req->io_Data    = NULL;
   req->io_Offset  = 0;
-  req->io_Length  = config->Mode;
   req->io_Command = CMD_XFER;
   error = DoIO((struct IORequest *)req);
   if (error == 0) {
-    printf("Transfer mode configured for unit %d\n",config->Unit);
+    printf("Transfer mode %s configured for unit %d\n",(req->io_Length == longword_move) ? "longword_move" : "longword_movem", config->Unit);
   } else {
     printf("IO Error %d\n", error);
   }
@@ -252,6 +257,8 @@ static char *trim(char *str, int bytes)
 static void identify_decode(UWORD *buf) {
     int bit;
     unsigned int atastd;
+    int pio;
+  
     for (int i=0; i<256; i++)
       buf[i] = __bswap16(buf[i]);
 
@@ -267,11 +274,15 @@ static void identify_decode(UWORD *buf) {
     printf("MaxMultSect:  %u [%s]\n", buf[59] & 0xff,
            (buf[59] & BIT(8)) ? "enabled" : "disabled");
     printf("PIO modes:   ");
-    for (bit = 0; bit < 8; bit++)
-      if (buf[64] & BIT(bit))
-        printf(" pio%u", bit);
-    if ((buf[64] & 0xff) == 0)
+    if (buf[53] & BIT(1)) {             // PIO Fields valid?
+      pio = (buf[64] & 0x3) << 3 | 0x7; // A value of 0 means PIO 0,1 are supported
+      for (bit = 0; bit < 8; bit++)
+        if (pio & BIT(bit))
+          printf(" pio%u", bit);
+    } else {
       printf("<none>");
+    }
+
     printf("\nDMA modes:   ");
     for (bit = 0; bit < 8; bit++)
       if (buf[63] & BIT(bit)) {

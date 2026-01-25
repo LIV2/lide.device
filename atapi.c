@@ -79,7 +79,7 @@ static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
  *
  * Polls the BSY bit in the status register until cleared, an error occurs, or the timeout is reached.
  *
- * For long-running commands (e.g., FORMAT UNIT, BLANK, up to 30 minutes), uses timer-based waits (1 ms per poll) to yield to other tasks, ensuring AmigaOS multitasking friendliness. 
+ * For long-running commands (e.g., FORMAT UNIT, BLANK, up to 30 minutes), uses timer-based waits (1 ms per poll) to yield to other tasks, ensuring AmigaOS multitasking friendliness.
  * For faster commands (e.g., READ (10), WRITE (10)), uses a ~1.4 µs delay via CIA register reads for CPU-independent timing and high throughput.
  *
  * Timeout durations:
@@ -733,7 +733,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
         if ((ret = atapi_packet(cmd,unit)) == 0) {
             unit->logicalSectors  = capacity.logicalSectors + 1;
             unit->blockSize       = capacity.blockSize;
-    
+
             while ((unit->blockSize >> unit->blockShift) > 1) {
                 unit->blockShift++;
             }
@@ -848,7 +848,7 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
             dest[1] = buf[2];       // Medium type
             dest[2] = buf[3];       // WP/DPOFUA Flags
             dest[3] = buf[7];       // Block descriptor length
-    
+
             // Copy the mode sense data
             for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
                 dest[i+4] = buf[i+8];
@@ -923,7 +923,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     dst[2] = src[1]; // Mediun Type
     dst[3] = src[2]; // Device specific parameter
     dst[7] = src[3]; // Block descriptor length
-  
+
     // Copy the Mode Parameters
     len = bufSize - 8;
     CopyMem(src + 4, dst + 8, len);
@@ -1039,11 +1039,11 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool imm
 
     if (loej)  operation |= (1<<1);
     if (start) operation |= (1<<0);
-  
+
     BYTE cdb[10] = {0};
     struct SCSI_FIXED_SENSE sense;
     memset(&sense,0,sizeof(struct SCSI_FIXED_SENSE));
-    
+
     struct SCSICmd cmd = {
         .scsi_Command     = (APTR)&cdb,
         .scsi_CmdActual   = 0,
@@ -1340,7 +1340,7 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
 
     if (scsi_command->scsi_SenseData == NULL || scsi_command->scsi_SenseLength == 0)
         return IOERR_BADADDRESS;
-    
+
     struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
 
     if (cmd != NULL) {
@@ -1351,7 +1351,7 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
             cmd->scsi_Length     = scsi_command->scsi_SenseLength;
             cmd->scsi_Flags      = SCSIF_READ;
             cmd->scsi_CmdLength  = 12;
-    
+
             ret = atapi_packet(cmd,unit);
             scsi_command->scsi_SenseActual = cmd->scsi_Actual;
 
