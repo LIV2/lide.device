@@ -171,8 +171,6 @@ relocate:       movem.l D2-D7/A2-A4,-(SP)
                 beq     .h_symbol
                 cmp.l   #HUNK_END,D0
                 beq     .hunk_end
-                cmp.l   #HUNK_RELRELOC32,D0
-                beq     .h_relreloc32
 .hunk_unknown:  move.l  #ALERT_BADHUNK,D7
                 bra     .relocbadhunk
 .h_data:
@@ -220,22 +218,6 @@ relocate:       movem.l D2-D7/A2-A4,-(SP)
                 beq     .hunkloop
                 bsr     getWord            // Get the padding word
                 bra     .hunkloop
-
-.h_relreloc32:  bsr     getWord            // Number of offsets
-                tst.l   D0
-                beq     .reloc32salign
-                move.l  D0,D2
-                sub.l   #1,D2
-                bsr     getWord            // Get number the offsets point to
-                lsl.l   #2,D0
-                move.l  (A4,D0.L),D4
-.dorelreloc32:  bsr     getWord
-                move.l  D4,D1              // Delta = Dest hunk - Current hunk - Offset
-                sub.l   A3,D1
-                sub.l   D0,D1
-                add.l   D1,(A3,D0.L)
-                dbra    D2,.dorelreloc32
-                bra     .h_relreloc32
 
 .h_symbol:      bsr     getLong            // Symbol type + name length
                 andi.l  #$FFFFFF,D0        // Mask off type
@@ -327,27 +309,43 @@ bootLide:       lea     (expansion,PC),A1
                 cmp.w   #37,LIB_VERSION(A2)
                 bcs     .fixbootpri
                 bset.b  #EBB_SILENTSTART,eb_Flags(A2)
-.fixbootpri:    ; Move the floppy to a lower bootPri than the HDD
+.fixbootpri:    ; Move the floppies to a lower bootPri than the HDD
                 ; This will cause the system to boot from the HDD when we start DOS
                 jsr     _LVOForbid(A6)
-                lea.l   eb_MountList(A2),A0
-                jsr     _LVORemHead(A6)         // Pop our BootNode from the mountlist
-                move.l  D0,A1
-                move.b  #-127,LN_PRI(A1)        // Lower the bootNode priority
-                
-                ; Change bootPri to -127
-                move.l  bn_DeviceNode(A1),A3    
+.restart:       lea.l   eb_MountList(A2),A4
+.next:          move.l  LN_SUCC(A4),D0
+                beq.s   .permit
+                move.L  D0,A4
+
+                move.l  bn_DeviceNode(A4),A3
+                move.l  dn_Name(A3),D0          // Check if this node is a floppy
+                lsl.l   #2,D0
+                move.l  D0,A0
+                move.l  (A0),D0
+                and.l   #$FFFFFF00,D0
+                cmp.l   #$03444600,D0           // DFx
+                bne     .next
+
                 move.l  dn_Startup(A3),D2       // FileSystemStartupMessage
                 lsl.l   #2,D2                   // Convert from BPTR
                 move.l  D2,A3
                 move.l  fssm_Environ(A3),D2     // DosEnvVec
                 lsl.l   #2,D2                   // Convert from BPTR
                 move.l  D2,A3
+
+                cmp.b   #-127,LN_PRI(A4)
+                beq     .next
+
+                move.b  #-127,LN_PRI(A4)        // Lower the bootNode priority
                 move.l  #-127,de_BootPri(A3)
 
+                move.l  A4,A1
+                jsr     _LVORemove(A6)          // Remove this boot node
                 lea.l   eb_MountList(A2),A0
-                jsr     _LVOEnqueue(A6)         // Enqueue our boot node
-                jsr     _LVOPermit(A6)
+                move.l  A4,A1
+                jsr     _LVOEnqueue(A6)         // Re-enqueue the boot node
+                bra.s   .restart
+.permit:        jsr     _LVOPermit(A6)
 
 .boot:          lea     (dos_name,PC),A1
                 moveq.l #0,D0
