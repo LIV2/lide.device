@@ -329,7 +329,6 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             unit->multipleCount = 1;
         }
 
-        // Support LBA-48 but only up to 2TB
         if ((buf[ata_identify_features] & ata_feature_lba48) && unit->logicalSectors >= 0xFFFFFFF) {
 
             unit->flags.lba48 = true;
