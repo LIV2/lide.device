@@ -764,8 +764,8 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
     if ((error = write_taskfile_lba(unit,ATA_CMD_SET_FEATURES,0,pio,0x03)) != 0)
         return error;
 
-    if ((error = ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)))
-        return error;
+    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
+        return IOERR_UNITBUSY;
 
     if (ata_check_error(unit)) return IOERR_BADLENGTH;
 
