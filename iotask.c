@@ -201,8 +201,8 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             default:
-                error = IOERR_NOCMD;
-                fake_scsi_sense(scsi_command,0,0,error);
+                error = HFERR_BadStatus;
+                fake_scsi_sense(scsi_command,0,0,IOERR_NOCMD);
                 break;
         }
     }
