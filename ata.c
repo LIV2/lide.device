@@ -238,6 +238,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
     switch (method) {
         default:
+#if NEXT_REG >= 512
         case longword_movem:
             unit->read_fast       = ata_read_long_movem;
             unit->read_unaligned  = ata_read_unaligned_long;
@@ -246,6 +247,7 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 
             unit->xferMethod = longword_movem;
             break;
+#endif
         case longword_move:
             unit->read_fast       = ata_read_long_move;
             unit->read_unaligned  = ata_read_unaligned_long;
