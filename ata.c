@@ -232,7 +232,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  *
  * Sets the transfer routine for the unit
  *
- * @param unit Pointer to an IDEUnit strict
+ * @param unit Pointer to an IDEUnit struct
  * @param method Transfer routine
  */
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
@@ -421,7 +421,7 @@ ident_failed:
  * @param multiple DRQ Block size
  * @return non-zero on error
 */
-bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
+BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     ata_select(unit,drvSel,true);
@@ -859,7 +859,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     if (protocol == ATA_PIO_IN || protocol == ATA_PIO_OUT) {
         for (int i = 0; i < count/2; i++) {
-            if (i % 512 == 0) {
+            if (i % 256 == 0) {
                 if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
                     ata_save_error(unit);
                     return IOERR_UNITBUSY;

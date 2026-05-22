@@ -105,7 +105,7 @@ enum xfer_dir {
 bool ata_init_unit(struct IDEUnit *unit, void *base);
 bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait);
 bool ata_identify(struct IDEUnit *, UWORD *);
-bool ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
+BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
 BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit);
