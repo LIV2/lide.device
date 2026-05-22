@@ -139,10 +139,10 @@ struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *
             // cd_Rom.er_Reserved0c is used as a pointer to diagArea by strap
             ULONG *da_Pointer = (ULONG *)&cd->cd_Rom.er_Reserved0c;
             *da_Pointer = (ULONG)diagArea;
+        } else {
+            FreeConfigDev(cd);
+            cd = NULL;
         }
-    } else {
-        FreeConfigDev(cd);
-        cd = NULL;
     }
     return cd;
 }
@@ -189,13 +189,13 @@ static BOOL FindCDFS() {
     struct FileSysResource *fsr = OpenResource(FSRNAME);
     struct FileSysEntry *fse;
 
-    if (fsr == NULL) return false;
+    if (fsr == NULL) return FALSE;
 
     for (fse = (struct FileSysEntry *)fsr->fsr_FileSysEntries.lh_Head; fse->fse_Node.ln_Succ != NULL; fse = (struct FileSysEntry *)fse->fse_Node.ln_Succ) {
-        if (fse->fse_DosType == 'CD01') return true;
+        if (fse->fse_DosType == 'CD01') return TRUE;
     }
 
-    return false;
+    return FALSE;
 }
 #endif
 
@@ -250,12 +250,13 @@ static void Cleanup(struct DeviceBase *dev) {
 
     if (dev->ExpansionBase) CloseLibrary((struct Library *)dev->ExpansionBase);
 
-    struct IOTask *itask;
+    struct IOTask *itask, *next;
 
     for (itask = (struct IOTask *)dev->ideTasks.mlh_Head;
          itask->mn_Node.mln_Succ != NULL;
-         itask = (struct IOTask *)itask->mn_Node.mln_Succ)
+         itask = next)
     {
+        next = (struct IOTask *)itask->mn_Node.mln_Succ;
         itask->cd->cd_Flags |= CDF_CONFIGME;
         FreeMem(itask,sizeof(struct IOTask));
     }
@@ -682,7 +683,6 @@ const UWORD supported_commands[] =
     TD_ADDCHANGEINT,
     TD_REMCHANGEINT,
     TD_REMOVE,
-    TD_PROTSTATUS,
     TD_CHANGENUM,
     TD_CHANGESTATE,
     TD_EJECT,
@@ -1025,6 +1025,7 @@ void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
 */
 static struct Library * init(BPTR seg_list asm("a0"))
 {
+    BOOL CDBoot = FALSE;
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     Info("Init driver.\n");
     struct DeviceBase *mydev = (struct DeviceBase *)MakeLibrary((ULONG *)&device_vectors,  // Vectors
@@ -1033,7 +1034,9 @@ static struct Library * init(BPTR seg_list asm("a0"))
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
 
-    BOOL CDBoot = FindCDFS();
+#ifdef CDBOOT
+    CDBoot = FindCDFS();
+#endif
 
     if (mydev != NULL) {
         Info("Add Device.\n");
