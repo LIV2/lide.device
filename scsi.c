@@ -52,13 +52,23 @@ void fake_scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE e
             sense->asq      = 0x00;
             break;
         case IOERR_BADADDRESS:
-            sense->senseKey = 0x03;
+            sense->senseKey = 0x05; // ILLEGAL REQUEST
             sense->asc      = 0x21; // LBA Out of range
             sense->asq      = 0x00;
             break;
+        case IOERR_BADLENGTH:
+            sense->senseKey = 0x05; // ILLEGAL REQUEST
+            sense->asc      = 0x1A; // Parameter list length error
+            sense->asq      = 0x00;
+            break;
         case IOERR_NOCMD:
-            sense->senseKey = 0x05; // Invalid Command operation code
-            sense->asc      = 0x20;
+            sense->senseKey = 0x05; // ILLEGAL REQUEST
+            sense->asc      = 0x20; // Invalid Command operation code
+            sense->asq      = 0x00;
+            break;
+        case HFERR_BadStatus:
+            sense->senseKey = 0x05; // ILLEGAL REQUEST
+            sense->asc      = 0x20; // Invalid Command operation code
             sense->asq      = 0x00;
             break;
         case TDERR_NotSpecified:
@@ -135,11 +145,9 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct ExecBase *SysBase = unit->SysBase;
 
     struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
-    BYTE error;
 
-    if (data == NULL) {
+    if (data == NULL)
         return IOERR_BADADDRESS;
-    }
 
     data->peripheral_type   = unit->deviceType;
     data->removable_media   = 0;
@@ -148,17 +156,12 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     data->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
 
     UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
-    if (!identity) {
-        error = TDERR_NoMem;
-        fake_scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
+    if (!identity)
+        return TDERR_NoMem;
 
    if (!(ata_identify(unit,identity))) {
-        error = HFERR_SelTimeout;
-        fake_scsi_sense(scsi_command,0,0,error);
         FreeMem(identity,512);
-        return error;
+        return HFERR_SelTimeout;
     }
 
     CopyMem(&identity[ata_identify_model],&data->vendor,24);
@@ -186,13 +189,9 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
 */
 BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_CAPACITY_10 *data = (struct SCSI_CAPACITY_10 *)scsi_command->scsi_Data;
-    BYTE error;
 
-    if (data == NULL) {
-        error = IOERR_BADADDRESS;
-        fake_scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
+    if (data == NULL)
+        return IOERR_BADADDRESS;
 
     struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)scsi_command->scsi_Command;
 
@@ -228,13 +227,9 @@ BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_comman
 */
 BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct SCSI_CAPACITY_16 *data = (struct SCSI_CAPACITY_16 *)scsi_command->scsi_Data;
-    BYTE error;
 
-    if (data == NULL) {
-        error = IOERR_BADADDRESS;
-        fake_scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
+    if (data == NULL)
+        return IOERR_BADADDRESS;
 
     data->block_size = unit->blockSize;
     data->lba = unit->logicalSectors - 1;
@@ -253,22 +248,17 @@ BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_comman
  * @param scsi_command Pointer to a SCSICmd struct
 */
 BYTE scsi_mode_sense_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
-    BYTE error;
     UBYTE *data    = (APTR)scsi_command->scsi_Data;
     UBYTE *command = (APTR)scsi_command->scsi_Command;
 
-    if (data == NULL) {
+    if (data == NULL)
         return IOERR_BADADDRESS;
-    }
 
     UBYTE page    = command[2] & 0x3F;
     UBYTE subpage = command[3];
 
-    if (subpage != 0 || (page != 0x3F && page != 0x03 && page != 0x04)) {
-        error = HFERR_BadStatus;
-        fake_scsi_sense(scsi_command,0,0,error);
-        return error;
-    }
+    if (subpage != 0 || (page != 0x3F && page != 0x03 && page != 0x04))
+        return IOERR_NOCMD;
 
     if (scsi_command->scsi_Length < ((page == 0x03 || page == 0x04) ? 28 : (page == 0x3f ? 52 : 0)))
         return IOERR_BADLENGTH;
