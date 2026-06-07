@@ -201,8 +201,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             default:
-                error = HFERR_BadStatus;
-                fake_scsi_sense(scsi_command,0,0,IOERR_NOCMD);
+                error = IOERR_NOCMD;
                 break;
         }
     }
@@ -217,10 +216,13 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
         Warn("SCSI: Error: %ld\n",error);
         Warn("SCSI: Command: %ld\n",scsi_command->scsi_Command);
         scsi_command->scsi_Status = SCSI_CHECK_CONDITION;
+        if (scsi_command->scsi_SenseActual == 0)
+            fake_scsi_sense(scsi_command,0,0,error);
+        return HFERR_BadStatus;
     } else {
         scsi_command->scsi_Status = 0;
+        return 0;
     }
-    return error;
 }
 
 /**
