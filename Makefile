@@ -50,7 +50,7 @@ all:	$(PROJECT) \
 
 OBJDIR = obj/$(TARGET)
 
-SRCS = device.c ata.c atapi.c scsi.c iotask.c lide_alib.c mounter/mounter.c debug.c
+SRCS = device.c ata.c atapi.c scsi.c iotask.c lide_alib.c 3rdparty/mounter/mounter.c debug.c
 
 OBJ = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:%c=%o)))
 
@@ -93,7 +93,7 @@ $(OBJDIR)/%.o: %.c
 	@printf "${GREEN}$@${NC}\n"
 	@${CC} -o $@ -c $< ${CFLAGS}
 
-$(OBJDIR)/%.o: mounter/%.c
+$(OBJDIR)/%.o: 3rdparty/mounter/%.c
 	@mkdir -p $(OBJDIR)
 	@printf "${GREEN}$@${NC}\n"
 	@${CC} -o $@ -c $< ${CFLAGS}
