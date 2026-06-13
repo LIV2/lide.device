@@ -25,7 +25,7 @@
 #include "td64.h"
 #include "debug.h"
 #include "lide_alib.h"
-#include "mounter/mounter.h"
+#include "3rdparty/mounter/mounter.h"
 
 #ifdef FAKE_CONFIGDEV
 extern UBYTE bootblock, bootblock_end;
