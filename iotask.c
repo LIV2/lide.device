@@ -258,6 +258,10 @@ static BYTE init_units(struct IOTask *itask) {
             unit->multipleCount           = 0;
             unit->shadowDevHead           = &itask->shadowDevHead;
             *unit->shadowDevHead          = 0;
+            unit->scsiCmd                 = NULL;
+            unit->flags.scsiCmdInUse      = false;
+            unit->senseCmd                = NULL;
+            unit->flags.senseCmdInUse     = false;
 
             // Initialize the change int list
             unit->changeInts.mlh_Tail     = NULL;
@@ -281,6 +285,8 @@ static BYTE init_units(struct IOTask *itask) {
             } else {
                 // Clear this to skip the pre-select BSY wait later
                 *unit->shadowDevHead = 0;
+                if (unit->scsiCmd) DeleteSCSICmd(unit->scsiCmd);
+                if (unit->senseCmd) DeleteSCSICmd(unit->senseCmd);
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
         }
@@ -311,6 +317,8 @@ static void cleanup(struct IOTask *itask) {
                 ObtainSemaphore(&itask->dev->ulSem);
                 Remove((struct Node *)unit);
                 ReleaseSemaphore(&itask->dev->ulSem);
+                if (unit->scsiCmd != NULL) DeleteSCSICmd(unit->scsiCmd);
+                if (unit->senseCmd != NULL) DeleteSCSICmd(unit->senseCmd);
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }
