@@ -168,7 +168,11 @@ struct __attribute__((packed)) SCSI_CDB_ATA {
 #define ATA_BYT_BLOK (1<<2)
 
 void fake_scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE error);
-struct SCSICmd * MakeSCSICmd(ULONG cdbSize);
+struct SCSICmd *MakeSCSICmd(ULONG cdbSize);
+struct SCSICmd *scsi_get_unit_cmd(struct IDEUnit *unit);
+struct SCSICmd *scsi_get_sense_cmd(struct IDEUnit *unit);
+void scsi_release_unit_cmd(struct IDEUnit *unit);
+void scsi_release_sense_cmd(struct IDEUnit *unit);
 void DeleteSCSICmd(struct SCSICmd *cmd);
 BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);
 BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command);

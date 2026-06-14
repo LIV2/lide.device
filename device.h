@@ -6,6 +6,7 @@
 #define _DEVICE_H
 #include <dos/filehandler.h>
 #include <exec/semaphores.h>
+#include <devices/scsidisk.h>
 #include <stdbool.h>
 #define OAHR_MANUF_ID 5194
 #define BSC_MANUF_ID  2092
@@ -68,6 +69,8 @@ struct IDEUnit {
     ata_xfer_func write_unaligned;
     volatile UBYTE *shadowDevHead;
     volatile void  *changeInt;
+    struct SCSICmd *scsiCmd;
+    struct SCSICmd *senseCmd;
     UBYTE unitNum;
     UBYTE deviceType;
     UBYTE last_error[6];
@@ -90,6 +93,8 @@ struct IDEUnit {
         unsigned char xferMultiple : 1;
         unsigned char lba : 1;
         unsigned char lba48 : 1;
+        unsigned char scsiCmdInUse : 1;
+        unsigned char senseCmdInUse : 1;
     } flags;
 };
 

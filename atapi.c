@@ -262,15 +262,17 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, struct IDEUnit *unit, enum xfer_dir direction)
 {
     Trace("atapi_translate enter\n");
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
+
     UBYTE errorCode = 0;
     UBYTE senseKey  = 0;
     UBYTE asc       = 0;
     UBYTE asq       = 0;
 
     if (count == 0) {
+        scsi_release_unit_cmd(unit);
         return IOERR_BADLENGTH;
     }
     Trace("%ld lba %ld count\n %ld bs\n",lba,count,unit->blockShift);
@@ -343,9 +345,8 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
 
 done:
     Trace("atapi_packet returns %ld\n",ret);
+    scsi_release_unit_cmd(unit);
     *io_Actual = cmd->scsi_Actual;
-
-    DeleteSCSICmd(cmd);
 
     return ret;
 }
@@ -578,8 +579,8 @@ end:
  * @returns nonzero if there was an error
 */
 BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
     UBYTE senseError = 0;
@@ -638,9 +639,8 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
     }
 
 done:
+    scsi_release_unit_cmd(unit);
     atapi_update_presence(unit,(ret == 0)); // Update the media presence
-    DeleteSCSICmd(cmd);
-
     return ret;
 }
 
@@ -657,15 +657,16 @@ done:
 */
 BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey, UBYTE *asc, UBYTE *asq) {
     struct ExecBase *SysBase = unit->SysBase;
+    struct SCSICmd *cmd;
 
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    if (cmd == NULL) return TDERR_NoMem;
+    if ((cmd = scsi_get_sense_cmd(unit)) == NULL) return TDERR_NoMem;
+
     UBYTE *cdb = (UBYTE *)cmd->scsi_Command;
 
     UBYTE *buf;
 
     if ((buf = AllocMem(18,MEMF_CLEAR|MEMF_ANY)) == NULL) {
-        DeleteSCSICmd(cmd);
+        scsi_release_sense_cmd(unit);
         return TDERR_NoMem;
     }
 
@@ -688,8 +689,8 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey
     *asc       = buf[12];
     *asq       = buf[13];
 
-    DeleteSCSICmd(cmd);
     if (buf) FreeMem(buf,18);
+    scsi_release_sense_cmd(unit);
     return ret;
 }
 
@@ -702,8 +703,9 @@ BYTE atapi_request_sense(struct IDEUnit *unit, UBYTE *errorCode, UBYTE *senseKey
  * @return non-zero on error
 */
 BYTE atapi_get_capacity(struct IDEUnit *unit) {
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
+
     struct SCSI_CDB_10 *cdb = (struct SCSI_CDB_10 *)cmd->scsi_Command;
 
     BYTE ret;
@@ -742,8 +744,7 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
     }
 
     Trace("New geometry: %ld %ld\n",unit->logicalSectors, unit->blockSize);
-
-    DeleteSCSICmd(cmd);
+    scsi_release_unit_cmd(unit);
     return ret;
 }
 
@@ -761,8 +762,9 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
  * @return Non-zero on error
 */
 BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, UWORD *buffer, UWORD length, UWORD *actual, BOOL dbd) {
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
-    if (cmd == NULL) return TDERR_NoMem;
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
+
 
     UBYTE *cdb = cmd->scsi_Command;
     BYTE ret;
@@ -786,8 +788,7 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, U
     ret = atapi_packet(cmd,unit);
 
     if (actual) *actual = cmd->scsi_Actual;
-
-    DeleteSCSICmd(cmd);
+    scsi_release_unit_cmd(unit);
     return ret;
 }
 
@@ -817,13 +818,11 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
         return TDERR_NoMem;
     }
 
-    cmd_sense = MakeSCSICmd(SZ_CDB_10);
-
-    if (cmd_sense == NULL) {
+    if ((cmd_sense = scsi_get_unit_cmd(unit)) == NULL) {
         ret = TDERR_NoMem;
         goto cleanup;
     }
-
+    cmd_sense->scsi_CmdLength  = SZ_CDB_10;
     cmd_sense->scsi_Command[0] = SCSI_CMD_MODE_SENSE_10;
     cmd_sense->scsi_Command[1] = cmd->scsi_Command[1];      // DBD flag
     cmd_sense->scsi_Command[2] = cmd->scsi_Command[2];      // Page Code
@@ -862,10 +861,10 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_SenseActual = cmd_sense->scsi_SenseActual;
+    scsi_release_unit_cmd(unit);
 
 cleanup:
     if (buf) FreeMem(buf,len);
-    if (cmd_sense) DeleteSCSICmd(cmd_sense);
     return ret;
 }
 
@@ -900,13 +899,11 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     src = (UBYTE *)cmd->scsi_Data;
     dst = buf;
 
-    cmd_select = MakeSCSICmd(SZ_CDB_10);
-
-    if (cmd_select == NULL) {
+    if ((cmd_select = scsi_get_unit_cmd(unit)) == NULL) {
         ret = TDERR_NoMem;
         goto cleanup;
     }
-
+    cmd_select->scsi_CmdLength  = SZ_CDB_10;
     cmd_select->scsi_Command[0] = SCSI_CMD_MODE_SELECT_10;
     cmd_select->scsi_Command[1] = cmd->scsi_Command[1];     // PF / SP
     cmd_select->scsi_Command[7] = (bufSize >> 8) & 0xFF;    // Parameter list length
@@ -939,9 +936,9 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
     cmd->scsi_Actual      = cmd_select->scsi_Actual;
 
+    scsi_release_unit_cmd(unit);
 cleanup:
     if (buf) FreeMem(buf,bufSize);
-    if (cmd_select) DeleteSCSICmd(cmd_select);
 
     return ret;
 }
@@ -1175,10 +1172,10 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
         return IOERR_BADADDRESS;
     }
 
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
 
-    if (cmd == NULL) return TDERR_NoMem;
-
+    cmd->scsi_CmdLength  = SZ_CDB_10;
     cmd->scsi_Data       = (UWORD *)buf;
     cmd->scsi_Length     = bufSize;
     cmd->scsi_Flags      = SCSIF_READ;
@@ -1187,10 +1184,8 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
     cmd->scsi_Command[7] = bufSize >> 8;
     cmd->scsi_Command[8] = bufSize & 0xFF;
 
+    scsi_release_unit_cmd(unit);
     ret = atapi_packet(cmd,unit) != 0;
-
-    DeleteSCSICmd(cmd);
-
     return ret;
 }
 
@@ -1278,10 +1273,10 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
 BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, struct SCSI_TRACK_MSF *end) {
     BYTE ret = 0;
 
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_10);
+    struct SCSICmd *cmd;
+    if ((cmd = scsi_get_unit_cmd(unit)) == NULL) return TDERR_NoMem;
 
-    if (cmd == NULL) return TDERR_NoMem;
-
+    cmd->scsi_CmdLength  = SZ_CDB_10;
     cmd->scsi_Command[0] = SCSI_CMD_PLAY_AUDIO_MSF;
     cmd->scsi_Command[3] = start->minute;
     cmd->scsi_Command[4] = start->second;
@@ -1295,9 +1290,8 @@ BYTE atapi_play_audio_msf(struct IDEUnit *unit, struct SCSI_TRACK_MSF *start, st
     cmd->scsi_Data   = NULL;
     cmd->scsi_Length = 0;
 
+    scsi_release_unit_cmd(unit);
     ret = atapi_packet(cmd,unit);
-
-    DeleteSCSICmd(cmd);
 
     return ret;
 }
@@ -1341,7 +1335,7 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
     if (scsi_command->scsi_SenseData == NULL || scsi_command->scsi_SenseLength == 0)
         return IOERR_BADADDRESS;
 
-    struct SCSICmd *cmd = MakeSCSICmd(SZ_CDB_12);
+    struct SCSICmd *cmd = scsi_get_sense_cmd(unit);
 
     if (cmd != NULL) {
         for (int retry=3; retry > 0; retry--) {
@@ -1359,8 +1353,7 @@ BYTE atapi_autosense(struct SCSICmd *scsi_command, struct IDEUnit *unit) {
 
             sleep_us(unit->itask->tr,250000);
         }
-
-        DeleteSCSICmd(cmd);
+        scsi_release_sense_cmd(unit);
         return ret;
     } else {
         return TDERR_NoMem;
