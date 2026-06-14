@@ -620,7 +620,13 @@ exit:
 }
 
 
-static void td_get_geometry(struct IOStdReq *ioreq) {
+static BYTE td_get_geometry(struct IOStdReq *ioreq) {
+    if (ioreq->io_Data == NULL || ((ULONG)ioreq->io_Data & 1))
+        return IOERR_BADADDRESS;
+    
+    if (ioreq->io_Length < sizeof(struct DriveGeometry))
+        return IOERR_BADLENGTH;
+
     struct DriveGeometry *geometry = (struct DriveGeometry *)ioreq->io_Data;
     struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
@@ -643,6 +649,8 @@ static void td_get_geometry(struct IOStdReq *ioreq) {
     geometry->dg_Flags        = (unit->flags.atapi) ? DGF_REMOVABLE : 0;
 
     ioreq->io_Actual = sizeof(struct DriveGeometry);
+
+    return 0;
 }
 
 
@@ -766,8 +774,7 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
                 break;
 
             case TD_GETGEOMETRY:
-                td_get_geometry(ioreq);
-                error = 0;
+                error = td_get_geometry(ioreq);
                 break;
 
             case TD_REMOVE:
@@ -856,6 +863,10 @@ sendToTask:
             // End IO Task commands //
 
             case NSCMD_DEVICEQUERY:
+                if (ioreq->io_Data == NULL || ((ULONG)ioreq->io_Data & 1)) {
+                    error = IOERR_BADADDRESS;
+                    break;
+                }
                 if (ioreq->io_Length >= sizeof(struct NSDeviceQueryResult))
                 {
                     struct NSDeviceQueryResult *result = ioreq->io_Data;
