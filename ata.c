@@ -779,11 +779,14 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
  *
  * Handle SCSI ATA PASSTHROUGH (12) command to send ATA commands to the drive
  *
+ * Requires that the cmd->scsi_Data buffer is word aligned
+ * 
  * @param unit Pointer to an IDEUnit struct
  * @param cmd Pointer to a SCSICmd struct
  * @return non-zero on error
 */
 BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
+
     struct SCSI_CDB_ATA *cdb = (struct SCSI_CDB_ATA *)cmd->scsi_Command;
 
     bool byt_blok  = (cdb->length & ATA_BYT_BLOK) ? true : false;
@@ -826,12 +829,14 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
         case ATA_PIO_IN: // Data to Host
             if (count < 2) return IOERR_BADLENGTH;
+            if ((ULONG)cmd->scsi_Data & 1) return IOERR_BADADDRESS;
             src = (UWORD *)unit->drive.data;
             dest = cmd->scsi_Data;
             break;
 
         case ATA_PIO_OUT: // Data to Drive
             if (count < 2) return IOERR_BADLENGTH;
+            if ((ULONG)cmd->scsi_Data & 1) return IOERR_BADADDRESS;
             src = cmd->scsi_Data;
             dest = (UWORD *)unit->drive.data;
             break;
