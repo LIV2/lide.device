@@ -269,6 +269,8 @@ void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 */
 bool ata_init_unit(struct IDEUnit *unit, void *base) {
     struct ExecBase *SysBase = unit->SysBase;
+    bool dev_found = false;
+    UWORD *buf;
 
     unit->cylinders           = 0;
     unit->heads               = 0;
@@ -277,8 +279,6 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     unit->flags.present       = false;
     unit->flags.mediumPresent = false;
 
-    UWORD *buf;
-    bool dev_found = false;
 
     unit->drive.data           = (UWORD*) (base + ata_reg_data);
     unit->drive.error_features = (UBYTE*) (base + ata_reg_error);
@@ -372,45 +372,36 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             Info("INIT: Adjusting geometry, new geometry; 16/255/%ld\n",unit->cylinders);
         }
 
-        if (unit->logicalSectors == 0 || unit->heads == 0 || unit->cylinders == 0) goto ident_failed;
+        if (unit->heads > 0 &&
+            unit->logicalSectors > 0 &&
+            unit->cylinders > 0 &&
+            unit->blockSize > 0) {
 
+            unit->flags.present = true;
+
+            if (unit->flags.lba48) {
+                Info("INIT: LBAs 0x%lx%08lx Blocksize: %ld\n",(uint64_t)unit->logicalSectors,unit->blockSize);
+            } else {
+                Info("INIT: LBAs %ld Blocksize: %ld\n",(ULONG)unit->logicalSectors,unit->blockSize);
+            }
+
+        } else {
+            Warn("INIT: Error! bs %ld ls %ld cyl %ld hd %ld\n", unit->blockSize, unit->logicalSectors, unit->cylinders, unit->heads);
+        }
+
+    } else if (atapi_init_unit(unit,buf)) {
+        unit->flags.present = true;
+    }
+
+    if (unit->flags.present) {
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
-    } else if (atapi_check_signature(unit)) { // Check for ATAPI Signature
-        if (atapi_identify(unit,buf) && (buf[0] & 0xC000) == 0x8000) {
-            Info("INIT: ATAPI Drive found!\n");
-
-                unit->deviceType      = (buf[0] >> 8) & 0x1F;
-                unit->flags.atapi     = true;
-
-                atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
-        } else {
-ident_failed:
-            Warn("INIT: IDENTIFY failed\n");
-            // Command failed with a timeout or error
-            FreeMem(buf,512);
-            return false;
-        }
+        Info("INIT: Blockshift: %ld\n",unit->blockShift);
     }
-
-    if (unit->flags.atapi == false && unit->blockSize == 0) {
-        Warn("INIT: Error! blockSize is 0\n");
-        if (buf) FreeMem(buf,512);
-        return false;
-    }
-
-    Info("INIT: Blockshift: %ld\n",unit->blockShift);
-    unit->flags.present = true;
-
-    if (unit->flags.lba48) {
-        Info("INIT: LBAs 0x%lx%08lx Blocksize: %ld\n",(uint64_t)unit->logicalSectors,unit->blockSize);
-    } else{
-        Info("INIT: LBAs %ld Blocksize: %ld\n",(ULONG)unit->logicalSectors,unit->blockSize);
-    }
-
+    
     if (buf) FreeMem(buf,512);
-    return true;
+    return unit->flags.present;
 }
 
 /**
