@@ -258,10 +258,6 @@ static BYTE init_units(struct IOTask *itask) {
             unit->multipleCount           = 0;
             unit->shadowDevHead           = &itask->shadowDevHead;
             *unit->shadowDevHead          = 0;
-            unit->scsiCmd                 = NULL;
-            unit->flags.scsiCmdInUse      = false;
-            unit->senseCmd                = NULL;
-            unit->flags.senseCmdInUse     = false;
 
             // Initialize the change int list
             unit->changeInts.mlh_Tail     = NULL;
@@ -317,8 +313,14 @@ static void cleanup(struct IOTask *itask) {
                 ObtainSemaphore(&itask->dev->ulSem);
                 Remove((struct Node *)unit);
                 ReleaseSemaphore(&itask->dev->ulSem);
-                if (unit->scsiCmd != NULL) DeleteSCSICmd(unit->scsiCmd);
-                if (unit->senseCmd != NULL) DeleteSCSICmd(unit->senseCmd);
+                if (unit->scsiCmd != NULL) {
+                    unit->scsiCmd->scsi_CmdLength = SZ_CDB_12;
+                    DeleteSCSICmd(unit->scsiCmd);
+                }
+                if (unit->senseCmd != NULL) {
+                    unit->senseCmd->scsi_CmdLength = SZ_CDB_12;
+                    DeleteSCSICmd(unit->senseCmd);
+                }
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }

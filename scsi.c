@@ -133,42 +133,30 @@ void DeleteSCSICmd(struct SCSICmd *cmd) {
     }
 }
 
-/**
- * scsi_lazy_alloc_cmd
- *
- * Lazily allocate (on first use) and clear a reusable SCSICmd
- *
- * If the SCSICmd pointed to by *cmd has not been allocated yet it is created
- * with a SZ_CDB_12 sized CDB. The SCSICmd struct and its CDB are then cleared,
- * preserving the CDB buffer for reuse. On allocation failure *cmd is left NULL.
- * The caller is responsible for setting scsi_CmdLength and for freeing the
- * SCSICmd via DeleteSCSICmd() when it is no longer needed.
- *
- * @param cmd Address of the SCSICmd pointer to allocate / reuse
-*/
-static void scsi_lazy_alloc_cmd(struct SCSICmd **cmd) {
-    UBYTE *cdb;
-    struct SCSICmd *p;
+/** scsi_pre_cmd
+ * 
+ * Prepares one of the units scsiCmd/senseCmd for use again
+ * @param cmd Pointer to a SCSICmd
+ * @returns pointer to a reinitialized SCSICmd
+ */
+static struct SCSICmd *scsi_prep_cmd(struct SCSICmd *cmd) {
+    if (cmd == NULL || cmd->scsi_Command == NULL) return NULL;
 
-    if (cmd == NULL) return;
+    UBYTE *cdb = cmd->scsi_Command;
 
-    if (*cmd == NULL) { 
-        *cmd = MakeSCSICmd(SZ_CDB_12);
-    }
-    p = *cmd;
-    if (p == NULL) return;
-
-    cdb = p->scsi_Command;
-    memset(p,0,sizeof(struct SCSICmd));
+    memset(cmd,0,sizeof(struct SCSICmd));
     memset(cdb,0,SZ_CDB_12);
-    p->scsi_Command = cdb;
 
+    cmd->scsi_Command = cdb;
+    cmd->scsi_CmdLength = SZ_CDB_12;
+
+    return cmd;
 }
 
 /**
  * scsi_get_unit_cmd
  *
- * Get the unit's reusable SCSICmd, lazily allocating it on first use
+ * Get the unit's reusable SCSICmd
  *
  * The SCSICmd is allocated once per unit and reused for subsequent commands to
  * avoid repeated alloc/free cycles that lead to memory fragmentation. The
@@ -176,32 +164,24 @@ static void scsi_lazy_alloc_cmd(struct SCSICmd **cmd) {
  * responsible for setting scsi_CmdLength. The cached SCSICmd is freed when the
  * unit is torn down.
  *
- * NOT re-entrant: there is a single SCSICmd per unit, so a command obtained from
- * this function must not still be in use when it is called again for the same
- * unit. In particular, a function that has an outstanding SCSICmd must not call
- * another function that also obtains one (e.g. issuing REQUEST SENSE while the
- * original command is still live) - such nested users must use the separate
- * sense SCSICmd via scsi_get_sense_cmd() instead.
- *
  * @param unit Pointer to an IDEUnit struct
  * @returns Pointer to the unit's SCSICmd struct, or NULL on allocation failure
 */
 struct SCSICmd *scsi_get_unit_cmd(struct IDEUnit *unit) {
-    struct ExecBase *SysBase = unit->SysBase;
+    struct SCSICmd *cmd = NULL;
+
     if (unit->flags.scsiCmdInUse == false) {
-        scsi_lazy_alloc_cmd(&unit->scsiCmd);
-        if (unit->scsiCmd) unit->flags.scsiCmdInUse = true;
-        return unit->scsiCmd;
-    } else {
-        Alert(0x01DEBAD1);
-        return NULL;
+        cmd = scsi_prep_cmd(unit->scsiCmd);
+        if (cmd) unit->flags.scsiCmdInUse = true;
     }
+
+    return cmd;
 }
 
 /**
  * scsi_get_sense_cmd
  *
- * Get the unit's reusable sense SCSICmd, lazily allocating it on first use
+ * Get the unit's reusable sense SCSICmd
  *
  * This is a second per-unit SCSICmd, separate from the one returned by
  * scsi_get_unit_cmd(). It exists so that REQUEST SENSE / autosense can be issued
@@ -214,15 +194,14 @@ struct SCSICmd *scsi_get_unit_cmd(struct IDEUnit *unit) {
  * @returns Pointer to the unit's sense SCSICmd struct, or NULL on allocation failure
 */
 struct SCSICmd *scsi_get_sense_cmd(struct IDEUnit *unit) {
-    struct ExecBase *SysBase = unit->SysBase;
+    struct SCSICmd *cmd = NULL;
+
     if (unit->flags.senseCmdInUse == false) {
-        scsi_lazy_alloc_cmd(&unit->senseCmd);
-        if (unit->senseCmd) unit->flags.senseCmdInUse = true;
-        return unit->senseCmd;
-    } else {
-        Alert(0x01DEBAD2);
-        return NULL;
+        cmd = scsi_prep_cmd(unit->senseCmd);
+        if (cmd) unit->flags.senseCmdInUse = true;
     }
+
+    return cmd;
 }
 
 void scsi_release_unit_cmd(struct IDEUnit *unit) {
