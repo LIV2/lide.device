@@ -190,7 +190,7 @@ struct SCSICmd *scsi_get_unit_cmd(struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
     if (unit->flags.scsiCmdInUse == false) {
         scsi_lazy_alloc_cmd(&unit->scsiCmd);
-        unit->flags.scsiCmdInUse = true;
+        if (unit->scsiCmd) unit->flags.scsiCmdInUse = true;
         return unit->scsiCmd;
     } else {
         Alert(0x01DEBAD1);
@@ -217,7 +217,7 @@ struct SCSICmd *scsi_get_sense_cmd(struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
     if (unit->flags.senseCmdInUse == false) {
         scsi_lazy_alloc_cmd(&unit->senseCmd);
-        unit->flags.senseCmdInUse = true;
+        if (unit->senseCmd) unit->flags.senseCmdInUse = true;
         return unit->senseCmd;
     } else {
         Alert(0x01DEBAD2);
