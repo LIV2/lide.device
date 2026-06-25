@@ -246,6 +246,37 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
     return true;
 }
 
+/** atapi_init_unit
+ * 
+ * Check if the unit is an ATAPI unit and if it is setup the unit struct
+ * @param unit Pointer to an IDEUnit struct
+ * @param buffer Pointer to a buffer for the IDENTIFY PACKET DEVICE data
+ * @return bool
+ */
+bool atapi_init_unit(struct IDEUnit *unit, UWORD *buffer) {
+    if (!atapi_check_signature(unit) || !atapi_identify(unit,buffer)) return false;
+
+    if ((buffer[0] & 0xC000) != 0x8000) return false;
+
+    Info("INIT: ATAPI Drive found!\n");
+    unit->deviceType      = (buffer[0] >> 8) & 0x1F;
+    unit->flags.atapi     = true;
+
+    if ((unit->scsiCmd = MakeSCSICmd(SZ_CDB_12)) == NULL)
+        return false;
+
+    if ((unit->senseCmd = MakeSCSICmd(SZ_CDB_12)) == NULL) {
+        DeleteSCSICmd(unit->scsiCmd);
+        return false;
+    }
+
+    unit->flags.scsiCmdInUse = false;
+    unit->flags.senseCmdInUse = false;
+
+    atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
+    return true;
+}
+
 /**
  * atapi_translate
  *
