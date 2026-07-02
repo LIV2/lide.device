@@ -32,6 +32,8 @@ struct MountStruct
 	BOOL cdBoot;
 	// Ignore RDBFF_LAST flag
 	BOOL ignoreLast;
+	// Host controller SCSI ID - set to 255 for non-SCSI controllers
+	UBYTE hostId;
 };
 
 APTR W_CreateIORequest(struct MsgPort *ioReplyPort, ULONG size, struct ExecBase *SysBase);
