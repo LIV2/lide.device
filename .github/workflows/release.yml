@@ -29,8 +29,8 @@ jobs:
         with:
           name: software
           path: |
-            *.rom
-            **/*.adf
+            build/*.rom
+            build/*.adf
             build/*.lha
           if-no-files-found: error
 

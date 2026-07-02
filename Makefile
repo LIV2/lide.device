@@ -1,6 +1,6 @@
 PROJECT=lide.device
 BUILDDIR=build
-ROM=lide.rom
+ROM=$(BUILDDIR)/lide.rom
 VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
 TARGET=lide.device
 
@@ -37,13 +37,13 @@ else
 DISK=lide-update.adf
 endif
 
-.PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool
+.PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool build
 
-all:	$(PROJECT) \
-		AIDE-$(PROJECT) \
-		amigapci-$(PROJECT) \
-		lide-N2630-high.rom \
-		lide-N2630-low.rom \
+all:	$(BUILDDIR)/$(PROJECT) \
+		$(BUILDDIR)/AIDE-$(PROJECT) \
+		$(BUILDDIR)/amigapci-$(PROJECT) \
+		$(BUILDDIR)/lide-N2630-high.rom \
+		$(BUILDDIR)/lide-N2630-low.rom \
 		rename/renamelide \
 		lideflash \
 		$(ROM)
@@ -73,18 +73,19 @@ ASMOBJ+= $(OBJDIR)/bootblock.o
 endif
 
 build: $(OBJ) | $(ASMOBJ)
+	@mkdir -p $(BUILDDIR)
 	@printf "${BGREEN}Linking $(TARGET)${NC}\n"
-	@${LD} -s -o $(TARGET) $^ ${LDFLAGS} $(ASMOBJ)
+	@${LD} -s -o $(BUILDDIR)/$(TARGET) $^ ${LDFLAGS} $(ASMOBJ)
 
-lide.device: $(SRCS)
+$(BUILDDIR)/lide.device: $(SRCS)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=lide.device build
 
-amigapci-lide.device: $(SRCS)
+$(BUILDDIR)/amigapci-lide.device: $(SRCS)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=amigapci-lide.device AMIGAPCI=1 build
  
-AIDE-lide.device: $(SRCS)
+$(BUILDDIR)/AIDE-lide.device: $(SRCS)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=AIDE-lide.device SIMPLE_IDE=1 build
 
@@ -103,9 +104,10 @@ $(OBJDIR)/%.o: %.S
 	@printf "${GREEN}$@${NC}\n"
 	@${AS} -o $@ $<
 
-$(ROM): $(PROJECT)
+$(ROM): $(BUILDDIR)/$(PROJECT)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	@${MAKE} -C bootrom
+	@${MAKE} BUILDDIR=$(BUILDDIR) -C bootrom
+	@printf "Done.\n"
 
 lideflash/lideflash:
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
@@ -124,18 +126,17 @@ rename/renamelide:
 	@${MAKE} -C rename
 	@printf "Done.\n"
 
-$(BUILDDIR)/AIDE-boot-$(VERSION).adf: AIDE-$(PROJECT)
+$(BUILDDIR)/AIDE-boot-$(VERSION).adf: $(BUILDDIR)/AIDE-$(PROJECT)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	@${MAKE} -C aide-boot
+	@${MAKE} BUILDDIR=$(BUILDDIR) -C aide-boot
 	@mkdir -p $(BUILDDIR)
 	@mv aide-boot/aide-boot.adf $@
 
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 
-$(BUILDDIR)/$(DISK): $(ROM) AIDE-lide.device lideflash/lideflash rename/renamelide lidetool/lidetool
+$(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash rename/renamelide lidetool/lidetool
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@mkdir -p $(BUILDDIR)
-	@cp $(ROM) build
 	@echo 'lideflash -I $(ROM)' > $(BUILDDIR)/startup-sequence
 	@xdftool $(BUILDDIR)/$(DISK) format lide-update + \
 	                            boot install + \
@@ -148,41 +149,39 @@ $(BUILDDIR)/$(DISK): $(ROM) AIDE-lide.device lideflash/lideflash rename/renameli
 	                            makedir Expansion + \
 	                            write info/Expansion.info Expansion.info + \
 	                            write info/lide.device.info Expansion/lide.device.info + \
-	                            write lide.device Expansion/lide.device + \
-	                            write AIDE-lide.device AIDE-lide.device
+	                            write $(BUILDDIR)/lide.device Expansion/lide.device + \
+	                            write $(BUILDDIR)/AIDE-lide.device AIDE-lide.device
 	@printf "Done.\n"
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool lide.device info/lide.device.info AIDE-lide.device
-	@mkdir -p $(BUILDDIR)
-	cp $^ $(BUILDDIR)
-	cd $(BUILDDIR) && lha -c ../$@ $(notdir $^) 
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool $(BUILDDIR)/lide.device info/lide.device.info $(BUILDDIR)/AIDE-lide.device
+	@mkdir -p $(BUILDDIR)/lha
+	cp $^ $(BUILDDIR)/lha
+	cd $(BUILDDIR)/lha && lha -c ../../$@ $(notdir $^) 
 
 lha: $(BUILDDIR)/lide-update.lha 
 
-lide-N2630-high.rom: $(ROM)
+$(BUILDDIR)/lide-N2630-high.rom: $(ROM)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	srec_cat lide-word.rom -binary -split 2 0 1 -out $@ -binary
+	srec_cat $(BUILDDIR)/lide-word.rom -binary -split 2 0 1 -out $@ -binary
 
-lide-N2630-low.rom:  $(ROM)
+$(BUILDDIR)/lide-N2630-low.rom:  $(ROM)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	srec_cat lide-word.rom -binary -split 2 1 1 -out $@ -binary
+	srec_cat $(BUILDDIR)/lide-word.rom -binary -split 2 1 1 -out $@ -binary
 
-lide-tk-29F010.rom: $(ROM)
-	@cat lide-atbus.rom lide-atbus.rom lide-atbus.rom lide-atbus.rom > $@
+$(BUILDDIR)/lide-tk-29F010.rom: $(ROM)
+	@cat $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom > $@
 
-lide-tk-29F020.rom: lide-tk-29F010.rom
+$(BUILDDIR)/lide-tk-29F020.rom: lide-tk-29F010.rom
 	@cat $< $< > $@
 
-lide-tk-29F040.rom: lide-tk-29F020.rom
+$(BUILDDIR)/lide-tk-29F040.rom: lide-tk-29F020.rom
 	@cat $< $< > $@
 
 clean:
 	@-rm -rf obj
-	@-rm -f *.device
-	@-rm -f *.rom
-	@${MAKE} -C bootrom clean
+	@-rm -rf $(BUILDDIR)
+	@${MAKE} BUILDDIR=$(BUILDDIR) -C bootrom clean
 	@${MAKE} -C lideflash clean
 	@${MAKE} -C lidetool clean
 	@${MAKE} -C rename clean
-	@-rm -rf $(BUILDDIR)
-	@${MAKE} -C aide-boot clean
+	@${MAKE} BUILDDIR=$(BUILDDIR) -C aide-boot clean

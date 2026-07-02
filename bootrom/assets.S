@@ -6,4 +6,4 @@
     ENDIF
   
   section DEVICE
-  incbin "../lide.device"
+  incbin "../build/lide.device"
