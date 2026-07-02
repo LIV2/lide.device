@@ -1065,7 +1065,8 @@ static struct Library * init(BPTR seg_list asm("a0"))
             .luns        = false,
             .slowSpinup  = false,
             .ignoreLast  = true,
-            .configDev   = itask->cd
+            .configDev   = itask->cd,
+            .hostId      = 255
         };
 
         MountDrive(&ms);

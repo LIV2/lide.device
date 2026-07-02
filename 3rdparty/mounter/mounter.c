@@ -70,6 +70,10 @@
 #define SID_TYPE 0x1F
 #endif
 
+#ifndef HD_WIDESCSI
+#define HD_WIDESCSI 8
+#endif
+
 #define TRACE 1
 #undef TRACE_LSEG
 #define Trace printf
@@ -127,7 +131,7 @@ struct MountData
 #define SCSI_CD_MAX_TRACKS 100
 #define SCSI_CMD_READ_TOC 0x43
 
-struct __attribute__((packed)) SCSI_TOC_TRACK_DESCRIPTOR {
+struct __packed SCSI_TOC_TRACK_DESCRIPTOR {
     UBYTE reserved1;
     UBYTE adrControl;
     UBYTE trackNumber;
@@ -138,7 +142,7 @@ struct __attribute__((packed)) SCSI_TOC_TRACK_DESCRIPTOR {
     UBYTE frame;
 };
 
-struct __attribute__((packed)) SCSI_CD_TOC {
+struct __packed __attribute__((aligned(2))) SCSI_CD_TOC {
     UWORD length;
     UBYTE firstTrack;
     UBYTE lastTrack;
@@ -151,7 +155,10 @@ struct __attribute__((packed)) SCSI_CD_TOC {
 // Get Block size of unit
 BYTE GetGeometry(struct IOExtTD *req, struct DriveGeometry *geometry)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds="
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+#pragma GCC diagnostic pop
 
 	req->iotd_Req.io_Command = TD_GETGEOMETRY;
 	req->iotd_Req.io_Data    = geometry;
@@ -1060,7 +1067,11 @@ static struct FileSysEntry *find_filesystem(ULONG id1, ULONG id2, struct ExecBas
 // Check if there is a disc inserted
 static bool UnitIsReady(struct IOStdReq *req)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds="
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+#pragma GCC diagnostic pop
+
 	BYTE err;
 
 	// First spin up the disc
@@ -1086,7 +1097,10 @@ static bool UnitIsReady(struct IOStdReq *req)
 // Check if this is a data disc by reading the TOC and checking that track 1 is a data track.
 static bool isDataCD(struct IOStdReq *ior)
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds="
 	struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+#pragma GCC diagnostic pop
 	bool ret = false;
 
 	BYTE err;
@@ -1219,7 +1233,7 @@ static LONG ScanCDROM(struct MountData *md)
 	pp.dosname              = dosName + 1;
 	pp.execname             = md->devicename;
 	pp.unitnum              = md->unitnum;
-	pp.de.de_TableSize      = sizeof(struct DosEnvec);
+	pp.de.de_TableSize      = 16; // Up to DE_DOSTYPE
 	pp.de.de_SizeBlock      = 2048 >> 2;
 	pp.de.de_Surfaces       = 1;
 	pp.de.de_SectorPerBlock = 1;
@@ -1280,9 +1294,22 @@ static LONG register_legacy(struct MountData *md, UBYTE bootable, UBYTE type, UL
 	struct FileSysEntry *fse=NULL;
 	char dosName[] = "MS0";
 	static unsigned int cnt = 0;
-	LONG bootPri = -1;
+	LONG bootPri;
 	ULONG pend = pstart + plen - 1;
 	ULONG cs,ce,h,s;
+
+	if (cnt > 9) {
+		printf("Error: Too many partitions, skipping MS%d\n", cnt);
+		cnt++;
+		return -1;
+	}
+
+	if (type != 0x00 && type != 0x01 && type != 0x04 &&
+	    type != 0x06 && type != 0x0B && type != 0x0C && type != 0x0E) {
+		printf("Warning: Partition type 0x%02x may not be FAT\n", type);
+	}
+
+	bootPri = bootable ? 0 : -1;
 
 	lba2chs(pstart,pend, max_lba, &cs, &ce, & h, &s);
 
@@ -1331,10 +1358,18 @@ static LONG register_legacy(struct MountData *md, UBYTE bootable, UBYTE type, UL
 	return 1;
 }
 
+#define MAX_EXTENDED_PARTITIONS 16
+
 unsigned long parse_extended(struct MountData *md, int extended, unsigned long start, unsigned long max_lba)
 {
 	struct mbr *mbr = (struct mbr *)md->buf;
 	unsigned long new_start;
+
+	if (extended > 4 + MAX_EXTENDED_PARTITIONS) {
+		printf("Warning: Extended partition limit (%d) reached\n",
+		       MAX_EXTENDED_PARTITIONS);
+		return 0;
+	}
 
 	printf("   %2d   ", extended++);
 	printf("%c   %02x %8lx %8lx\n", mbr->part[0].status & 0x80 ? '*':' ',
@@ -1350,7 +1385,7 @@ unsigned long parse_extended(struct MountData *md, int extended, unsigned long s
 
 	if (mbr->part[1].type == 5) {
 		readblock(md->buf, start + new_start, 0xffffffff, md);
-		parse_extended(md, extended, start +new_start, max_lba);
+		parse_extended(md, extended, start + new_start, max_lba);
 	}
 
 	return 0;
@@ -1398,6 +1433,8 @@ static LONG ParseMBR(UBYTE *buf, struct MountData *md)
 
 static void print_guid(GUID *x)
 {
+	(void)x; // In case we turned debugging off.
+
 	// Somebody has got to be proud of this mixed endian prank.
 
 	printf("%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
@@ -1408,40 +1445,60 @@ static void print_guid(GUID *x)
 			x->u.UUID.node[3], x->u.UUID.node[4], x->u.UUID.node[5]);
 }
 
+// Microsoft Basic Data Partition GUID (used for FAT and NTFS)
+// EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
+static const GUID GUID_BASIC_DATA = {{
+	{ 0xEBD0A0A2, 0xB9E5, 0x4433, 0x87, 0xC0,
+	  { 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7 } }
+}};
+
+static int guid_equal(const GUID *a, const GUID *b)
+{
+	return memcmp(a->u.raw, b->u.raw, 16) == 0;
+}
+
 static LONG ParseGPT(UBYTE *buf, struct MountData *md)
 {
 	struct gpt *gpt=(struct gpt *)buf;
-
-	printf(" part start at: %lld\n", __bswap64(gpt->entries_lba));
-	printf(" Number of partitions: %d\n", __bswap32(gpt->number_of_entries));
-	printf(" size of entry: %d\n", __bswap32(gpt->size_of_entry));
-
-	int pstart = __bswap64(gpt->entries_lba);
+	uint64_t max_lba = __bswap64(gpt->last_usable_lba);
+	uint64_t pstart = __bswap64(gpt->entries_lba);
 	int numparts = __bswap32(gpt->number_of_entries);
 	int psize = __bswap32(gpt->size_of_entry);
-
 	int i, pos = 0;
 
-	for (i=0; i<numparts; i++) {
-		if (i%4 == 0) {
-			pos=0;
+	printf(" part start at: %lld\n", pstart);
+	printf(" Number of partitions: %d\n", numparts);
+	printf(" size of entry: %d\n", psize);
+
+	for (i = 0; i < numparts; i++) {
+		if (i % 4 == 0) {
+			pos = 0;
 			readblock(md->buf, pstart++, 0xffffffff, md);
 		}
 		struct gpt_partition *gpt_par = (struct gpt_partition *)(md->buf + (pos * psize));
 		pos++;
 
 		/* skip empty partitions */
-		if (gpt_par->first_lba == 0 &&
-				gpt_par->last_lba == 0)
+		if (gpt_par->first_lba == 0 && gpt_par->last_lba == 0)
 			continue;
 
-		printf("%d. %8llx - %8llx ", i, __bswap64(gpt_par->first_lba),
-				__bswap64(gpt_par->last_lba));
+		uint64_t first_lba = __bswap64(gpt_par->first_lba);
+		uint64_t last_lba = __bswap64(gpt_par->last_lba);
+
+		printf("%d. %8llx - %8llx ", i, first_lba, last_lba);
 		print_guid(&gpt_par->partition_type);
 		printf("\n");
+
+		if (guid_equal(&gpt_par->partition_type, &GUID_BASIC_DATA)) {
+			register_legacy(md, 0, 0, (ULONG)first_lba,
+					(ULONG)(last_lba - first_lba + 1),
+					(ULONG)max_lba);
+		} else {
+			printf("   Skipping non-FAT partition type\n");
+		}
 	}
 
-	return 0L;
+	return md->ret;
 }
 
 static LONG ScanMBR(struct MountData *md)
@@ -1502,9 +1559,18 @@ LONG MountDrive(struct MountStruct *ms)
 					ULONG target;
 					ULONG lun = 0;
 					for (target = 0; target < 8; target++, lun = 0) {
+						// Skip the host controller ID
+						if (target == ms->hostId)
+							continue;
 						ULONG unitNum;
 next_lun:
-						unitNum = target + lun * 10;
+						if (target > 7 || lun > 7) {
+							// Phase V wide SCSI scheme for IDs/LUNs > 7
+							unitNum = lun * 10 * 1000 + target * 10 + HD_WIDESCSI;
+						} else {
+							// Traditional scheme for IDs/LUNs <= 7
+							unitNum = target + lun * 10;
+						}
 						dbg("OpenDevice('%s', %"PRId32", %p, 0)\n", ms->deviceName, unitNum, request);
 						UBYTE err = OpenDevice(ms->deviceName, unitNum, (struct IORequest*)request, 0);
 						if (err == 0) {
