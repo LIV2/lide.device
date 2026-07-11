@@ -1050,7 +1050,6 @@ static struct FileSysEntry *find_filesystem(ULONG id1, ULONG id2, struct ExecBas
 	struct FileSysEntry *fse, *fs=NULL;
 	Forbid();
 	if ((FileSysResBase = (struct FileSysResource *)OpenResource(FSRNAME))) {
-		Forbid();
 		for (fse = (struct FileSysEntry *)FileSysResBase->fsr_FileSysEntries.lh_Head;
 			  fse->fse_Node.ln_Succ;
 			  fse = (struct FileSysEntry *)fse->fse_Node.ln_Succ) {
