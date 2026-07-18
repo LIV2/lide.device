@@ -137,7 +137,7 @@ disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 $(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash rename/renamelide lidetool/lidetool
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@mkdir -p $(BUILDDIR)
-	@echo 'lideflash -I $(ROM)' > $(BUILDDIR)/startup-sequence
+	@echo 'lideflash -I lide.rom' > $(BUILDDIR)/startup-sequence
 	@xdftool $(BUILDDIR)/$(DISK) format lide-update + \
 	                            boot install + \
 	                            write $(ROM) + \
