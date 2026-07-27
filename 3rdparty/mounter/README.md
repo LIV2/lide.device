@@ -63,8 +63,8 @@ identify and mount partitions.
     * `configDev`: A pointer to the `ConfigDev` structure for an autoconfig
       board, essential for autobooting.
     * `luns`, `slowSpinup`, `cdBoot`, `ignoreLast`: Boolean flags to control
-      behavior like LUN scanning, spin-up delays, CD booting, and handling of
-      the RDB `RDBFF_LAST` flag.
+      LUN scanning, spin-up delays, CD booting, and whether scanning continues
+      to later device units after an RDB with `RDBFF_LAST` is found.
     * `SysBase`: A pointer to the Exec library base.
 
 * **`struct MountData` (`mounter.c`)**: An internal state-management structure
