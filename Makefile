@@ -42,7 +42,7 @@ else
 DISK=lide-update.adf
 endif
 
-.PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool build
+.PHONY:	clean all lideflash disk lha lidetool/lidetool build
 
 all:	$(BUILDDIR)/$(PROJECT) \
 		$(ROM) \
@@ -51,7 +51,6 @@ all:	$(BUILDDIR)/$(PROJECT) \
 		$(BUILDDIR)/amigapci-lide.rom \
 		$(BUILDDIR)/lide-N2630-high.rom \
 		$(BUILDDIR)/lide-N2630-low.rom \
-		rename/renamelide \
 		lideflash
 
 OBJDIR = obj/$(TARGET)
@@ -127,11 +126,6 @@ lidetool/lidetool:
 	@${MAKE} -C lidetool
 	@printf "Done.\n"
 
-rename/renamelide:
-	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	@${MAKE} -C rename
-	@printf "Done.\n"
-
 $(BUILDDIR)/AIDE-boot-$(VERSION).adf: $(BUILDDIR)/AIDE-$(PROJECT)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C aide-boot
@@ -148,7 +142,7 @@ $(BUILDDIR)/amigapci-lide.rom: $(BUILDDIR)/amigapci-lide.device
 
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 
-$(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash lidetool/lidetool rename/renamelide $(BUILDDIR)/cdfs.rom 
+$(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash lidetool/lidetool $(BUILDDIR)/cdfs.rom 
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@mkdir -p $(BUILDDIR)
 	@echo 'lideflash -I lide.rom' > $(BUILDDIR)/startup-sequence
@@ -158,7 +152,6 @@ $(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
 								write $(BUILDDIR)/cdfs.rom cdfs.rom + \
 	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
-	                            write rename/renamelide renamelide + \
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence + \
 	                            makedir Expansion + \
@@ -168,7 +161,7 @@ $(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
 	                            write $(BUILDDIR)/AIDE-lide.device AIDE-lide.device
 	@printf "Done.\n"
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide build/lide-atbus.rom build/lide-N2630-high.rom build/lide-N2630-low.rom lidetool/lidetool $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device $(BUILDDIR)/amigapci-lide.device
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) build/lide-atbus.rom build/lide-N2630-high.rom build/lide-N2630-low.rom lidetool/lidetool $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device $(BUILDDIR)/amigapci-lide.device
 	@mkdir -p $(BUILDDIR)/lha/Expansion
 	cp $^ $(BUILDDIR)/lha
 	cp -r dist/* $(BUILDDIR)/lha
@@ -193,5 +186,4 @@ clean:
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C bootrom clean
 	@${MAKE} -C lideflash clean
 	@${MAKE} -C lidetool clean
-	@${MAKE} -C rename clean
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C aide-boot clean
