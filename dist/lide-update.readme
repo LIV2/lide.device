@@ -1,0 +1,106 @@
+Short:        Open Source IDE Driver
+Uploader:     aminet@harlum.net (Matt Harlum)
+Author:       aminet@harlum.net (Matt Harlum)
+Type:         driver/media
+Version:      0.0
+Architecture: m68k-amigaos
+Distribution: Aminet
+
+lide.device - An open source IDE driver
+
+=========
+Features
+=========
+ * Autoboot
+ * Kickstart 1.3 support
+ * Supports drives larger than 2TB
+ * ATAPI support
+ * Boot from ZIP/LS-120 etc
+ * Boot from CDROM*
+ * SCSI Direct, NSD, TD64 support
+
+==================
+Supported hardware
+==================
+* CIDER
+* RIPPLE
+* RIDE
+* N2630
+* SF2000
+* SF500
+* Dicke Olga
+* 68030-TK2
+* 68EC020-TK
+* Zorro-LAN-IDE
+* Zorro-LAN-IDE-SATA
+* CDTV-RAM-IDE
+* AIDE/SimpleIDE
+* AT-Bus 2008 and clones
+
+This list is not exhaustive, lide may also support other devices that implement the same IDE interface as Matzes TKs
+Let me know if there's something that should be added to this list!
+
+===============
+Boot from CDROM
+===============
+lide.device supports booting from CD-ROM but requires a CD Filesystem to be loaded for this to work.
+
+There are a few options:
+
+* CDFileSystem from AmigaOS 3.2.2 loaded with LoadModule
+* BootCDFileSystem from OS 4 either:
+* Added to a custom Kickstart ROM OR
+* Added to the IDE/Accelerator ROM (subject to board support)
+* Loading BootCDFileSystem from Board ROM
+* The following boards support loading BootCDFileSystem from ROM:
+   RIPPLE
+   RIDE
+   68EC020-TK
+   68030-TK2
+
+BootCDFileSystem must be flashed to the second bank of the ROM.
+This can be achieved on RIPPLE and 68EC020-TK boards using lideflash i.e
+lideflash -C BootCDFileSystem
+
+==========================
+Large drive (>4GB) support
+==========================
+For drives larger than 4GB it is required to use a Filesystem that supports TD64, NSD or SCSI-Direct
+The default FFS in OS 3.1 does not support these, and use of this above the 4GB boundary will result in data corruption!
+
+For drives larger than 2TB do not place partitions past the 2TB boundary! this will lead to filesystem corruption
+
+There are several options for larger drive support
+* PFS3
+* SFS
+* FFS from AmigaOS 3.2, 3.9 etc
+* FFSTD64
+Also make sure to use the "Quick Format" option when formatting such partitions
+
+================
+Acknowledgements
+================
+This driver uses the movem based fast read / write routines from Frederic REQUIN's at_apollo_device
+The release of the open source at_apollo_device inspired me to work on this.
+
+It is based on jbilander's SimpleDevice skeleton.
+
+Thanks to Stefan Reinauer and Chris Hooper for the Open Source A4091 Driver which has also been a good source of inspiration for this project.
+Chris' devtest has also been very helpful for testing the driver.
+Thanks to Olaf Barthel for providing code and valuable advice to improve the driver.
+Thanks to MHeinrichs for contributing improvements to the driver.
+
+==================
+Third-party notice
+==================
+reloc.S is adapted from the A4091 open-source driver and is Copyright Stefan Reinauer
+mounter.c adapted from the A4091 open-source driver and is Copyright 2021-2022 Toni Wilen
+The fast read/write routines for ATA devices are adapted from Freddric REQUIN's at_apollo_device
+
+=======
+License
+=======
+All software contained that is not provided by a third-party is covered by a GPL 2.0 Only license
+License: GPL v2
+
+lide.device is licensed under the GPL-2.0 only license

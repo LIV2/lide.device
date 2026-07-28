@@ -147,16 +147,19 @@ $(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
 	                            makedir s + \
 	                            write $(BUILDDIR)/startup-sequence s/startup-sequence + \
 	                            makedir Expansion + \
-	                            write info/Expansion.info Expansion.info + \
-	                            write info/lide.device.info Expansion/lide.device.info + \
+	                            write dist/Expansion.info Expansion.info + \
+	                            write dist/Expansion/lide.device.info Expansion/lide.device.info + \
 	                            write $(BUILDDIR)/lide.device Expansion/lide.device + \
 	                            write $(BUILDDIR)/AIDE-lide.device AIDE-lide.device
 	@printf "Done.\n"
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide lidetool/lidetool $(BUILDDIR)/lide.device info/lide.device.info $(BUILDDIR)/AIDE-lide.device
-	@mkdir -p $(BUILDDIR)/lha
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide build/lide-atbus.rom build/lide-N2630-high.rom build/lide-N2630-low.rom lidetool/lidetool $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
+	@mkdir -p $(BUILDDIR)/lha/Expansion
 	cp $^ $(BUILDDIR)/lha
-	cd $(BUILDDIR)/lha && lha -c ../../$@ $(notdir $^) 
+	cp -r dist/* $(BUILDDIR)/lha
+	awk '/^Version/{sub("0.0","${VERSION}")};{print}' dist/lide-update.readme > ${BUILDDIR}/lha/lide-update.readme
+	mv $(BUILDDIR)/lha/lide.device $(BUILDDIR)/lha/Expansion/
+	cd $(BUILDDIR)/lha && lha -c ../../$@ *
 
 lha: $(BUILDDIR)/lide-update.lha 
 
