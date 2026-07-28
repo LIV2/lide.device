@@ -9,7 +9,7 @@ c_reset = "\033[0m"
 
 # On the AT-Bus the ROM is not selected between $1000-$1FFF
 # So we need to fit the boot rom under this limit
-size_limit = 1024
+size_limit = 512
 
 with open("obj/bootldr", "rb") as s:
     romSize = os.fstat(s.fileno()).st_size
