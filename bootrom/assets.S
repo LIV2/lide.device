@@ -4,6 +4,6 @@
     ELSE
   incbin "obj/bootldr-word"
     ENDIF
-  
+  include stage2.S
   section DEVICE
   incbin "../build/lide.device"
