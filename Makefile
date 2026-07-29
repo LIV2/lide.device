@@ -4,6 +4,9 @@ ROM=$(BUILDDIR)/lide.rom
 VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
 TARGET=lide.device
 
+ODFS_VERSION=0.7.0
+ODFS_URL="https://github.com/reinauer/ODFileSystem/releases/download/v$(ODFS_VERSION)/ODFileSystem-rom"
+
 BGREEN = \033[1;32m
 GREEN = \033[0;32m
 WHITE = \033[1;37m
@@ -132,15 +135,20 @@ $(BUILDDIR)/AIDE-boot-$(VERSION).adf: $(BUILDDIR)/AIDE-$(PROJECT)
 	@mkdir -p $(BUILDDIR)
 	@mv aide-boot/aide-boot.adf $@
 
+$(BUILDDIR)/cdfs.rom:
+	@printf "${WHITE}#### Retrieving ODFS ####${NC}\n"
+	curl -fSsL $(ODFS_URL) -o $@
+
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 
-$(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash rename/renamelide lidetool/lidetool
+$(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device lideflash/lideflash lidetool/lidetool rename/renamelide $(BUILDDIR)/cdfs.rom 
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@mkdir -p $(BUILDDIR)
 	@echo 'lideflash -I lide.rom' > $(BUILDDIR)/startup-sequence
 	@xdftool $(BUILDDIR)/$(DISK) format lide-update + \
 	                            boot install + \
 	                            write $(ROM) + \
+								write $(BUILDDIR)/cdfs.rom cdfs.rom + \
 	                            write lidetool/lidetool lidetool + \
 	                            write lideflash/lideflash lideflash + \
 	                            write rename/renamelide renamelide + \

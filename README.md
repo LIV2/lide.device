@@ -73,21 +73,25 @@ Releases contain the following builds
 lide.device supports booting from CD-ROM but requires a CD Filesystem to be loaded for this to work.
 
 There are a few options:
-1. `CDFileSystem` from AmigaOS 3.2.2 loaded with LoadModule
-2. `BootCDFileSystem` from OS 4 either:
+1. [`ODFileSystem`](https://github.com/reinauer/ODFileSystem)  (Recommended) Added to the IDE/Accelerator ROM (subject to board support)
+2. `CDFileSystem` from AmigaOS 3.2.2 loaded with LoadModule
+3. `BootCDFileSystem` from OS 4 either:
     * Added to a custom Kickstart ROM **OR**
     * Added to the IDE/Accelerator ROM (subject to board support)
 
-### Loading BootCDFileSystem from Board ROM
-The following boards support loading BootCDFileSystem from ROM:
+### Loading ODFileSystem from Board ROM
+The following boards support loading ODFileSystem from ROM:
 * RIPPLE
 * RIDE
 * 68EC020-TK
 * 68030-TK2
 
-`BootCDFileSystem` must be flashed to the second bank of the ROM.  
+The rom version of ODFileSystem is included on the lide-update adf in the file named `cdfs.rom`  
+This must be flashed to the second bank of the ROM.  
 This can be achieved on RIPPLE and 68EC020-TK boards using `lideflash` i.e  
-`lideflash -C BootCDFileSystem`
+`lideflash -C cdfs.rom`
+
+For other boards (i.e 68030-TK2) place cdfs.rom immediately after lide-atbus.rom when programming the flash
 
 ## Large drive (>4GB) support
 For drives larger than 4GB it is required to use a Filesystem that supports TD64, NSD or SCSI-Direct  
