@@ -7,6 +7,7 @@ LINKFLAGS=-brawbin1 -s -sc -sd -mrel -lamiga -lauto -L/opt/amiga/m68k-amigaos/vb
 OBJDIR=obj
 DEVICE=../build/lide.device
 BUILDDIR=build
+AMIGAPCI_BASE=0xa80000
 
 .PHONY: all clean rom $(DEVICE) checksize
 .INTERMEDIATE: $(OBJDIR)/$(PROJECT)-word.rom
@@ -57,6 +58,9 @@ $(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o | checksize
 
 ../$(BUILDDIR)/lide-N2630-low.rom:  $(OBJDIR)/$(PROJECT)-word.rom
 	srec_cat $< -binary -split 2 1 1 -out $@ -binary
+
+../$(BUILDDIR)/amigapci-lide.rom: ../$(BUILDDIR)/amigapci-lide.device
+	./relocate.py ${AMIGAPCI_BASE} $< $@
 
 clean:
 	rm -f $(OBJDIR)/*
