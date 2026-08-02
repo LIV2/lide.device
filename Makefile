@@ -161,7 +161,7 @@ $(BUILDDIR)/$(DISK): $(ROM) $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
 	                            write $(BUILDDIR)/AIDE-lide.device AIDE-lide.device
 	@printf "Done.\n"
 
-$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide build/lide-atbus.rom build/lide-N2630-high.rom build/lide-N2630-low.rom lidetool/lidetool $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device
+$(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide build/lide-atbus.rom build/lide-N2630-high.rom build/lide-N2630-low.rom lidetool/lidetool $(BUILDDIR)/lide.device $(BUILDDIR)/AIDE-lide.device $(BUILDDIR)/amigapci-lide.device
 	@mkdir -p $(BUILDDIR)/lha/Expansion
 	cp $^ $(BUILDDIR)/lha
 	cp -r dist/* $(BUILDDIR)/lha

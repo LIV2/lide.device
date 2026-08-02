@@ -32,6 +32,7 @@ jobs:
             build/*.rom
             build/*.adf
             build/*.lha
+            build/*.device
           if-no-files-found: error
 
   draft_release:
@@ -53,3 +54,5 @@ jobs:
             artifacts/software/*.rom
             artifacts/software/**/*.adf
             artifacts/software/**/*.lha
+            artifacts/software/**/amigapci-lide.device
+            artifacts/software/**/AIDE-lide.device
