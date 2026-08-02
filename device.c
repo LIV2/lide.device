@@ -784,15 +784,20 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
 
 
             case TD_ADDCHANGEINT:
+                /**
+                 * Important: We must *not* reply to this ioreq at all
+                 * It will be held until TD_REMCHANGEINT is called on the same IOReq
+                 * It should have been sent via SendIO() but we clear IOF_QUICK just to be sure
+                 */
                 Info("Addchangeint\n");
 
-                ioreq->io_Flags |= IOF_QUICK; // Must not Reply to this request
-                error = 0;
-
+                ioreq->io_Flags &= ~IOF_QUICK;
+                ioreq->io_Error = 0;
                 Disable();
                 AddHead((struct List *)&unit->changeInts,(struct Node *)&ioreq->io_Message.mn_Node);
                 Enable();
-                break;
+
+                return; // Skip regular command termination
 
             case TD_REMCHANGEINT:
                 error = 0;
