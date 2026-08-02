@@ -43,13 +43,13 @@ endif
 .PHONY:	clean all lideflash disk lha rename/renamelide lidetool/lidetool build
 
 all:	$(BUILDDIR)/$(PROJECT) \
+		$(ROM) \
 		$(BUILDDIR)/AIDE-$(PROJECT) \
 		$(BUILDDIR)/amigapci-$(PROJECT) \
 		$(BUILDDIR)/lide-N2630-high.rom \
 		$(BUILDDIR)/lide-N2630-low.rom \
 		rename/renamelide \
-		lideflash \
-		$(ROM)
+		lideflash
 
 OBJDIR = obj/$(TARGET)
 
@@ -107,7 +107,7 @@ $(OBJDIR)/%.o: %.S
 	@printf "${GREEN}$@${NC}\n"
 	@${AS} -o $@ $<
 
-$(ROM): $(BUILDDIR)/$(PROJECT)
+$(ROM) $(BUILDDIR)/lide-N2630-high.rom $(BUILDDIR)/lide-N2630-low.rom $(BUILDDIR)/lide-atbus.rom &: $(BUILDDIR)/$(PROJECT)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C bootrom
 	@printf "Done.\n"
@@ -170,14 +170,6 @@ $(BUILDDIR)/lide-update.lha: lideflash/lideflash $(ROM) rename/renamelide build/
 	cd $(BUILDDIR)/lha && lha -c ../../$@ *
 
 lha: $(BUILDDIR)/lide-update.lha 
-
-$(BUILDDIR)/lide-N2630-high.rom: $(ROM)
-	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	srec_cat $(BUILDDIR)/lide-word.rom -binary -split 2 0 1 -out $@ -binary
-
-$(BUILDDIR)/lide-N2630-low.rom:  $(ROM)
-	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	srec_cat $(BUILDDIR)/lide-word.rom -binary -split 2 1 1 -out $@ -binary
 
 $(BUILDDIR)/lide-tk-29F010.rom: $(ROM)
 	@cat $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/lide-atbus.rom > $@

@@ -6,14 +6,15 @@ LINKER=vlink
 LINKFLAGS=-brawbin1 -s -sc -sd -mrel -lamiga -lauto -L/opt/amiga/m68k-amigaos/vbcc/lib
 OBJDIR=obj
 DEVICE=../build/lide.device
+BUILDDIR=build
 
 .PHONY: all clean rom $(DEVICE) checksize
-
+.INTERMEDIATE: $(OBJDIR)/$(PROJECT)-word.rom
 SRCS = bootldr.S \
        endrom.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
-all:	../$(BUILDDIR)/$(PROJECT).rom ../$(BUILDDIR)/$(PROJECT)-atbus.rom ../$(BUILDDIR)/$(PROJECT)-word.rom
+all:	../$(BUILDDIR)/$(PROJECT).rom ../$(BUILDDIR)/$(PROJECT)-atbus.rom ../$(BUILDDIR)/lide-N2630-high.rom ../$(BUILDDIR)/lide-N2630-low.rom
 
 checksize:
 	./checksize.sh $(DEVICE)
@@ -48,8 +49,14 @@ $(OBJDIR)/assets-word.o: assets.S $(OBJDIR)/bootldr-word $(DEVICE)
 ../$(BUILDDIR)/$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
 	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $(OBJDIR)/assets.o
 
-../$(BUILDDIR)/$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o | checksize
+$(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o | checksize
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets-word.o
+
+../$(BUILDDIR)/lide-N2630-high.rom: $(OBJDIR)/$(PROJECT)-word.rom
+	srec_cat $< -binary -split 2 0 1 -out $@ -binary
+
+../$(BUILDDIR)/lide-N2630-low.rom:  $(OBJDIR)/$(PROJECT)-word.rom
+	srec_cat $< -binary -split 2 1 1 -out $@ -binary
 
 clean:
 	rm -f $(OBJDIR)/*
