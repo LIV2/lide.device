@@ -16,6 +16,8 @@ GIT_REF_NAME = $(shell git branch --show-current)
 GIT_REF := "$(GIT_REF_NAME)-$(shell git rev-parse --short HEAD)"
 BUILD_DATE := $(shell date  +"%d.%m.%Y")
 
+AMIGAPCI_ROMBASE=0xF00000
+
 export BUILD_DATE
 export GIT_REF
 
@@ -46,6 +48,7 @@ all:	$(BUILDDIR)/$(PROJECT) \
 		$(ROM) \
 		$(BUILDDIR)/AIDE-$(PROJECT) \
 		$(BUILDDIR)/amigapci-$(PROJECT) \
+		$(BUILDDIR)/amigapci-lide.rom \
 		$(BUILDDIR)/lide-N2630-high.rom \
 		$(BUILDDIR)/lide-N2630-low.rom \
 		rename/renamelide \
@@ -138,6 +141,10 @@ $(BUILDDIR)/AIDE-boot-$(VERSION).adf: $(BUILDDIR)/AIDE-$(PROJECT)
 $(BUILDDIR)/cdfs.rom:
 	@printf "${WHITE}#### Retrieving ODFS ####${NC}\n"
 	curl -fSsL $(ODFS_URL) -o $@
+
+$(BUILDDIR)/amigapci-lide.rom: $(BUILDDIR)/amigapci-lide.device
+	@printf "${WHITE}#### Building $@ ####${NC}\n"
+	romtool build -t ext -e ${AMIGAPCI_ROMBASE} $^ -o $@
 
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 
