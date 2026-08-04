@@ -89,7 +89,11 @@ void setup_matzetk_board(struct ideBoard *board) {
   board->rebootRequired   = true; // write enable turns off IDE so we must reboot afterwards
   board->banks            = 1;
 
-  if (boardIs68ec020tk(board->cd)) {
+  if ((board->cd->cd_BoardSize >= 131072) && 
+      (boardIs68ec020tk(board->cd) ||
+      boardIsOlga(board->cd) ||
+      boardIsZorroLanIDE(board->cd))
+    ) {
     board->bankSelect    = &matzetk_bankSelect;
     board->banks         = 2;
   } else {
