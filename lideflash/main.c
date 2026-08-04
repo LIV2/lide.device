@@ -457,6 +457,26 @@ void printCurrentVersion(struct ConfigDev *cd) {
   }
 }
 
+/**
+ * getbasename
+ * 
+ * Get the base filename from a full path
+ * 
+ * @param path full path to file
+ * @returns pointer to filename
+ */
+static char *getbasename(char *path) {
+  char *filename = path;
+  int i = 0;
+  while (path[i]) {
+    if (path[i] == ':' || path[i] == '/') {
+      filename = path + i + 1;
+    }
+    i++;
+  }
+  return filename;
+}
+
 int main(int argc, char *argv[])
 {
   SysBase = *((struct ExecBase **)4UL);
@@ -756,6 +776,7 @@ int main(int argc, char *argv[])
             if (config->misc_bank < board.banks) {
               // If this flash IC does not support sector erase we can only program at the same time as lide.rom
               if (sectorSize > 0 || config->ide_rom_filename) {
+                char *misc_basename = getbasename(config->misc_filename);
                 if (board.bankSelect != NULL)
                   board.bankSelect(config->misc_bank,&board);
   
@@ -763,7 +784,7 @@ int main(int argc, char *argv[])
                   printf("Erasing bank %d...\n",config->misc_bank);
                   flash_erase_bank(sectorSize);
                 }
-                printf("Writing bank %d.\n",config->misc_bank);
+                printf("Writing %s.\n",misc_basename);
                 writeBufToFlash(&board,misc_buffer,board.flashbase,miscSize);
               } else {
                 printf("Must program both lide.rom and CDFS at the same time with this flash chip\n");
