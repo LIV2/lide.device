@@ -753,17 +753,22 @@ int main(int argc, char *argv[])
 
           if (config->misc_filename) {
 
-            if (config->misc_bank < board.banks && sectorSize > 0) {
-
-              if (board.bankSelect != NULL)
-                board.bankSelect(config->misc_bank,&board);
-
-              if (config->eraseFlash == false) {
-                printf("Erasing bank %d...\n",config->misc_bank);
-                flash_erase_bank(sectorSize);
+            if (config->misc_bank < board.banks) {
+              // If this flash IC does not support sector erase we can only program at the same time as lide.rom
+              if (sectorSize > 0 || config->ide_rom_filename) {
+                if (board.bankSelect != NULL)
+                  board.bankSelect(config->misc_bank,&board);
+  
+                if (config->eraseFlash == false && sectorSize > 0) {
+                  printf("Erasing bank %d...\n",config->misc_bank);
+                  flash_erase_bank(sectorSize);
+                }
+                printf("Writing bank %d.\n",config->misc_bank);
+                writeBufToFlash(&board,misc_buffer,board.flashbase,miscSize);
+              } else {
+                printf("Must program both lide.rom and CDFS at the same time with this flash chip\n");
+                printf("Example: lideflash -I lide.rom -C cdfs.rom\n");
               }
-              printf("Writing bank %d.\n",config->misc_bank);
-              writeBufToFlash(&board,misc_buffer,board.flashbase,miscSize);
             } else {
               printf("This board does not support flashing bank %d.\n",config->misc_bank);
             }
