@@ -443,7 +443,7 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
             error   = 0;
             ioreq->io_Actual = 0;
             if (unit->flags.atapi) {
-                ioreq->io_Actual = (atapi_test_unit_ready(unit,false) != 0);
+                ioreq->io_Actual = (atapi_test_unit_ready(unit,true) != 0);
                 break;
             }
             break;

@@ -620,7 +620,9 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
     UBYTE asq = 0;
     UBYTE ret = 0;
 
-    for (int tries = 4; tries > 0; tries--) {
+    static const int timeouts[4] = {1,2,4,8};
+
+    for (int try = 0; try < 9; try++) {
         cdb->operation        = SCSI_CMD_TEST_UNIT_READY;
         cmd->scsi_Command     = (UBYTE *)cdb;
         cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
@@ -641,7 +643,7 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
                             if (!immediate)
-                                if (tries > 0) sleep_s(unit->itask->tr,2);
+                                if (try < 8) sleep_s(unit->itask->tr,timeouts[try/2]);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;
@@ -1103,7 +1105,14 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool imm
         }
     }
 
-    atapi_test_unit_ready(unit,true);
+    if (start && !loej) {
+        // Spin-up was requested, so the caller wants the medium ready when we return.
+        BYTE ready = atapi_test_unit_ready(unit,false);
+        if (ret == 0) ret = ready;
+    } else {
+        // Just clear the unit check condition
+        atapi_test_unit_ready(unit,true);
+    }
 
     return ret;
 }
