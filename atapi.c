@@ -620,7 +620,9 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
     UBYTE asq = 0;
     UBYTE ret = 0;
 
-    for (int tries = 4; tries > 0; tries--) {
+    static const int timeouts[4] = {1,2,4,8};
+
+    for (int try = 0; try < 9; try++) {
         cdb->operation        = SCSI_CMD_TEST_UNIT_READY;
         cmd->scsi_Command     = (UBYTE *)cdb;
         cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
@@ -637,11 +639,11 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
                 Trace("SenseKey: %lx ASC: %lx ASQ: %lx\n",senseKey,asc,asq);
                 switch (senseKey) {
                     case 0x02: // Not ready
-                        if (asc == 4) { // Becoming ready
+                        if (asc == 0x04) { // Becoming ready
                             // The medium is becoming ready, wait a few seconds before checking again
                             ret = TDERR_DiskChanged;
-                            if (!immediate)
-                                if (tries > 0) sleep_s(unit->itask->tr,2);
+                                if (!immediate)
+                                    if (try < 8) sleep_s(unit->itask->tr,timeouts[try/2]);
                         } else { // Anything else - No medium/bad medium etc
                             ret = TDERR_DiskChanged;
                             goto done;
@@ -650,10 +652,9 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
                     case 0x06: // Unit attention
                         if (asc == 0x28) { // Medium became ready
                             ret = 0;
+                        } else {
+                            ret = TDERR_NotSpecified;
                         }
-                        break;
-                    case 0x03: // Medium error
-                        ret = TDERR_DiskChanged;
                         break;
                     default:
                         // Anything else, could be a timeout/bad phase etc
@@ -671,7 +672,10 @@ BYTE atapi_test_unit_ready(struct IDEUnit *unit, bool immediate) {
 
 done:
     scsi_release_unit_cmd(unit);
-    atapi_update_presence(unit,(ret == 0)); // Update the media presence
+
+    // Only update presence if definitively there or not, not transient errors
+    if (ret == TDERR_DiskChanged || ret == 0)
+        atapi_update_presence(unit,(ret == 0));
     return ret;
 }
 
@@ -1063,7 +1067,7 @@ BYTE atapi_packet_unaligned(struct SCSICmd *cmd, struct IDEUnit *unit) {
 */
 BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool immediate) {
     UBYTE operation = 0;
-    UBYTE ret = 0;
+    BYTE ret = 0;
 
     if (loej)  operation |= (1<<1);
     if (start) operation |= (1<<0);
@@ -1098,12 +1102,20 @@ BYTE atapi_start_stop_unit(struct IDEUnit *unit, bool start, bool loej, bool imm
             } else {
                 ret = TDERR_DiskChanged;
             }
+        } else if (sense.senseKey == 0x06 && sense.asc == 0x28) {
+            // Not ready to ready change, medium may have changed
+            ret = 0;
         } else {
             ret = TDERR_NotSpecified;
         }
     }
 
-    atapi_test_unit_ready(unit,true);
+    // If start but not loading (i.e CMD_START) wait for the media to become ready
+    // This is possibly not standard behavior but is here for cd boot support
+    // Mounter calls CMD_START before TD_CHANGESTATE so we want it to be ready after CMD_START
+    // If not we still call TUR to trigger the side-effect of updating media presence
+    bool wait_for_ready = (start && !loej);
+    atapi_test_unit_ready(unit,!wait_for_ready);
 
     return ret;
 }
