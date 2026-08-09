@@ -6,140 +6,105 @@
 
     IFND WORDWIDE
 DRIVEROFFSET = $2000
+BANKOFFSET   = $10000
+STRIDE       = 2
     ELSE
 DRIVEROFFSET = $1000
+BANKOFFSET   = $8000
+STRIDE       = 1
     ENDIF
 
-
-Stage2: bra.s   Go
-
-BoardBase:   dc.l 0
-MyConfigDev: dc.l 0
-
-Go:     lea.l   BoardBase(PC),a3
-        move.l  a0,(a3)
-        move.l  a1,4(a3)
+;; Registers used:
+;; A0: BoardBase, A1: ConfigDev, A2: BoardBase, A3: ConfigDev, D2: Rom Alignment
+Stage2  move.l  a0,a2                         ; BoardBase
+        move.l  a1,a3                         ; ConfigDev
         moveq   #0,d2
         moveq.l #0,d1
-        move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
+        move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom alignment
         cmp.w   #1,d1                         ; AT-Bus with odd address?
         beq     .odd
         cmp.w   #$100,d1                      ; WinUAE AT-Bus with ROM at odd address (despite DiagVec...)
         bne     .even
-.odd    add.l   #1,d2
+.odd    addq.l  #1,d2
 .even 
-        and.l   #$F000,d1                     ; Add any other offset
+        and.w   #$F000,d1                     ; Add any other offset
         add.l   d1,d2
-        cmp.l   #$20000,cd_BoardSize(a1)      ; 128K Board?
-        bne     .loaddriver
+        cmp.l   #(BANKOFFSET*2),cd_BoardSize(a3) ; 128K Board?
+        bcs.s   .loaddriver
 .loadcdfs
-        move.l  BoardBase(PC),a0
-        move.l  a0,a1
+        move.l  a2,a1                         ; Get BoardBase
         add.l   d2,a1
-        add.l   #$1FFF8,a1                    ; Point to the end of the second bank
+        add.l   #(BANKOFFSET*2)-(STRIDE*4),a1 ; Point to the end of the second bank
         moveq.l #3,d3
-.getid: lsl.l   #8,d0                         ; Look for the ROM trailer which should not be on the second bank
+.getid  lsl.l   #8,d0                         ; Look for the ROM trailer which should not be on the second bank
         move.b  (a1),d0
-        add.l   #2,a1
+        addq.l  #STRIDE,a1
         dbra    d3,.getid
         cmp.l   #'LIDE',d0 
-        beq     .loaddriver
-
-        IFND WORDWIDE
-
-        move.l  #$10000,d0                    ; Reloc offset to second bank
-        add.l   d2,d0                         ; Add the odd offset if needed
-
-        ELSE
-
-        moveq.l #0,d0
-        add.l   d2,a0
-        add.l   #$8000,a0      
-
-        ENDIF
-        bsr     _relocate                     ; BoardBase already in A0
-        tst.l   d0
-        beq.s   .skipcdfs
-        bsr     InitRT
-
-.skipcdfs:
+        beq.s   .loaddriver                   ; ROM trailer found. so the banks are mirrored :(
+        move.l  #BANKOFFSET,d0                ; Reloc offset to second bank
+        bsr     CallReloc
 
         IFND WORDWIDE
         ; Load romtags from other banks if supported (currently only RIDE)
-        move.l  MyConfigDev(PC),a1
-        cmp.w   #OAHR_MFR_ID,cd_Rom+er_Manufacturer(a1)
-        bne     .loaddriver
-        cmp.b   #RIDE_PRD_ID,cd_Rom+er_Product(a1)
-        bne     .loaddriver
-        moveq.l #1,d3
+        cmp.w   #OAHR_MFR_ID,cd_Rom+er_Manufacturer(a3)
+        bne.s   .loaddriver
+        cmp.b   #RIDE_PRD_ID,cd_Rom+er_Product(a3)
+        bne.s   .loaddriver
+        moveq.l #1,d5
         move.b  #$C0,d4             ; Start with Bank #4
-.bank:  move.l  BoardBase(PC),a1
-        move.l  a1,a0               ; BoardBase for _reloc
-        add.l   #RIDE_BANKREG,a1
-        move.b  (a1),d1
+        move.l  a2,a4
+        add.l   #RIDE_BANKREG,a4
+.bank   move.b  (a4),d1
         and.b   #$3F,d1             ; Preserve other bits
         or.b    d4,d1
-        move.b  d1,(a1)             ; Select bank, the rom will dissapear from the lower 64K window now
-        move.l  #$10000,d0          ; So point to the upper 64K window where the ROM is always mapped
-        bsr     _relocate           ; A0 = Base, D0 = Offset (Must be non-zero)
-        tst.l   d0
-        beq.s   .nort
-        bsr     InitRT
-.nort:  sub.l   #$40,d4
-        dbra    d3,.bank
-        move.l  BoardBase(PC),a1
-        add.l   #RIDE_BANKREG,a1
-        and.b   #$3F,(a1)           ; Point back at Bank #0
-        add.l   #$10000,d2          ; Set Offset to upper window
+        move.b  d1,(a4)             ; Select bank, the rom will dissapear from the lower 64K window now
+        move.l  #BANKOFFSET,d0      ; So point to the upper 64K window where the ROM is always mapped
+        bsr.s   CallReloc
+        sub.l   #$40,d4
+        dbra    d5,.bank
+        and.b   #$3F,(a4)           ; Point back at Bank #0
+        add.l   #BANKOFFSET,d2      ; Set Offset to upper window
         ENDIF
 
-.loaddriver:
-        move.l  BoardBase(PC),a0
-
-        IFND WORDWIDE
-
+.loaddriver
         move.l  #DRIVEROFFSET,d0
-        add.l   d2,d0               ; Add offset if AT-Bus with odd address
+        ;; Fall through to CallReloc ;;
+        ;; RTS will go back to bootldr ;;
 
-        ELSE
-
-        move.l  #0,d0
-        add.l   d2,a0
-        add.l   #DRIVEROFFSET,a0
-
+; CallReloc: Add Alignment to Offset and call _relocate
+; Inputs: D0: Offset, D2: Alignment, A2: BoardBase
+; Returns: 0 on success
+CallReloc
+        add.l   d2,d0
+        move.l  a2,a0
+        IFD WORDWIDE
+        add.l   d0,a0
+        moveq.l #0,d0
         ENDIF
-        bsr     _relocate
+        bsr.s   _relocate
         tst.l   d0
-        beq.s   .err
-        bsr     InitRT
-        tst.l   d0
-        bne.s   .err
+        bne.s   InitRT
+        moveq.l #-1,d0
         rts
 
-.err    moveq.l #-1,d0
-        rts
-
-* Search for the driver Romtag
-InitRT
-        movem.l d2/d3/a1,-(sp)
-        move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
+; InitRT: Search for a ROMTAG and InitResident() it
+; Inputs: D0: Address to search
+; Returns: 0 on success
+InitRT  move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
         move.l  d0,a1
-.findrt cmpi.w  #$4AFC,(a1)
+.findrt cmpi.w  #RTC_MATCHWORD,(a1)
         bne.s   .not_rt
         cmp.l   RT_MATCHTAG(a1),a1   ; Check that the RT_MATCHTAG is correct
         beq.s   .found
 .not_rt addq.l  #2,a1
         dbra    d3,.findrt
-        movem.l (sp)+,d2/d3/a1
         moveq.l #-1,d0
         rts
-
 * Found the driver, initialize it
 .found  
         moveq.l  #0,d1
         jsr      _LVOInitResident(A6)
-.done
-        movem.l (sp)+,d2/d3/a1
         moveq.l #0,d0
         rts
 
