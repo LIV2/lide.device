@@ -82,7 +82,7 @@ CallReloc
         add.l   d0,a0
         moveq.l #0,d0
         ENDIF
-        bsr.s   _relocate
+        bsr.w   _relocate
         tst.l   d0
         bne.s   InitRT
         moveq.l #-1,d0
