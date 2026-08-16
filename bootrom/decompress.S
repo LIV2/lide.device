@@ -4,12 +4,10 @@
 ; The ZX0 data compression format and algorithm was designed by Einar Saukas.
 ; https://github.com/einar-saukas/ZX0
 
-; To load from byte-wide rom set STRIDE to 2
-        IFND STRIDE
-STRIDE = 1
-        ENDIF
+;To load from byte-wide rom set STRIDE to 2
+        XREF STRIDE
 
-        public  _decompress
+        public _decompress
 ; In:  a0 = Compressed data
 ;      a1 = Destination
 _decompress:
