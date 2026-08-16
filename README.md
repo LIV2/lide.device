@@ -155,6 +155,7 @@ reloc.S is adapted from the [A4091](https://github.com/A4091/a4091-software) ope
 mounter.c adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen  
 The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
 cdfs.rom, included in releases and on the update ADF, is taken unmodified from the upstream [ODFileSystem](https://github.com/reinauer/ODFileSystem) release page and is Copyright Stefan Reinauer  
+decompress.S - The ZX0 data compression format and algorithm was designed by [Einar Saukas](https://github.com/einar-saukas/ZX0).  
 
 ## License
 All software contained that is not provided by a third-party is covered by a GPL 2.0 Only license  
