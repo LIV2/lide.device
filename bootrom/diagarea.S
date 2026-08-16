@@ -111,7 +111,7 @@ Romtag
 
 BoardBase:   dc.l 0
 MyConfigDev: dc.l 0
-Stage2:      dc.l 0
+Stage2_ptr:  dc.l 0
 
 ; Allocate memory and remember size
 ; d0: Size
@@ -160,7 +160,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         tst.l   d0
         beq     .err
         move.l  d0,a2
-        lea.l   Stage2(PC),a0                ; Stash for later
+        lea.l   Stage2_ptr(PC),a0                ; Stash for later
         move.l  d0,(a0)
         sub.l   #1,d2                        ; Fixup for DBRA
 .copy:  move.b  (a3),(a2)+
@@ -199,7 +199,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         movem.l (sp)+,d2-d3
         *******  End checkered purple failure screen **************************
 
- .ok:   move.l  Stage2(PC),d0
+ .ok:   move.l  Stage2_ptr(PC),d0
         tst.l   d0
         beq.s   .done
         move.l  d0,a1

@@ -1,7 +1,7 @@
 PROJECT=lide
 INCLUDE=/opt/amiga/m68k-amigaos/ndk-include
 AS=vasmm68k_mot
-ASFLAGS=-Fhunk -I$(INCLUDE) -quiet -align -DROM
+ASFLAGS=-Fhunk -I$(INCLUDE) -quiet -align -DROM -nosym
 LINKER=vlink
 LINKFLAGS=-brawbin1 -s -sc -sd -mrel -lamiga -lauto -L/opt/amiga/m68k-amigaos/vbcc/lib
 OBJDIR=obj
@@ -10,7 +10,7 @@ BUILDDIR=build
 
 .PHONY: all clean rom $(DEVICE) checksize
 .INTERMEDIATE: $(OBJDIR)/$(PROJECT)-word.rom
-SRCS = bootldr.S \
+SRCS = diagarea.S \
        endrom.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
@@ -29,28 +29,25 @@ $(OBJDIR)/%-word.o: %.S
 	@mkdir -p $(OBJDIR)
 	$(AS) $(ASFLAGS) -DWORDWIDE -o $@ $<
 
-$(OBJDIR)/bootldr:	$(OBJDIR)/bootldr.o
+$(OBJDIR)/diagarea:	$(OBJDIR)/diagarea.o
 	$(LINKER) $(LINKFLAGS) -o $@ $^
 
-$(OBJDIR)/bootldr-word:	$(OBJDIR)/bootldr-word.o
-	$(LINKER) $(LINKFLAGS) -o $@ $^
-
-$(OBJDIR)/bootnibbles: $(OBJDIR)/bootldr mungerom.py
+$(OBJDIR)/diagnibbles: $(OBJDIR)/diagarea mungerom.py
 	@mkdir -p $(OBJDIR)
 	./mungerom.py
 
-$(OBJDIR)/assets.o: assets.S $(OBJDIR)/bootnibbles $(DEVICE)
+$(OBJDIR)/bootrom.o: bootrom.S $(OBJDIR)/diagnibbles $(DEVICE)
 
-$(OBJDIR)/assets-word.o: assets.S $(OBJDIR)/bootldr-word $(DEVICE)
+$(OBJDIR)/bootrom-word.o: bootrom.S $(DEVICE)
 
-../$(BUILDDIR)/$(PROJECT).rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
-	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets.o
+../$(BUILDDIR)/$(PROJECT).rom: $(OBJDIR)/bootrom.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
+	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $^
 
-../$(BUILDDIR)/$(PROJECT)-atbus.rom: $(OBJDIR)/bootnibbles $(OBJDIR)/assets.o | checksize
-	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $(OBJDIR)/assets.o
+../$(BUILDDIR)/$(PROJECT)-atbus.rom: $(OBJDIR)/bootrom.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
+	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $^
 
-$(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/assets-word.o | checksize
-	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $(OBJDIR)/assets-word.o
+$(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/bootrom-word.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
+	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $^
 
 ../$(BUILDDIR)/lide-N2630-high.rom: $(OBJDIR)/$(PROJECT)-word.rom
 	srec_cat $< -binary -split 2 0 1 -out $@ -binary

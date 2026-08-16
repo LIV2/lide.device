@@ -1,7 +1,7 @@
 SECTIONS {
     rom = .;
-    .bootldr 0x00: {
-        *(BOOTLDR);
+    .code 0x00: {
+        *(CODE);
         RESERVE(0x800-.);
     } = 0xFFFF
     .reserved 0x800: {
