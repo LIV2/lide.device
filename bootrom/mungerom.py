@@ -11,16 +11,16 @@ c_reset = "\033[0m"
 # So we need to fit the boot rom under this limit
 size_limit = 512
 
-with open("obj/bootldr", "rb") as s:
+with open("obj/diagarea", "rb") as s:
     romSize = os.fstat(s.fileno()).st_size
     
     if romSize > size_limit:
-        print(f"{c_bright_red}bootldr too large, Size: {romSize} Limit: {size_limit}{c_reset}")
+        print(f"{c_bright_red}diagarea too large, Size: {romSize} Limit: {size_limit}{c_reset}")
         sys.exit(1)
 
     rom = s.read()
     
-    with open("obj/bootnibbles","wb") as d:
+    with open("obj/diagnibbles","wb") as d:
         for b in rom:
             d.write(bytes([(b & 0xF0) | 0x0F]))
             d.write(bytes([((b << 4) & 0xF0) | 0x0F]))

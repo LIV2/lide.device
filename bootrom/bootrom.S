@@ -14,6 +14,14 @@ BANKOFFSET   = $8000
 STRIDE       = 1
     ENDIF
 
+    XDEF STRIDE
+    
+    IFND WORDWIDE
+  incbin "obj/diagnibbles"
+    ELSE
+  include "diagarea.S"
+    ENDIF
+
 ;; Registers used:
 ;; A0: BoardBase, A1: ConfigDev, A2: BoardBase, A3: ConfigDev, D2: Rom Alignment
 Stage2  move.l  a0,a2                         ; BoardBase
@@ -108,4 +116,5 @@ InitRT  move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
         moveq.l #0,d0
         rts
 
-    include reloc.S
+  section DEVICE
+  incbin "../build/lide.device"

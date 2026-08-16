@@ -3,8 +3,8 @@ SECTIONS {
     .header 0x00: {
       LONG(0x4C495632);
     } = 0xFFFF
-    .bootldr 0x04: {
-        *(BOOTLDR);
+    .code 0x04: {
+        *(CODE);
         RESERVE(0x800-.);
     }
     .reserved 0x800: {

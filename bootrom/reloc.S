@@ -510,5 +510,3 @@ InitHandle
 
         movem.l (sp)+,a0-a1
         rts
-
-        include "decompress.S"
