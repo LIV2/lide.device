@@ -3,6 +3,7 @@
     include exec/memory.i
     include lvo/exec_lib.i
     include boards.i
+    include alerts.i
 
     IFND WORDWIDE
 DRIVEROFFSET = $2000
@@ -51,7 +52,7 @@ Stage2  move.l  a0,a2                         ; BoardBase
         cmp.l   #'LIDE',d0 
         beq.s   .loaddriver                   ; ROM trailer found. so the banks are mirrored :(
         move.l  #BANKOFFSET,d0                ; Reloc offset to second bank
-        bsr     CallReloc
+        bsr     CallReloc                     ; Load CDFS if it is there, ignoring the return code as it might not be there
 
         IFND WORDWIDE
         ; Load romtags from other banks if supported (currently only RIDE)
@@ -68,7 +69,7 @@ Stage2  move.l  a0,a2                         ; BoardBase
         or.b    d4,d1
         move.b  d1,(a4)             ; Select bank, the rom will dissapear from the lower 64K window now
         move.l  #BANKOFFSET,d0      ; So point to the upper 64K window where the ROM is always mapped
-        bsr.s   CallReloc
+        bsr.s   CallReloc           ; Load something if it is there, ignoring the return code as it might not be there
         sub.l   #$40,d4
         dbra    d5,.bank
         and.b   #$3F,(a4)           ; Point back at Bank #0
@@ -90,6 +91,7 @@ CallReloc
         add.l   d0,a0
         moveq.l #0,d0
         ENDIF
+        moveq.l #0,d7           ; Clear error number
         bsr.w   _relocate
         tst.l   d0
         bne.s   InitRT
@@ -107,13 +109,14 @@ InitRT  move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
         beq.s   .found
 .not_rt addq.l  #2,a1
         dbra    d3,.findrt
+        move.l  #AN_STAGE2|AG_NORT,d7   ; Set Alert
         moveq.l #-1,d0
         rts
 * Found the driver, initialize it
 .found  
         moveq.l  #0,d1
         jsr      _LVOInitResident(A6)
-        moveq.l #0,d0
+        moveq.l  #0,d0
         rts
 
   section DEVICE

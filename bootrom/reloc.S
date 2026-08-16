@@ -1,6 +1,7 @@
         INCLUDE "exec/memory.i"
         INCLUDE "lvo/exec_lib.i"
         INCLUDE "dos/doshunks.i"
+        INCLUDE "alerts.i"
 
 ; Frame pointer offsets
 PHUNKS             EQU -4
@@ -45,7 +46,7 @@ _relocate
         rts
 
 .decompress
-        movem.l d1-d7/a0-a6,-(sp)
+        movem.l d1-d6/a0-a6,-(sp)
 
         bsr RomFetch32 ; Read uncompressed size
         ; d0 = original length
@@ -53,6 +54,8 @@ _relocate
         moveq   #MEMF_PUBLIC,d1
         move.l  4,a6 ; execbase
         jsr     _LVOAllocMem(a6)
+        tst.l   d0
+        beq.s   .dnomem
         move.l  d0,d2                      ; d2 / d3 = Dest Ptr/Size
         bsr RomFetch32                     ; Read compressed size (Don't Care!)
         move.l  d2,a1                      ; Dest buffer
@@ -73,20 +76,23 @@ _relocate
         jsr     _LVOFreeMem(a6)
 
         move.l  d4,d0
-        movem.l (sp)+,d1-d7/a0-a6
+.ddone  movem.l (sp)+,d1-d6/a0-a6
         unlk    a4                     ; Deallocate Frame pointer
         rts
+.dnomem move.l  #AN_DECOMPRESS|AG_NOMEM,d7
+        move.l  #0,d0
+        bra.s   .ddone
 
 .real_relocate
-        movem.l d1-d7/a0-a6,-(sp)
+        movem.l d1-d6/a0-a6,-(sp)
 
         cmp.l   #HUNK_HEADER,d0 ; We only know hunk_hdr
-        bne     .RelocateFail
+        bne     .RelocateBadHeader
 
         ; consume the header and remember number of hunks
         bsr     RomFetch32
         bsr     RomFetch32
-        move.l  d0,d7           ; table size
+        move.l  d0,d5           ; table size
 
         ; Now allocate the pHunks table
         add.l   #1,d0                   ; Add a slot for the list terminator
@@ -98,8 +104,8 @@ _relocate
         dbra    d0,.alloc
         move.l  sp,PHUNKS(a4)
 
-        subq    #1,d7
-        move.l  d7,d6           ; for HUNK_END
+        subq    #1,d5
+        move.l  d5,d6           ; for HUNK_END
         bsr     RomFetch32
         bsr     RomFetch32
 
@@ -118,10 +124,10 @@ _relocate
         addq    #8,d0            ; Add 8 for seglist overhead
         jsr     _LVOAllocMem(a6)
         tst.l   d0
-        beq.s   .RelocateFail
+        beq    .RelocateNoMem
         addq    #8,d0            ; Skip seglist overhead
         move.l  d0,(a2)+         ; segment pointer
-        dbra    d7,.AllocateLoop
+        dbra    d5,.AllocateLoop
 
 
         ; a5: pointer to the pHunks table
@@ -159,6 +165,7 @@ _relocate
         beq     .HunkEnd
 
         ; We don't know this hunk
+        move.l  #AN_RELOC|AG_BADHUNK,d7 ; Set Error number
 .RelocateFail
         tst.l   NUM_HUNKS(a4)
         beq     .NopHunks
@@ -169,8 +176,16 @@ _relocate
 
 .NopHunks
         moveq   #0,d0 ; NULL = Failure
-        movem.l (sp)+,d1-d7/a0-a6
+        movem.l (sp)+,d1-d6/a0-a6
         rts
+
+.RelocateBadHeader:
+        move.l  #AN_RELOC|AG_BADHDR,d7
+        bra.s   .RelocateFail
+
+.RelocateNoMem
+        move.l  #AN_RELOC|AG_NOMEM,d7
+        bra.s   .RelocateFail
 
 ; -----------------------------------------------------
 ; The following functions parse the various hunk types
@@ -189,24 +204,24 @@ _relocate
 .HunkData
 .HunkCode
         bsr     RomFetch32
-        move.l  d0,d7
-        subq.l  #1,d7
+        move.l  d0,d5
+        subq.l  #1,d5
 .CopyHunk
         bsr     RomFetch32
         move.l  d0,(a0)+
-        dbra    d7,.CopyHunk
+        dbra    d5,.CopyHunk
         bra     .HunkLoop
 
 ; ---------------------
 
 .HunkBSS
         bsr     RomFetch32
-        move.l  d0,d7
-        subq.l  #1,d7
+        move.l  d0,d5
+        subq.l  #1,d5
         ; hunk address in a0
 .ClearBSS
         move.l  #$0,(a0)+
-        dbra    d7,.ClearBSS
+        dbra    d5,.ClearBSS
 
         bra     .HunkLoop
 
@@ -275,10 +290,10 @@ _relocate
         bsr     RomFetch32
         tst.l   d0
         beq     .HunkLoop
-        move.l  d0,d7
+        move.l  d0,d5
 .SkipSymbol
         bsr     RomFetch32
-        dbra    d7,.SkipSymbol
+        dbra    d5,.SkipSymbol
         bra     .HunkSymbol
 
 ; ---------------------
@@ -346,7 +361,7 @@ _relocate
         jsr     _LVOCacheClearU(a6)
         move.l  (sp)+,d0           ; Restore SegList to d0
 
-        movem.l (sp)+,d1-d7/a0-a6
+        movem.l (sp)+,d1-d6/a0-a6
         rts
 
 ; ----------------------------------------------------------------------
