@@ -5,6 +5,7 @@
     include exec/memory.i
     include lvo/exec_lib.i
     include boards.i
+    include alerts.i
 
 VERSION      = 1
 REVISION     = 1
@@ -122,11 +123,13 @@ malloc: add.l   #4,d0
         jsr     _LVOAllocMem(a6)
         move.l  (sp)+,d1
         tst.l   d0
-        beq     .done
+        beq     .nomem
         move.l  d0,a0
         move.l  d1,(a0)+
         add.l   #4,d0
 .done:  rts
+.nomem  move.l  #AN_STAGE2|AG_NOMEM,d7
+        bra     .done
 
 ; Free memory allocated by malloc
 ; a1: Memory block
@@ -138,6 +141,7 @@ free:   suba.l  #4,a1
 
 Init:   movem.l d2-d7/a2-a6,-(sp)
         move.l  MyConfigDev(PC),a1
+        moveq.l #0,d7                         ; Clear error number
         moveq.l #0,d1
         move.w  cd_Rom+er_InitDiagVec(a1),d1  ; Get rom offset
 
@@ -160,7 +164,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         tst.l   d0
         beq     .err
         move.l  d0,a2
-        lea.l   Stage2_ptr(PC),a0                ; Stash for later
+        lea.l   Stage2_ptr(PC),a0            ; Stash for later
         move.l  d0,(a0)
         sub.l   #1,d2                        ; Fixup for DBRA
 .copy:  move.b  (a3),(a2)+
@@ -184,22 +188,11 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         tst.l   d0
         bpl     .ok
 ; End stage2 setup
-
-.err
-        *******  Show checkered purple failure screen **************************
-        movem.l d2-d3,-(sp)
-        move.w  #$0020,d2
-.fc1
-        move.w  #$ffff,d3
-.fc2
-        move.w  #$0000,$dff180               ; black
-        move.w  #$0f0c,$dff180               ; purple
-        dbra    d3,.fc2
-        dbra    d2,.fc1
-        movem.l (sp)+,d2-d3
-        *******  End checkered purple failure screen **************************
-
- .ok:   move.l  Stage2_ptr(PC),d0
+.err:   tst.l   d7                           ; Any error number to report?
+        bne.s   .alert
+        move.l  #AN_DIAG|AG_UNKNOWN,d7
+.alert: jsr     _LVOAlert(a6)
+.ok:    move.l  Stage2_ptr(PC),d0
         tst.l   d0
         beq.s   .done
         move.l  d0,a1
