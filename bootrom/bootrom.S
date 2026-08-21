@@ -20,7 +20,7 @@ STRIDE       = 1
     IFND WORDWIDE
   incbin "obj/diagnibbles"
     ELSE
-  include "diagarea.S"
+  incbin "obj/diagarea-word"
     ENDIF
 
 ;; Registers used:

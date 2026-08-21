@@ -32,13 +32,16 @@ $(OBJDIR)/%-word.o: %.S
 $(OBJDIR)/diagarea:	$(OBJDIR)/diagarea.o
 	$(LINKER) $(LINKFLAGS) -o $@ $^
 
+$(OBJDIR)/diagarea-word:	$(OBJDIR)/diagarea-word.o
+	$(LINKER) $(LINKFLAGS) -o $@ $^
+
 $(OBJDIR)/diagnibbles: $(OBJDIR)/diagarea mungerom.py
 	@mkdir -p $(OBJDIR)
 	./mungerom.py
 
 $(OBJDIR)/bootrom.o: bootrom.S $(OBJDIR)/diagnibbles $(DEVICE)
 
-$(OBJDIR)/bootrom-word.o: bootrom.S $(DEVICE)
+$(OBJDIR)/bootrom-word.o: bootrom.S $(OBJDIR)/diagarea-word $(DEVICE)
 
 ../$(BUILDDIR)/$(PROJECT).rom: $(OBJDIR)/bootrom.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $^
@@ -46,7 +49,7 @@ $(OBJDIR)/bootrom-word.o: bootrom.S $(DEVICE)
 ../$(BUILDDIR)/$(PROJECT)-atbus.rom: $(OBJDIR)/bootrom.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
 	$(LINKER) $(LINKFLAGS) -Tatbusrom.ld -o $@ $^
 
-$(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/bootrom-word.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o | checksize
+$(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/bootrom-word.o $(OBJDIR)/reloc-word.o $(OBJDIR)/decompress.o | checksize
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $^
 
 ../$(BUILDDIR)/lide-N2630-high.rom: $(OBJDIR)/$(PROJECT)-word.rom
