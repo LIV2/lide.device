@@ -12,6 +12,7 @@
 * [Large drive (>4GB) support](#large-drive-4gb-support)
 * [Hardware Implementation](#hardware-implementation)
 * [Building / Development](#building--development)
+* [Contributing](#contributing)
 * [Acknowledgements](#acknowledgements)
 * [Third-party notice](#third-party-notice)
 * [License](#license)
@@ -134,6 +135,9 @@ docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} liv2/amiga-gcc:latest make clean 
 ```
 
 If you are using VS Code you can install the "Dev containers" extension which will allow you to develop with the environment ready to go.
+
+## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md), which includes the Contributor License Agreement that applies to pull requests.
 
 ## Acknowledgements
 This driver uses the movem based fast read / write routines from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
