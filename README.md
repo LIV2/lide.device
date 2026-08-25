@@ -8,7 +8,7 @@
     * [AIDE-boot.adf](#aide-bootadf)
     * [ROM images](#rom-images)
 * [Boot from CDROM](#boot-from-cdrom)
-    * [Loading BootCDFileSystem from Board ROM](#loading-bootcdfilesystem-from-board-rom)
+    * [Loading ODFileSystem from Board ROM](#loading-odfilesystem-from-board-rom)
 * [Large drive (>4GB) support](#large-drive-4gb-support)
 * [Hardware Implementation](#hardware-implementation)
 * [Building / Development](#building--development)
@@ -23,7 +23,7 @@
 * [Supports 2TB+ drives*](#large-drive-4gb-support)
 * Supports ATAPI Devices (CD/DVD-ROM, Zip disk etc)
 * Boot from ZIP/LS-120 etc
-* [Boot from CD-ROM*](#boot-from-cd-rom)
+* [Boot from CD-ROM*](#boot-from-cdrom)
 * SCSI Direct, NSD, TD64 support
 
 # Supported hardware
@@ -154,6 +154,7 @@ Thanks to [MHeinrichs](https://gitlab.com/MHeinrichs) for contributing improveme
 reloc.S is adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright Stefan Reinauer  
 mounter.c adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen  
 The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
+cdfs.rom, included in releases and on the update ADF, is taken unmodified from the upstream [ODFileSystem](https://github.com/reinauer/ODFileSystem) release page and is Copyright Stefan Reinauer  
 
 ## License
 All software contained that is not provided by a third-party is covered by a GPL 2.0 Only license  
