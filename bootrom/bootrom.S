@@ -120,4 +120,4 @@ InitRT  move.l  #$1000,d3            ; Search the first 4096 words for a Romtag
         rts
 
   section DEVICE
-  incbin "../build/lide.device"
+  incbin "obj/driver"
