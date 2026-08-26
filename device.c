@@ -738,7 +738,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
 
         struct IDEUnit *unit = (struct IDEUnit *)ioreq->io_Unit;
 
-        Trace((CONST_STRPTR) "running begin_io()\n");
         if (ioreq == NULL || ioreq->io_Unit == 0) return;
 
         if (unit->itask == NULL || unit->itask->active == false) {
@@ -754,7 +753,6 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
 
         }
 
-        Trace("Command %lx\n",ioreq->io_Command);
         switch (ioreq->io_Command) {
             case TD_MOTOR:
             case CMD_CLEAR:
@@ -863,7 +861,6 @@ sendToTask:
                 // Send all of these to ide_task
                 ioreq->io_Flags &= ~IOF_QUICK;
                 PutMsg(unit->itask->iomp,&ioreq->io_Message);
-                Trace((CONST_STRPTR) "IO queued\n");
                 return;
             // End IO Task commands //
 
@@ -896,9 +893,6 @@ sendToTask:
         }
     }
 
-#if DEBUG & DBG_CMD
-    traceCommand(ioreq);
-#endif
     ioreq->io_Error = error;
 
     if (ioreq && !(ioreq->io_Flags & IOF_QUICK)) {

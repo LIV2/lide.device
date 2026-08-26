@@ -569,10 +569,10 @@ transfer:
             break;
     }
 
+    ioreq->io_Error = error;
 #if DEBUG & DBG_CMD
     traceCommand(ioreq);
 #endif
-    ioreq->io_Error = error;
     ReplyMsg(&ioreq->io_Message);
 }
 
