@@ -10,16 +10,17 @@
 
 #if DEBUG
 #include <clib/debug_protos.h>
+#include <exec/types.h>
 #endif
 
 #if DEBUG & DBG_MEM
-void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG attributes);
+void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG attributes, struct ExecBase *SysBase asm("a6"));
 #undef AllocMem
-#define AllocMem(x,y) DebugAllocMem(__FILE__,__LINE__,x,y)
+#define AllocMem(x,y) DebugAllocMem(__FILE__,__LINE__,x,y,SysBase)
 
-void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize);
+void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize, struct ExecBase *SysBase asm("a6"));
 #undef FreeMem
-#define FreeMem(x,y) DebugFreeMem(__FILE__,__LINE__,x,y)
+#define FreeMem(x,y) DebugFreeMem(__FILE__,__LINE__,x,y,SysBase)
 #endif
 
 #if DEBUG & DBG_INFO
