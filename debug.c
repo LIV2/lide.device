@@ -9,6 +9,8 @@
 #include "newstyle.h"
 
 #if DEBUG & DBG_MEM
+#include <inline/macros.h>
+
 static int memused = 0;
 
 #define OrigAllocMem(___byteSize, ___requirements) \
@@ -19,16 +21,14 @@ static int memused = 0;
       LP2NR(0xd2, FreeMem , APTR, ___memoryBlock, a1, ULONG, ___byteSize, d0,\
       , EXEC_BASE_NAME)
 
-void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG requirements)
+void * DebugAllocMem(char *file, int line, ULONG byteSize, ULONG requirements, struct ExecBase *SysBase asm("a6"))
 {
-    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     KPrintF("AllocMem: %s:%ld %ld %ld\n", file,line, memused, byteSize);
     memused += byteSize;
     return OrigAllocMem(byteSize,requirements);
 }
 
-void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize) {
-    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize, struct ExecBase *SysBase asm("a6")) {
     KPrintF("FreeMem: %s:%ld %ld %ld\n", file, line, memused, byteSize);
     memused -= byteSize;
     OrigFreeMem(memBlock,byteSize);
