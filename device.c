@@ -840,11 +840,12 @@ static void begin_io(struct DeviceBase *dev asm("a6"), struct IOStdReq *ioreq as
             case ETD_READ:
             case CMD_WRITE:
             case ETD_WRITE:
+            case TD_FORMAT:
+            case ETD_FORMAT:
                 ioreq->io_Actual = 0; // Clear high offset for 32-bit commands
             case TD_CHANGESTATE:
             case TD_PROTSTATUS:
             case TD_EJECT:
-            case TD_FORMAT:
             case TD_READ64:
             case TD_WRITE64:
             case TD_FORMAT64:
