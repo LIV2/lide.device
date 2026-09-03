@@ -222,17 +222,19 @@ void scsi_release_sense_cmd(struct IDEUnit *unit) {
 */
 BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
     struct ExecBase *SysBase = unit->SysBase;
-
-    struct SCSI_Inquiry *data = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
-
-    if (data == NULL)
+    struct SCSI_Inquiry *dest = (struct SCSI_Inquiry *)scsi_command->scsi_Data;
+    if (dest == NULL)
         return IOERR_BADADDRESS;
 
-    data->peripheral_type   = unit->deviceType;
-    data->removable_media   = 0;
-    data->version           = 2;
-    data->response_format   = 2;
-    data->additional_length = (sizeof(struct SCSI_Inquiry) - 4);
+    if (scsi_command->scsi_CmdLength < 6) return IOERR_BADLENGTH;
+
+    struct SCSI_Inquiry data = {
+        .peripheral_type   = unit->deviceType,
+        .removable_media   = 0,
+        .version           = 2,
+        .response_format   = 2,
+        .additional_length = (sizeof(struct SCSI_Inquiry) - 4)
+    };
 
     UWORD *identity = AllocMem(512,MEMF_CLEAR|MEMF_ANY);
     if (!identity)
@@ -243,18 +245,17 @@ BYTE scsi_inquiry_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
         return HFERR_SelTimeout;
     }
 
-    CopyMem(&identity[ata_identify_model],&data->vendor,24);
-    CopyMem(&identity[ata_identify_fw_rev],&data->revision,4);
+    CopyMem(&identity[ata_identify_model],&data.vendor,24);
+    CopyMem(&identity[ata_identify_fw_rev],&data.revision,4);
+    CopyMem(&identity[ata_identify_serial],&data.serial,8);
 
-    scsi_command->scsi_Actual = 36;
-
-    if (scsi_command->scsi_Length >= sizeof(struct SCSI_Inquiry)) {
-        CopyMem(&identity[ata_identify_serial],&data->serial,8);
-        scsi_command->scsi_Actual += 8;
-    }
+    ULONG copyLen = scsi_command->scsi_Command[3] << 8 | scsi_command->scsi_Command[4];
+    if (copyLen > scsi_command->scsi_Length) copyLen = scsi_command->scsi_Length;
+    if (copyLen > sizeof(data)) copyLen = sizeof(data);
+    CopyMem(&data,dest,copyLen);
 
     FreeMem(identity,512);
-    scsi_command->scsi_Actual = scsi_command->scsi_Length;
+    scsi_command->scsi_Actual = copyLen;
     return 0;
 }
 
