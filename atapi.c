@@ -1235,7 +1235,7 @@ BYTE atapi_read_toc(struct IDEUnit *unit, BYTE *buf, ULONG bufSize) {
     cmd->scsi_Command[7] = bufSize >> 8;
     cmd->scsi_Command[8] = bufSize & 0xFF;
 
-    ret = atapi_packet(cmd,unit) != 0;
+    ret = atapi_packet(cmd,unit);
     scsi_release_unit_cmd(unit);
     return ret;
 }
