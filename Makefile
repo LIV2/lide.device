@@ -109,7 +109,7 @@ $(OBJDIR)/%.o: %.S
 	@printf "${GREEN}$@${NC}\n"
 	@${AS} -o $@ $<
 
-$(ROM) $(BUILDDIR)/lide-N2630-high.rom $(BUILDDIR)/lide-N2630-low.rom $(BUILDDIR)/lide-atbus.rom &: $(BUILDDIR)/$(PROJECT)
+$(ROM) $(BUILDDIR)/lide-N2630-high.rom $(BUILDDIR)/lide-N2630-low.rom $(BUILDDIR)/lide-atbus.rom $(BUILDDIR)/amigapci-lide.rom &: $(BUILDDIR)/$(PROJECT) $(BUILDDIR)/amigapci-lide.device
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C bootrom
 	@printf "Done.\n"
@@ -135,10 +135,6 @@ $(BUILDDIR)/AIDE-boot-$(VERSION).adf: $(BUILDDIR)/AIDE-$(PROJECT)
 $(BUILDDIR)/cdfs.rom:
 	@printf "${WHITE}#### Retrieving ODFS ####${NC}\n"
 	curl -fSsL $(ODFS_URL) -o $@
-
-$(BUILDDIR)/amigapci-lide.rom: $(BUILDDIR)/amigapci-lide.device
-	@printf "${WHITE}#### Building $@ ####${NC}\n"
-	romtool build -t ext -e ${AMIGAPCI_ROMBASE} $^ -o $@
 
 disk:	$(BUILDDIR)/$(DISK) $(BUILDDIR)/AIDE-boot-$(VERSION).adf
 

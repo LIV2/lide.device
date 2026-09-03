@@ -8,13 +8,15 @@ OBJDIR=obj
 DEVICE=../build/lide.device
 BUILDDIR=build
 
-.PHONY: all clean rom $(DEVICE)
+AMIGAPCI_ROMBASE=0xF00000
+
+.PHONY: all clean rom $(DEVICE) tmp/version.i
 .INTERMEDIATE: $(OBJDIR)/$(PROJECT)-word.rom
 SRCS = diagarea.S \
        endrom.S
 OBJS = $(SRCS:%.S=$(OBJDIR)/%.o)
 
-all:	../$(BUILDDIR)/$(PROJECT).rom ../$(BUILDDIR)/$(PROJECT)-atbus.rom ../$(BUILDDIR)/lide-N2630-high.rom ../$(BUILDDIR)/lide-N2630-low.rom
+all:	../$(BUILDDIR)/$(PROJECT).rom ../$(BUILDDIR)/$(PROJECT)-atbus.rom ../$(BUILDDIR)/lide-N2630-high.rom ../$(BUILDDIR)/lide-N2630-low.rom ../$(BUILDDIR)/amigapci-lide.rom 
 
 # Nibble-wide boot loader with Byte-wide driver
 $(OBJDIR)/%.o: %.S
@@ -43,6 +45,25 @@ $(OBJDIR)/bootrom.o: bootrom.S $(OBJDIR)/diagnibbles $(OBJDIR)/driver
 
 $(OBJDIR)/bootrom-word.o: bootrom.S $(OBJDIR)/diagarea-word $(OBJDIR)/driver
 
+tmp/version.i:
+	@mkdir -p tmp
+	@./version.sh
+
+## AmigaPCI ROM
+## The AmigaPCI version is a kickstart module that unpacks itself to RAM
+$(OBJDIR)/rom-driver: ../build/amigapci-lide.device
+	./checksize.py -i $< -o $@ -f
+
+$(OBJDIR)/kick.o: kick.S $(OBJDIR)/rom-driver tmp/version.i
+	$(AS) $(ASFLAGS) -o $@ $<
+
+$(OBJDIR)/amigapci-kick-module: $(OBJDIR)/kick.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o $(OBJDIR)/endskip.o
+	$(LINKER) $(LINKFLAGS) -bamigahunk -o $@ $^
+
+../$(BUILDDIR)/amigapci-lide.rom: $(OBJDIR)/amigapci-kick-module
+	romtool build -e ${AMIGAPCI_ROMBASE} -t ext -o $@ $<
+
+## Standard builds
 ../$(BUILDDIR)/$(PROJECT).rom: $(OBJDIR)/bootrom.o $(OBJDIR)/reloc.o $(OBJDIR)/decompress.o
 	$(LINKER) $(LINKFLAGS) -Trom.ld -o $@ $^
 
@@ -60,6 +81,7 @@ $(OBJDIR)/$(PROJECT)-word.rom: $(OBJDIR)/bootrom-word.o $(OBJDIR)/reloc-word.o $
 
 clean:
 	rm -f $(OBJDIR)/*
+	rm -rf tmp
 	rm -f ../$(BUILDDIR)/$(PROJECT).rom
 	rm -f ../$(BUILDDIR)/$(PROJECT)-atbus.rom
 	rm -f ../$(BUILDDIR)/$(PROJECT)-word.rom

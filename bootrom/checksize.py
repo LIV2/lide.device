@@ -10,8 +10,12 @@ import struct
 DEV_MAXSIZE = 28668
 ZX0_HEADER = 0x5a583001
 RED='\033[1;31m'
+GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
 RESET='\033[0m'
+
+def ok(message: str) -> None:
+    print(f"{GREEN}{message}{RESET}")
 
 def error(message: str) -> None:
     print(f"{RED}{message}{RESET}")
@@ -21,23 +25,29 @@ def warn(message: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i","--infile",required=True)
-    parser.add_argument("-o","--outfile",required=True)
+    parser.add_argument("-i" ,"--infile", required=True)
+    parser.add_argument("-o" ,"--outfile", required=True)
+    parser.add_argument("-s" ,"--size", type=int, default=DEV_MAXSIZE)
+    parser.add_argument("-f" ,"--force-compress", action='store_true', default=False)
     args = parser.parse_args()
 
     infile = args.infile
     outfile = args.outfile
+    maxSize = args.size
+    force   = args.force_compress
 
     with open(infile,"rb") as fh:
         fh.seek(0,io.SEEK_END)
         size = fh.tell()
         fh.seek(0,io.SEEK_SET)
 
-    if size <= DEV_MAXSIZE:
-        shutil.copy2(infile,outfile)
-        sys.exit(0)
+    if not force:
+        if size <= maxSize:
+            shutil.copy2(infile,outfile)
+            sys.exit(0)
+        else:
+            warn(f"{infile} larger than {maxSize} bytes, compressing...")
 
-    warn(f"{infile} larger than {DEV_MAXSIZE} bytes, compressing...")
     if not shutil.which("salvador"):
         error("'salvador' not found in PATH")
         sys.exit(1)
@@ -45,8 +55,8 @@ if __name__ == "__main__":
     compressed = subprocess.run(["salvador", infile, '/dev/stdout'], stdout=subprocess.PIPE).stdout
     compressedSize = len(compressed)
 
-    if compressedSize > DEV_MAXSIZE:
-        error(f"{infile} too big even after compression: {compressedSize} > {DEV_MAXSIZE}")
+    if compressedSize > maxSize:
+        error(f"{infile} too big even after compression: {compressedSize} > {maxSize}")
         sys.exit(1)
 
     with open(outfile,"wb") as fh:
