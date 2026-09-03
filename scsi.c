@@ -42,7 +42,7 @@ void fake_scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE e
     sense->response   = 0x70; // Fixed format, current status
     sense->pad        = 0;
     sense->info       = info;
-    sense->additional = (UBYTE)sizeof(sense) - 7;
+    sense->additional = (UBYTE)sizeof(struct SCSI_FIXED_SENSE) - 7;
     sense->specific   = specific;
     sense->fru        = error;
     switch (error) {
@@ -272,6 +272,7 @@ BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_comman
 
     if (data == NULL)
         return IOERR_BADADDRESS;
+    if (scsi_command->scsi_Length < 8) return IOERR_BADLENGTH;
 
     struct SCSI_READ_CAPACITY_10 *cdb = (struct SCSI_READ_CAPACITY_10 *)scsi_command->scsi_Command;
 
@@ -306,15 +307,27 @@ BYTE scsi_read_capacity_10_emu(struct IDEUnit *unit, struct SCSICmd *scsi_comman
  * @param scsi_command Pointer to a SCSICmd struct
 */
 BYTE scsi_read_capacity_16_emu(struct IDEUnit *unit, struct SCSICmd *scsi_command) {
-    struct SCSI_CAPACITY_16 *data = (struct SCSI_CAPACITY_16 *)scsi_command->scsi_Data;
-
-    if (data == NULL)
+    struct ExecBase *SysBase = unit->SysBase;
+    struct SCSI_CAPACITY_16 *dest = (struct SCSI_CAPACITY_16 *)scsi_command->scsi_Data;
+    if (dest == NULL)
         return IOERR_BADADDRESS;
+    if (scsi_command->scsi_Length < 8 || scsi_command->scsi_CmdLength < 16) return IOERR_BADLENGTH;
 
-    data->block_size = unit->blockSize;
-    data->lba = unit->logicalSectors - 1;
+    struct SCSI_CAPACITY_16 data = {
+        .block_size = unit->blockSize,
+        .lba = unit->logicalSectors - 1
+    };
 
-    scsi_command->scsi_Actual = 8;
+    ULONG copyLen = scsi_command->scsi_Command[10] << 24 |
+                    scsi_command->scsi_Command[11] << 16 |
+                    scsi_command->scsi_Command[12] << 8 |
+                    scsi_command->scsi_Command[13];
+
+    if (copyLen > scsi_command->scsi_Length) copyLen = scsi_command->scsi_Length;
+    if (copyLen > sizeof(struct SCSI_CAPACITY_16)) copyLen = sizeof(struct SCSI_CAPACITY_16);
+
+    CopyMem(&data,dest,copyLen);
+    scsi_command->scsi_Actual = copyLen;
 
     return 0;
 }
