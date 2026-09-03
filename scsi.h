@@ -105,7 +105,7 @@ struct __attribute__((packed)) SCSI_CAPACITY_10 {
 struct __attribute__((packed)) SCSI_CAPACITY_16 {
     uint64_t lba;
     ULONG    block_size;
-    char     reserved[3];
+    char     reserved[20];
 };
 
 struct __attribute__((packed)) SCSI_FIXED_SENSE {
