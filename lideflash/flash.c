@@ -103,12 +103,12 @@ static UWORD flash_get_sectorSize(UBYTE manufacturer, UBYTE device) {
  * @param data The data to be written
 */
 void flash_writeByte(ULONG address, UBYTE data) {
-  address &= (FLASH_SIZE-1);
-  address <<= 1;
+  ULONG shifted = address & (FLASH_SIZE-1);
+  shifted <<= 1;
   Forbid();
   flash_unlock_sdp();
   flash_command(CMD_BYTE_PROGRAM);
-  *(volatile UBYTE *)(flashbase + address) = data;
+  *(volatile UBYTE *)(flashbase + shifted) = data;
   flash_poll(address);
   Permit();
   return;

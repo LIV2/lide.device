@@ -45,15 +45,20 @@ void matzetk_enable_flash(struct ideBoard *board) {
     *configReg |= CONFIG_FLASH_EN;
 }
 
+/**
+ * matzetk_fw_supported
+ * 
+ * Check the cards firmware version register
+ */
 bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
-  UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
-  UWORD version = (*fwreg) >> 12;
-
   if (cd->cd_Driver == NULL) {
     // Poke IDE register space to ensure ROM overlay turned off
     UBYTE *pokeReg = (UBYTE *)(cd->cd_BoardAddr + 0x1200);
     *pokeReg = 0x00;
   }
+
+  UWORD *fwreg = (UWORD *)(cd->cd_BoardAddr + FW_VER_OFFSET);
+  UWORD version = (*fwreg) >> 12;
 
   if (version < minVersion && !silent)
     printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
