@@ -578,6 +578,7 @@ end:
         unit->last_error[1] = *unit->drive.status_command;
         unit->last_error[2] = *unit->drive.sectorCount;
         senseKey = *unit->drive.error_features >> 4;
+        unit->last_error[3] = senseKey;
         Warn("ATAPI ERROR!\n");
         Warn("Sense Key: %02lx\n",senseKey);
         Warn("Error: %02lx\n",*unit->drive.error_features);
