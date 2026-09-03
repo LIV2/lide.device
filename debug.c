@@ -256,10 +256,15 @@ void traceCommand(struct IOStdReq *req) {
             err = "UNKNOWN";
 
     }
-    struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
-    LONG unitNum = unit->unitNum;
+    if (req) {
+        struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
+        if (unit) {
+            LONG unitNum = unit->unitNum;
+            KPrintF("Unit: %ld - %s : Error: %s Actual: %ld\n", unitNum, commandName, err, req->io_Actual);
+        }
+    }
 
-    KPrintF("Unit: %ld - %s : Error: %s Actual: %ld\n", unitNum, commandName, err, req->io_Actual);
+
 
 }
 
