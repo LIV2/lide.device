@@ -166,7 +166,7 @@ struct Task *L_CreateTask(char * taskName, LONG priority, APTR funcEntry, ULONG 
         } alloc_ml = {
             .ml_NumEntries = 2,
             .ml_ME[0].me_Un.meu_Reqs = MEMF_PUBLIC|MEMF_CLEAR,
-            .ml_ME[1].me_Un.meu_Reqs = MEMF_ANY|MEMF_CLEAR,
+            .ml_ME[1].me_Un.meu_Reqs = MEMF_PUBLIC|MEMF_CLEAR,
             .ml_ME[0].me_Length = sizeof(struct Task),
             .ml_ME[1].me_Length = stackSize
         };
