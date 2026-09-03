@@ -36,6 +36,7 @@ static void atapi_status_reg_delay() {
         "tst.b 0xBFE001"
     );
 }
+
 /**
  * atapi_wait_drq
  *
@@ -838,7 +839,8 @@ BYTE atapi_mode_sense(struct IDEUnit *unit, BYTE page_code, BYTE subpage_code, U
 BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     struct ExecBase *SysBase = unit->SysBase;
 
-    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
+    if (cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
+    if (cmd->scsi_CmdLength < 6 || cmd->scsi_Length < 4) return IOERR_BADLENGTH;
 
     BYTE ret;
     UBYTE *buf  = NULL;
@@ -882,10 +884,12 @@ BYTE atapi_scsi_mode_sense_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
             dest[3] = buf[7];       // Block descriptor length
 
             // Copy the mode sense data
-            for (int i = 0; i < (cmd_sense->scsi_Actual - 8); i++) {
+            ULONG copyLen = cmd_sense->scsi_Actual - 8;
+            if (copyLen > (cmd->scsi_Length - 4)) copyLen = cmd->scsi_Length - 4;
+            for (int i = 0; i < copyLen; i++) {
                 dest[i+4] = buf[i+8];
             }
-            cmd->scsi_Actual = cmd_sense->scsi_Actual - 4;
+            cmd->scsi_Actual = copyLen + 4;
             cmd->scsi_Status = 0;
         }
     } else {
@@ -921,9 +925,15 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     struct SCSICmd *cmd_select = NULL;
 
-    if (cmd->scsi_Data == NULL || cmd->scsi_Length == 0) return IOERR_BADADDRESS;
+    if (cmd->scsi_Data == NULL) return IOERR_BADADDRESS;
 
-    ULONG bufSize = cmd->scsi_Command[4] + 4;
+    if (cmd->scsi_CmdLength < 6 || cmd->scsi_Command[4] < 4) return IOERR_BADLENGTH;
+
+    ULONG paramLen = cmd->scsi_Command[4];
+    if (paramLen > cmd->scsi_Length) paramLen = cmd->scsi_Length;
+    if (paramLen < 4) return IOERR_BADLENGTH;
+
+    ULONG bufSize = paramLen + 4;
 
     if ((buf = AllocMem(bufSize,MEMF_ANY|MEMF_CLEAR)) == NULL) {
         return TDERR_NoMem;
@@ -955,8 +965,8 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
     dst[7] = src[3]; // Block descriptor length
 
     // Copy the Mode Parameters
-    len = bufSize - 8;
-    CopyMem(src + 4, dst + 8, len);
+    len = paramLen - 4;
+    if (len) CopyMem(src + 4, dst + 8, len);
 
     ret = atapi_packet(cmd_select, unit);
     if (ret == 0 && cmd_select->scsi_Status == 0) {
@@ -967,7 +977,7 @@ BYTE atapi_scsi_mode_select_6(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     cmd->scsi_SenseActual = cmd_select->scsi_SenseActual;
     cmd->scsi_CmdActual   = cmd->scsi_CmdLength;
-    cmd->scsi_Actual      = cmd_select->scsi_Actual;
+    cmd->scsi_Actual      = (cmd_select->scsi_Actual >= 4) ? cmd_select->scsi_Actual - 4 : 0;
 
     scsi_release_unit_cmd(unit);
 cleanup:
