@@ -24,25 +24,25 @@ void DebugFreeMem(char *file, int line, void *memBlock, ULONG byteSize, struct E
 #endif
 
 #if DEBUG & DBG_INFO
-#define Info KPrintF
+#define Info(...) KPrintF(__VA_ARGS__)
 #else
-#define Info
+#define Info(...) ((void)0)
 #endif
 
 #if DEBUG & DBG_WARN
-#define Warn KPrintF
+#define Warn(...) KPrintF(__VA_ARGS__)
 #else
-#define Warn
+#define Warn(...) ((void)0)
 #endif
 
 #if DEBUG & DBG_TRACE
-#define Trace KPrintF
+#define Trace(...) KPrintF(__VA_ARGS__)
 #else
-#define Trace
+#define Trace(...) ((void)0)
 #endif
 
 #if DEBUG & DBG_CMD
 void traceCommand(struct IOStdReq *req);
 #else
-#define traceCommand
+#define traceCommand(...) ((void)0)
 #endif
