@@ -853,20 +853,24 @@ ULONG getFileSize(char *filename) {
   struct FileInfoBlock *FIB;
 
   FIB = (struct FileInfoBlock *)AllocMem(sizeof(struct FileInfoBlock),MEMF_CLEAR);
+  if (FIB) {
+    if ((fileLock = Lock(filename,ACCESS_READ)) != 0) {
 
-  if ((fileLock = Lock(filename,ACCESS_READ)) != 0) {
+      if (Examine(fileLock,FIB)) {
+        fileSize = FIB->fib_Size;
+      }
+    
+      UnLock(fileLock);
 
-    if (Examine(fileLock,FIB)) {
-      fileSize = FIB->fib_Size;
+    } else {
+      printf("Error opening %s\n",filename);
+      fileSize = 0;
     }
 
+    FreeMem(FIB,sizeof(struct FileInfoBlock));
   } else {
-    printf("Error opening %s\n",filename);
-    fileSize = 0;
+    printf("Failed to allocate memory for FIB\n");
   }
-
-  if (fileLock) UnLock(fileLock);
-  if (FIB) FreeMem(FIB,sizeof(struct FileInfoBlock));
 
   return (fileSize);
 }
@@ -881,6 +885,7 @@ ULONG getFileSize(char *filename) {
 BOOL readFileToBuf(char *filename, void *buffer) {
   ULONG romSize = getFileSize(filename);
   BOOL ret = true;
+  LONG actual;
 
   if (romSize == 0) return false;
 
@@ -890,7 +895,12 @@ BOOL readFileToBuf(char *filename, void *buffer) {
     fh = Open(filename,MODE_OLDFILE);
 
     if (fh) {
-      Read(fh,buffer,romSize);
+      actual = Read(fh,buffer,romSize);
+      if (actual < 0) {
+        LONG errno = IoErr();
+        printf("IO Error %d while reading %s\n",errno,filename);
+        ret = false;
+      }
       Close(fh);
     } else {
       printf("Error opening %s\n",filename);
