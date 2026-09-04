@@ -1169,8 +1169,9 @@ bool atapi_update_presence(struct IDEUnit *unit, bool present) {
     bool ret = false;
     if (present && unit->flags.mediumPresent == false) {
         unit->changeCount++;
-        unit->flags.mediumPresent = true;
-        atapi_get_capacity(unit);
+        if (atapi_get_capacity(unit) == 0) {
+            unit->flags.mediumPresent = true;
+        }
         ret = true;
     } else if (!present && unit->flags.mediumPresent == true) {
         unit->changeCount++;
