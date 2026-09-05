@@ -17,12 +17,7 @@ $(OBJDIR)/%.o: %.S
 	@mkdir -p $(OBJDIR)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-obj/patchdisk: patchdisk.c
-	gcc -o $@ $<
-	chmod +x $@
-
-aide-boot.adf:	$(OBJDIR)/bootblock.o ../$(BUILDDIR)/AIDE-lide.device	obj/patchdisk
+aide-boot.adf:	$(OBJDIR)/bootblock.o ../$(BUILDDIR)/AIDE-lide.device
 	rm -f $@
 	xdftool	$@ create + format lide + boot write obj/bootblock.o + write ../$(BUILDDIR)/AIDE-lide.device AIDE-lide.device
-	dd if=../$(BUILDDIR)/AIDE-lide.device of=$@ bs=512 seek=2 conv=notrunc
-	./obj/patchdisk
+	./patchdisk.py --device ../$(BUILDDIR)/AIDE-lide.device --adf $@
