@@ -123,18 +123,7 @@ Also make sure to use the "Quick Format" option when formatting such partitions
 A reference design for this is the [RIPPLE](https://github.com/LIV2/RIPPLE-IDE) project
 
 ## Building / Development
-Building this code will require the following
-* [Bebbo GCC](https://github.com/bebbo/amiga-gcc)
-* [Amitools](https://github.com/cnvogelg/amitools)
-* [VBCC m68k-amigaos target](http://phoenix.owl.de/vbcc/2022-05-22/vbcc_target_m68k-amigaos.lha)
-
-The easiest way to get a working build environment is to use Docker
-You can build inside docker as follows:
-```  
-docker run --rm -it -v ${PWD}:${PWD} -w ${PWD} liv2/amiga-gcc:latest make clean all
-```
-
-If you are using VS Code you can install the "Dev containers" extension which will allow you to develop with the environment ready to go.
+See [DEVELOPING.md](DEVELOPING.md) for build requirements and instructions, including a Docker-based quick start and VS Code Dev Container setup.
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md), which includes the Contributor License Agreement that applies to pull requests.
