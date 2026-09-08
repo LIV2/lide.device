@@ -383,8 +383,10 @@ done:
     return ret;
 }
 
+// -fno-unroll-loops: amiga-gcc's -O3 defaults to -funroll-loops, which bloats
+// the PIO transfer/poll loops below and hurts perf
 #pragma GCC push_options
-#pragma GCC optimize ("-O3")
+#pragma GCC optimize ("-O3","-fno-unroll-loops")
 
 /**
  * atapi_packet

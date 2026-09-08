@@ -23,10 +23,10 @@ export GIT_REF
 
 MAKE=make -j -s
 CC=m68k-amigaos-gcc
-CFLAGS+=-mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -s -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
+CFLAGS+=-mcpu=68000 -Wall -Wno-multichar -Wno-pointer-sign -g -Os -fomit-frame-pointer -DCDBOOT=1 -DNO_RDBLAST=1
 CFLAGS+=-DGIT_REF=$(GIT_REF) -DBUILD_DATE=$(BUILD_DATE)
 LD=m68k-amigaos-ld
-LDFLAGS=-lc lide.ld
+LDFLAGS=-lc lide.ld -s
 AS=m68k-amigaos-as
 
 ifneq ($(VERSION),)
