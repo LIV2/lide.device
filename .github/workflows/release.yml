@@ -33,6 +33,7 @@ jobs:
             build/*.adf
             build/*.lha
             build/*.device
+            build/**/*.readme
           if-no-files-found: error
 
   draft_release:
@@ -56,3 +57,21 @@ jobs:
             artifacts/software/**/*.lha
             artifacts/software/**/amigapci-lide.device
             artifacts/software/**/AIDE-lide.device
+            artifacts/software/**/*.readme
+
+  aminet:
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref_name, 'Release-')) ||
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'master')
+    needs:
+      - make_software
+    steps:
+      - uses: actions/download-artifact@v4.1.7
+        with:
+          path: artifacts
+      - uses: sidick/aminet-release-action@v1.1.2
+        with:
+          filename: artifacts/software/lide-update.lha
+          readme: artifacts/software/lha/lide-update.readme
+          category: driver/media
