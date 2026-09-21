@@ -412,6 +412,7 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
             itask->paused = true;
             ioreq->io_Error = 0;
             ReplyMsg(&ioreq->io_Message);
+            SetSignal(0,SIGBREAKF_CTRL_D);
             Wait(SIGBREAKF_CTRL_D);
             return;
 
