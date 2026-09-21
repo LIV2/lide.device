@@ -238,6 +238,9 @@ static BYTE init_units(struct IOTask *itask) {
     UBYTE num_units = 0;
     struct DeviceBase *dev = itask->dev;
 
+    // Give the drives some time to get ready
+    sleep_us(itask->tr,250000);
+
     for (BYTE i=0; i < 2; i++) {
         struct IDEUnit *unit = AllocMem(sizeof(struct IDEUnit),MEMF_ANY|MEMF_CLEAR);
 
