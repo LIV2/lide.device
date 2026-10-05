@@ -111,6 +111,8 @@ struct MountData
 	struct DosLibrary *DOSBase;
 	struct IOExtTD *request;
 	struct ConfigDev *configDev;
+	LoadFileSys_fn LoadFileSys;
+	void *LoadFileSysCtx;
 	const UBYTE *creator;
 	const UBYTE *devicename;
 
@@ -762,11 +764,12 @@ static struct FileSysEntry *ParseFSHD(UBYTE *buf, ULONG block, ULONG dostype, st
 		block = fshb->fhb_Next;
 	}
 	if (!fse) {
-#ifdef A4091
-		/* No usable filesystem came from the RDB. Try ROM or
+		/* No usable filesystem came from the RDB
+		 * Call the driver callback to load the filesystem 
+		 * In the case of A4091 this will try ROM or
 		 * Kickstart before scanning FileSystem.resource. */
-		LoadFileSys(dostype, 0);
-#endif
+		if (md->LoadFileSys)
+			md->LoadFileSys(dostype, 0, md->LoadFileSysCtx);
 		fse = FSHDProcess(NULL, dostype, 0, FALSE, md);
 	}
 	return fse;
@@ -1052,15 +1055,16 @@ static LONG ScanRDSK(struct MountData *md)
 	return ret;
 }
 
-static struct FileSysEntry *find_filesystem(ULONG id1, ULONG id2, struct ExecBase *SysBase)
+static struct FileSysEntry *find_filesystem(ULONG id1, ULONG id2, struct MountData *md)
 {
+	struct ExecBase *SysBase = md->SysBase;
 	struct FileSysResource *FileSysResBase = NULL;
 	struct FileSysEntry *fse, *fs=NULL;
-#ifdef A4091
 	/* Try ROM or Kickstart before scanning FileSystem.resource.
 	 * Run outside Forbid() because loading may allocate memory. */
-	LoadFileSys(id1, id2);
-#endif
+	if (md->LoadFileSys)
+		md->LoadFileSys(id1, id2, md->LoadFileSysCtx);
+
 	Forbid();
 	if ((FileSysResBase = (struct FileSysResource *)OpenResource(FSRNAME))) {
 		for (fse = (struct FileSysEntry *)FileSysResBase->fsr_FileSysEntries.lh_Head;
@@ -1230,7 +1234,7 @@ static LONG ScanCDROM(struct MountData *md)
 		return ScanRDSK(md);
 	}
 
-	fse=find_filesystem(0x43443031, 0x43445644, md->SysBase);
+	fse=find_filesystem(0x43443031, 0x43445644, md);
 	if (!fse) {
 		printf("Could not load filesystem\n");
 		return -1;
@@ -1326,7 +1330,7 @@ static LONG register_legacy(struct MountData *md, UBYTE bootable, UBYTE type, UL
 	printf("register_legacy: %d - %d  (%d/%d/%d - %d/%d/%d)\n",
 			pstart, pend, cs,h,s,ce,h,s);
 
-	fse=find_filesystem(0x46415401, 0, md->SysBase);
+	fse=find_filesystem(0x46415401, 0, md);
 	if (!fse) {
 		printf("Could not load filesystem\n");
 		return -1;
@@ -1562,6 +1566,8 @@ LONG MountDrive(struct MountStruct *ms)
 			md->configDev = ms->configDev;
 			md->creator = ms->creatorName;
 			md->slowSpinup = ms->slowSpinup;
+			md->LoadFileSys = ms->LoadFileSys;
+			md->LoadFileSysCtx = ms->LoadFileSysCtx;
 			port = W_CreateMsgPort(SysBase);
 			if(port) {
 				request = (struct IOExtTD*)W_CreateIORequest(port, sizeof(struct IOExtTD), SysBase);
