@@ -66,6 +66,8 @@ identify and mount partitions.
       LUN scanning, spin-up delays, CD booting, and whether scanning continues
       to later device units after an RDB with `RDBFF_LAST` is found.
     * `SysBase`: A pointer to the Exec library base.
+    * `LoadFileSys`: An optional callback function that will request a FileSystem from the driver.
+    * `LoadFileSysCtx`: Context pointer for the LoadFileSys function
 
 * **`struct MountData` (`mounter.c`)**: An internal state-management structure
   used during the `MountDrive` execution. It holds pointers to opened
