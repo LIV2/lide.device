@@ -160,6 +160,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                         ((struct SCSI_CDB_6 *)command)->lba_low);
 
                 count = ((struct SCSI_CDB_6 *)command)->length;
+                if (count == 0) count = 256;
                 goto do_scsi_transfer;
 
             case SCSI_CMD_READ_10:
