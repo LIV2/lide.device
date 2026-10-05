@@ -186,7 +186,7 @@ Init:   movem.l d2-d7/a2-a6,-(sp)
         move.l  MyConfigDev(PC),a1
         jsr     (a4)
         tst.l   d0
-        bpl     .ok
+        bne    .ok
 ; End stage2 setup
 .err:   tst.l   d7                           ; Any error number to report?
         bne.s   .alert

@@ -134,6 +134,12 @@ struct IOTask {
     UBYTE              channel;
 };
 
+struct LoadFSCtx {
+    struct ExecBase *SysBase;
+    BPTR cdfs_seg;
+    bool cdfs_active;
+};
+
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
                           if invoked from a macro, macro arguments are expanded). */
 #define XSTR(s) STR(s) /* Turn s into a string literal after macro-expanding it. */
