@@ -1,6 +1,8 @@
 #ifndef MOUNTER_H
 #define MOUNTER_H
 
+typedef LONG (*LoadFileSys_fn)(ULONG id1, ULONG id2, void *handle);
+
 struct MountStruct
 {
 	// Device name. ("myhddriver.device")
@@ -22,11 +24,20 @@ struct MountStruct
 	// SysBase.
 	// Offset 16.
 	struct ExecBase *SysBase;
+	// LoadFileSys function
+	// Optional driver callback to load a filesystem from ROM on demand.
+	// Set to NULL if not used
+	// Offset 20
+	LoadFileSys_fn LoadFileSys;
+	// LoadFileSys handle.
+	// Opaque context passed to the LoadFileSys function.
+	// Offset 24
+	void *LoadFileSysCtx;
 	// LUNs
-	// Offset 20.
+	// Offset 28.
 	BOOL luns;
 	// Short/Long Spinup
-	// Offset 22.
+	// Offset 30.
 	BOOL slowSpinup;
 	// Enahle CD Boot
 	BOOL cdBoot;

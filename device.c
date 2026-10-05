@@ -34,7 +34,7 @@ extern UBYTE bootblock, bootblock_end;
 extern const char device_name[];
 extern const char device_id_string[];
 extern int endskip;
-static struct Library * init(BPTR seg_list asm("a0"));
+static struct Library * init(BPTR seg_list asm("a0"), ULONG cookie asm("d0"), BPTR cdfs_seg asm("d1"));
 
 /*-----------------------------------------------------------
 A library or device with a romtag should start with moveq #-1,d0 (to
@@ -1030,11 +1030,84 @@ void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
 }
 
 /**
+ * FindRomtag
+ * Search for a Romtag and return a pointer if found.
+ * 
+ * @param seglist Seglist to search
+ * @return Pointer to Romtag if found, NULL if not
+ */
+static struct Resident *FindRomtag(BPTR seg_list) {
+    UWORD *needle = BADDR(seg_list);
+    struct Resident *rt;
+
+    if (seg_list == 0) return NULL;
+
+    for (int i=0; i < 8192; i++) {
+        rt = (struct Resident *)needle;
+        if (rt->rt_MatchWord == RTC_MATCHWORD && rt->rt_MatchTag == rt)
+            return rt;
+
+        needle++;
+    }
+
+    return NULL;
+}
+
+/**
+ * FreeSegList
+ * Does what the name implies
+ * 
+ * @param SysBase
+ * @param Seglist
+ */
+static void FreeSeglist(struct ExecBase *SysBase, BPTR seglist) {
+	ULONG *seg;
+	ULONG size;
+	BPTR next;
+
+	while (seglist != 0) {
+		seg = (ULONG *)BADDR(seglist - 1);
+		next = (BPTR)seg[1];
+		size = seg[0];
+		FreeMem(seg,size);
+		seglist = next;
+	}
+}
+
+/**
+ * LoadCDFS
+ * Mounter callback to load a filesystem on demand
+ * In this case only CDFS is currently supported
+ * 
+ * @param id1 DosType
+ * @param id2 DosType
+ * @param ctx Pointer to the LoadCDFS context
+ */
+static LONG LoadCDFS(ULONG id1, ULONG id2, void *ctx) {
+    struct LoadFSCtx *fsctx = (struct LoadFSCtx *)ctx;
+    struct ExecBase *SysBase = fsctx->SysBase;
+    struct Resident *cdfs = NULL;
+
+    if (fsctx->cdfs_active || fsctx->cdfs_seg == 0) return 0;
+
+    if ((id1 == 'CD01' || id1 == 'CDVD') ||
+        (id2 == 'CD01' || id2 == 'CDVD')) {
+            if ((cdfs = FindRomtag(fsctx->cdfs_seg))) {
+                InitResident(cdfs,fsctx->cdfs_seg);
+                fsctx->cdfs_active = true;
+                return 1;
+            }
+        }
+    
+    return 0;
+}
+
+/**
  * init
  *
  * Create the device and add it to the system if init_device succeeds
 */
-static struct Library * init(BPTR seg_list asm("a0"))
+static struct Library * init(BPTR seg_list asm("a0"), ULONG cookie asm("d0"), BPTR cdfs_seg asm("d1"))
 {
     BOOL CDBoot = FALSE;
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
@@ -1046,8 +1119,14 @@ static struct Library * init(BPTR seg_list asm("a0"))
                                                                 seg_list);                 // Segment list
 
 #ifdef CDBOOT
-    CDBoot = FindCDFS();
+    CDBoot = (cookie == 'BOOT' && cdfs_seg != 0) || FindCDFS();
 #endif
+
+    struct LoadFSCtx ctx = {
+        .SysBase     = SysBase,
+        .cdfs_active = false,
+        .cdfs_seg    = (cookie == 'BOOT') ? cdfs_seg : 0
+    };
 
     if (mydev != NULL) {
         Info("Add Device.\n");
@@ -1058,18 +1137,24 @@ static struct Library * init(BPTR seg_list asm("a0"))
         if (!itask->mn_Node.mln_Succ) goto done;
 
         struct MountStruct ms = {
-            .deviceName  = mydev->lib.lib_Node.ln_Name,
-            .creatorName = mydev->lib.lib_Node.ln_Name,
-            .SysBase     = SysBase,
-            .cdBoot      = CDBoot,
-            .luns        = false,
-            .slowSpinup  = false,
-            .ignoreLast  = true,
-            .configDev   = itask->cd,
-            .hostId      = 255
+            .deviceName        = mydev->lib.lib_Node.ln_Name,
+            .creatorName       = mydev->lib.lib_Node.ln_Name,
+            .SysBase           = SysBase,
+            .cdBoot            = CDBoot,
+            .luns              = false,
+            .slowSpinup        = false,
+            .ignoreLast        = true,
+            .configDev         = itask->cd,
+            .hostId            = 255,
+            .LoadFileSys       = LoadCDFS,
+            .LoadFileSysCtx    = (void *)&ctx
         };
 
         MountDrive(&ms);
+
+        if (!ctx.cdfs_active) {
+            FreeSeglist(SysBase,ctx.cdfs_seg);
+        }
 
         if (!seg_list) // Only tweak if we're in boot
             TweakBootList(SysBase,mydev->lib.lib_Node.ln_Name);

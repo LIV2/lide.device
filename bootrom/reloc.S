@@ -374,7 +374,7 @@ _relocate
 ; beginning of each allocated segment.
 ;
 ; +--------------------+
-; | seg length (longs) | <-- = pHunks[x+NUM_ENTRIES]
+; | seg length (bytes) | <-- = pHunks[x+NUM_ENTRIES]
 ; +--------------------+ <-- seglist returned
 ; | bptr to next seg   | <-- = pHunks[x+1]
 ; +--------------------+ <-- pHunks[x] points here
@@ -393,9 +393,8 @@ CreateSegList:
         move.l  (a0),a1     ; Hunks[x]
         move.l  NUM_HUNKS(a4),d0
         lsl.l   #2,d0
-        move.l  (a0,d0),d0  ; length of current hunk
+        move.l  (a0,d0),d0  ; length of current hunk (bytes)
         addq.l  #8,d0       ; add header size
-        lsr.l   #2,d0       ; MKBADDR
         move.l  d0,-8(a1)   ; write seg size
 
         addq.l  #4,a0
