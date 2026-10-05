@@ -1165,7 +1165,7 @@ static bool isDataCD(struct IOStdReq *ior)
 
 // CheckPVD
 // Check for "CDTV" or "AMIGA BOOT" as the System ID in the PVD
-// Returns: -1 on error, 0 if not CDTV/AMIGA BOOT, 1 if bootable
+// Returns: -1 on error, 0 if not CDTV/AMIGA BOOT, 1 if bootable, 2 if not ISO
 static LONG CheckPVD(struct IOStdReq *ior, struct ExecBase *SysBase)
 {
 	const char sys_id_1[] = "CDTV";
@@ -1194,6 +1194,8 @@ static LONG CheckPVD(struct IOStdReq *ior, struct ExecBase *SysBase)
 		// Check ISO ID String & for PVD Version & Type code
 		if ((strncmp(iso_id,id_string,5) == 0) && buf[0] == 1 && buf[6] == 1) {
 			ret = (strncmp(sys_id_1,system_id,strlen(sys_id_1)) == 0 || strncmp(sys_id_2,system_id,strlen(sys_id_2)) == 0);
+		} else {
+			ret = 2;
 		}
 	}
 
@@ -1209,7 +1211,7 @@ static LONG ScanCDROM(struct MountData *md)
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
 	struct FileSysEntry *fse=NULL;
 	char dosName[] = "\3CD0"; // BCPL string
-	LONG bootPri;
+	LONG bootPri = 2;
 	LONG isBootable;
 
 	if (!UnitIsReady((struct IOStdReq *)md->request))
@@ -1221,15 +1223,11 @@ static LONG ScanCDROM(struct MountData *md)
 	// "CDTV" or "AMIGA BOOT"?
 	isBootable = CheckPVD((struct IOStdReq *)md->request,SysBase);
 
-	if (isBootable == -1) {
+	if (isBootable < 1) return -1; // Error or wrong System ID
+
+	if (isBootable == 2) {
 		// ISO PVD Not found, RDB CD?
 		return ScanRDSK(md);
-	} else {
-		if (isBootable) {
-			bootPri = 2; // Yes, give priority
-		} else {
-			bootPri = -1; // May not be a boot disk, lower priority than HDD
-		}
 	}
 
 	fse=find_filesystem(0x43443031, 0x43445644, md->SysBase);
