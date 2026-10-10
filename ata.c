@@ -25,6 +25,22 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 
+#ifdef TF_IDE
+/**
+ * ata_tf_settle
+ *
+ * On the TF IDE window a fast 68060 can poll the status register within 400ns of the
+ * last data word of a DRQ block and still see the stale DRQ. A CIA access takes a
+ * fixed number of E-clock cycles regardless of CPU speed; ehide does the same before
+ * it checks status.
+*/
+static inline void ata_tf_settle(void) {
+    asm volatile (
+        "tst.b 0xBFE001"
+    );
+}
+#endif
+
 /**
  * ata_status_reg_delay
  *
@@ -35,6 +51,9 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba
  * @param unit Pointer to an IDEUnit struct
 */
 static void ata_status_reg_delay(struct IDEUnit *unit) {
+#ifdef TF_IDE
+    ata_tf_settle();
+#endif
     asm volatile (
         ".rep 4     \n\t"
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
@@ -86,6 +105,10 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
     UBYTE status;
 
     int loops = (fast) ? 1000 : 100;
+
+#ifdef TF_IDE
+    ata_tf_settle();
+#endif
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -236,7 +259,20 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  * @param method Transfer routine
  */
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
+#ifdef TF_IDE
+    // The TF data port is word-only by default; longword_move stays selectable for testing
+    if (method != longword_move) method = word_move;
+#endif
     switch (method) {
+        case word_move:
+            unit->read_fast       = ata_read_word_move;
+            unit->read_unaligned  = ata_read_unaligned_word;
+            unit->write_fast      = ata_write_word_move;
+            unit->write_unaligned = ata_write_unaligned_word;
+
+            unit->xferMethod = word_move;
+            break;
+
         default:
 #if NEXT_REG >= 512
         case longword_movem:
@@ -330,6 +366,17 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             unit->flags.xferMultiple = false;
             unit->multipleCount = 1;
         }
+
+#ifdef TF_IDE
+        // Select the fastest flow-controlled PIO mode the drive supports, like ehide does
+        if (buf[ata_identify_field_valid] & ata_field_valid_pio) {
+            if (buf[ata_identify_pio_modes] & ata_pio_mode_4) {
+                ata_set_pio(unit,4);
+            } else if (buf[ata_identify_pio_modes] & ata_pio_mode_3) {
+                ata_set_pio(unit,3);
+            }
+        }
+#endif
 
         if ((buf[ata_identify_features] & ata_feature_lba48) && unit->logicalSectors >= 0xFFFFFFF) {
 
@@ -656,6 +703,40 @@ void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"
     for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
         *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
         src += 4;
+    }
+}
+
+/**
+ * ata_read_unaligned_word
+ *
+ * Read data to an unaligned buffer from a word-only data port
+ * @param source Pointer to the drive data port
+ * @param destination Pointer to the data buffer
+*/
+void ata_read_unaligned_word(void *source asm("a0"), void *destination asm("a1")) {
+    UWORD readWord;
+    UBYTE *dest = (UBYTE *)destination;
+
+    for (int i=0; i<(512/2); i++) {          // Read (512 / 2) words from drive
+        readWord = *(volatile UWORD *)source;
+        dest[0] = ((readWord >> 8) & 0xFF);
+        dest[1] = (readWord & 0xFF);
+        dest += 2;
+    }
+}
+
+/**
+ * ata_write_unaligned_word
+ *
+ * Write data from an unaligned buffer to a word-only data port
+ * @param source Pointer to the data buffer
+ * @param destination Pointer to the drive data port
+*/
+void ata_write_unaligned_word(void *source asm("a0"), void *destination asm("a1")) {
+    UBYTE *src = (UBYTE *)source;
+    for (int i=0; i<(512/2); i++) {  // Write (512 / 2) words to drive
+        *(volatile UWORD *)destination = (src[0] << 8 | src[1]);
+        src += 2;
     }
 }
 

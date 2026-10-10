@@ -270,6 +270,29 @@ static void Cleanup(struct DeviceBase *dev) {
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
+#ifdef TF_IDE
+/**
+ * tf_ide_init
+ *
+ * The TF1260/TF4060 IDE window is not autoconfig, so only touch it when a TerribleFire
+ * board is present.
+ * lide polls the drive, so mask the IDE interrupt; nothing would acknowledge it.
+ *
+ * @returns true if the TF IDE port can be used
+*/
+static bool tf_ide_init(struct Library *ExpansionBase) {
+    if (FindConfigDev(NULL,TF_MANUF_ID,-1) == NULL) {
+        Info("TF: No TerribleFire board found\n");
+        return false;
+    }
+
+    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
+    *(volatile UBYTE *)TF_IDE_INTENA &= ~0x80;
+
+    return true;
+}
+#endif
+
 #ifndef ATA_CHANNELS
 /**
  * detectChannels
@@ -409,6 +432,12 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
          * If we are booting a non-autoconfig device we need to create a ConfigDev struct
          * This could also be done in mounter.c but that would create a new ConfigDev for each unit
          */
+#ifdef TF_IDE
+        if (!tf_ide_init(ExpansionBase)) {
+            Cleanup(dev);
+            return NULL;
+        }
+#endif
         if ((cd = CreateFakeConfigDev(SysBase,ExpansionBase)) == NULL) {
             Info("Failed to create fake configdev\n");
             Cleanup(dev);
