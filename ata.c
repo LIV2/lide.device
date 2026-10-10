@@ -123,6 +123,90 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
     return false;
 }
 
+#ifdef TF_IDE
+/**
+ * ata_tf_wait_drq_irq
+ *
+ * Wait for DRQ, sleeping on the drive interrupt instead of polling
+ *
+ * Status is checked through the alternate status register, which does not clear INTRQ.
+ * The interrupt signal is only ever cleared by Wait(), so an interrupt that arrives
+ * before the check, or one left over from an earlier poll, only causes one more check.
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @returns True if DRQ was set, false on error or timeout
+*/
+static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
+    struct ExecBase *SysBase    = unit->SysBase;
+    struct IOTask *itask        = unit->itask;
+    struct timerequest *tr      = itask->tr;
+    volatile UBYTE *alt_status  = (volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus);
+    ULONG timerSig              = 1UL << tr->tr_node.io_Message.mn_ReplyPort->mp_SigBit;
+    bool timedOut               = false;
+    bool result                 = false;
+    UBYTE status;
+
+    ata_tf_settle();
+
+    // Drives with a buffer often have the next block ready straight away
+    for (int i=0; i<TF_IRQ_POLL_LOOPS; i++) {
+        status = *alt_status;
+        if ((status & ata_flag_busy) == 0) {
+            if (status & (ata_flag_error | ata_flag_df)) return false;
+            if (status & ata_flag_drq) return true;
+        }
+    }
+
+    tr->tr_node.io_Command = TR_ADDREQUEST;
+    tr->tr_time.tv_sec     = ATA_DRQ_WAIT_S;
+    tr->tr_time.tv_micro   = 0;
+    SendIO((struct IORequest *)tr);
+
+    for (;;) {
+        status = *alt_status;
+        if ((status & ata_flag_busy) == 0) {
+            if (status & (ata_flag_error | ata_flag_df)) break;
+            if (status & ata_flag_drq) {
+                result = true;
+                break;
+            }
+        }
+
+        if (timedOut) {
+            Trace("wait_drq_irq timeout\n");
+            break;
+        }
+
+        if (Wait(itask->irqSigMask | timerSig) & timerSig) {
+            timedOut = (CheckIO((struct IORequest *)tr) != NULL);
+        }
+    }
+
+    if (!CheckIO((struct IORequest *)tr)) AbortIO((struct IORequest *)tr);
+    WaitIO((struct IORequest *)tr);
+    SetSignal(0,timerSig);
+
+    return result;
+}
+#endif
+
+/**
+ * ata_wait_data
+ *
+ * Wait until the drive is ready to transfer the next DRQ block
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @param irq True if the drive raises INTRQ for this block: every PIO in block, and
+ *            every PIO out block except the first
+ * @returns True if DRQ was set, false on error or timeout
+*/
+static inline bool ata_wait_data(struct IDEUnit *unit, bool irq) {
+#ifdef TF_IDE
+    if (irq && unit->itask->irqInstalled) return ata_tf_wait_drq_irq(unit);
+#endif
+    return ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true);
+}
+
 /**
  * ata_wait_not_busy
  *
@@ -563,7 +647,7 @@ BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
         lba += txn_count;
 
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
+            if (!ata_wait_data(unit,true)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
@@ -651,11 +735,14 @@ BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
 
         lba += txn_count;
 
+        bool firstBlock = true; // The drive does not interrupt for the first PIO out block
+
         while (txn_count) {
-            if (!ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true)) {
+            if (!ata_wait_data(unit,!firstBlock)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
+            firstBlock = false;
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
             for (int i = 0; i < multipleCount && txn_count; i++) {

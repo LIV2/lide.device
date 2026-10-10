@@ -5,6 +5,7 @@
 #ifndef _DEVICE_H
 #define _DEVICE_H
 #include <dos/filehandler.h>
+#include <exec/interrupts.h>
 #include <exec/semaphores.h>
 #include <devices/scsidisk.h>
 #include <stdbool.h>
@@ -139,6 +140,12 @@ struct IOTask {
     UBYTE              boardNum;
     UBYTE              taskNum;
     UBYTE              channel;
+#ifdef TF_IDE
+    struct Interrupt   irqServer;
+    ULONG              irqSigMask;
+    BYTE               irqSigBit;
+    bool               irqInstalled;
+#endif
 };
 
 #define STR(s) #s      /* Turn s into a string literal without expanding macro definitions (however, \
