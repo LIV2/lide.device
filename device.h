@@ -25,6 +25,12 @@
 #define NO_AUTOCONFIG 1
 #endif
 
+#ifdef TF_IDE
+#define TF_MANUF_ID   5080
+#define NO_AUTOCONFIG 1
+#define ATA_CHANNELS  1
+#endif
+
 #ifdef NO_AUTOCONFIG
 #define FAKE_CONFIGDEV 1
 #endif
@@ -36,7 +42,8 @@
 
 enum xfer {
     longword_movem,
-    longword_move
+    longword_move,
+    word_move
 };
 
 typedef void (*ata_xfer_func)(void * asm("a0"), void * asm("a1"));

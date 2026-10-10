@@ -101,5 +101,64 @@ static inline void ata_write_long_move (void *source asm("a0"), void *destinatio
     );
 }
 
+/**
+ * ata_read_word_move
+ *
+ * Read a sector from a data port that only supports word accesses (TF1260/TF4060)
+ * Pairs of words are merged into longs and stored 16 bytes at a time with movem,
+ * which keeps the 68040/68060 write buffer busy with whole cache lines
+ *
+ * @param source Pointer to drive data port
+ * @param destination Pointer to destination buffer
+*/
+static inline void ata_read_word_move (void *source asm("a0"), void *destination asm("a1")) {
+    asm volatile (
+        "moveq.l #15,d4               \n\t"
+        "1:                           \n\t"
+        ".rept 2                      \n\t"
+        "move.w  (%0),d0              \n\t"
+        "swap    d0                   \n\t"
+        "move.w  (%0),d0              \n\t"
+        "move.w  (%0),d1              \n\t"
+        "swap    d1                   \n\t"
+        "move.w  (%0),d1              \n\t"
+        "move.w  (%0),d2              \n\t"
+        "swap    d2                   \n\t"
+        "move.w  (%0),d2              \n\t"
+        "move.w  (%0),d3              \n\t"
+        "swap    d3                   \n\t"
+        "move.w  (%0),d3              \n\t"
+        "movem.l d0-d3,(%1)           \n\t"
+        "lea     16(%1),%1            \n\t"
+        ".endr                        \n\t"
+        "dbra    d4,1b                \n\t"
+    : "+a" (source), "+a" (destination)
+    :
+    : "d0","d1","d2","d3","d4","memory"
+    );
+}
+
+/**
+ * ata_write_word_move
+ *
+ * Write a sector to a data port that only supports word accesses (TF1260/TF4060)
+ *
+ * @param source Pointer to source buffer
+ * @param destination Pointer to drive data port
+*/
+static inline void ata_write_word_move (void *source asm("a0"), void *destination asm("a1")) {
+    asm volatile (
+        "moveq.l #15,d0         \n\t"
+        "1:                     \n\t"
+        ".rept 16               \n\t"
+        "move.w (%0)+,(%1)      \n\t"
+        ".endr                  \n\t"
+        "dbra   d0,1b           \n\t"
+    : "+a" (source), "+a" (destination)
+    :
+    : "d0","memory"
+    );
+}
+
 #pragma GCC pop_options
 #endif

@@ -47,6 +47,7 @@ endif
 all:	$(BUILDDIR)/$(PROJECT) \
 		$(ROM) \
 		$(BUILDDIR)/AIDE-$(PROJECT) \
+		$(BUILDDIR)/TF-$(PROJECT) \
 		$(BUILDDIR)/amigapci-$(PROJECT) \
 		$(BUILDDIR)/amigapci-lide.rom \
 		$(BUILDDIR)/lide-N2630-high.rom \
@@ -72,6 +73,11 @@ CFLAGS+= -DSIMPLE_IDE=1
 ASMOBJ+=$(OBJDIR)/bootblock.o
 endif
 
+ifdef TF_IDE
+CFLAGS+= -DTF_IDE=1
+ASMOBJ+=$(OBJDIR)/bootblock.o
+endif
+
 ifdef AMIGAPCI
 CFLAGS+= -DAMIGAPCI=1
 ASMOBJ+= $(OBJDIR)/bootblock.o
@@ -93,6 +99,10 @@ $(BUILDDIR)/amigapci-lide.device: $(SRCS)
 $(BUILDDIR)/AIDE-lide.device: $(SRCS)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=AIDE-lide.device SIMPLE_IDE=1 build
+
+$(BUILDDIR)/TF-lide.device: $(SRCS)
+	@printf "${WHITE}#### Building $@ ####${NC}\n"
+	@${MAKE} TARGET=TF-lide.device TF_IDE=1 build
 
 $(OBJDIR)/%.o: %.c
 	@mkdir -p $(OBJDIR)

@@ -14,7 +14,18 @@
 #error "MAX_TRANSFER_SECTORS cannot be larger than 256"
 #endif
 
-#ifdef SIMPLE_IDE
+#if defined(TF_IDE)
+
+// TerribleFire TF1260/TF4060 IDE: a Gayle-like register window decoded by the accelerator
+#define BOARD_BASE 0xDA4000
+#define CHANNEL_0  0x0000
+#define CHANNEL_1  0x1000
+#define IDE_CSMASK 0x0000
+#define NEXT_REG   0x4
+
+#define TF_IDE_INTENA 0xDAE000 // Bit 7 enables the IDE interrupt
+
+#elif defined(SIMPLE_IDE)
 
 #define BOARD_BASE 0xEF0000
 #define CHANNEL_0  0x2000
@@ -75,6 +86,7 @@
 #define ata_identify_multiple        47
 #define ata_identify_capabilities    49
 #define ata_identify_logical_sectors 60
+#define ata_identify_field_valid     53
 #define ata_identify_pio_modes       64
 #define ata_identify_features        83
 #define ata_identify_lba48_sectors   100
@@ -83,6 +95,10 @@
 #define ata_capability_lba (1<<9)
 #define ata_capability_dma (1<<8)
 #define ata_feature_lba48  (1<<10)
+
+#define ata_field_valid_pio (1<<1) // Words 64-70 are valid
+#define ata_pio_mode_3      (1<<0)
+#define ata_pio_mode_4      (1<<1)
 
 enum xfer_dir {
     READ,
@@ -115,4 +131,6 @@ BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 
 void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
 void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
+void ata_read_unaligned_word(void *source asm("a0"), void *destination asm("a1"));
+void ata_write_unaligned_word(void *source asm("a0"), void *destination asm("a1"));
 #endif

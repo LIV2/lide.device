@@ -201,7 +201,9 @@ BYTE setTransferMode(struct IOStdReq *req) {
   req->io_Command = CMD_XFER;
   error = DoIO((struct IORequest *)req);
   if (error == 0) {
-    printf("Transfer mode %s configured for unit %d\n",(req->io_Length == longword_move) ? "longword_move" : "longword_movem", config->Unit);
+    const char *mode = (req->io_Length == longword_move) ? "longword_move" :
+                       (req->io_Length == word_move)     ? "word_move"     : "longword_movem";
+    printf("Transfer mode %s configured for unit %d\n", mode, config->Unit);
   } else {
     printf("IO Error %d\n", error);
   }
