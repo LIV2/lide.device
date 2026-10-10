@@ -20,6 +20,102 @@
 #include "sleep.h"
 #include "lide_alib.h"
 
+#ifdef TF_IDE
+#include <hardware/intbits.h>
+
+/**
+ * tf_irq_handler
+ *
+ * INT2 server for the TF IDE interrupt: acknowledge the drive and wake the IO task
+ *
+ * @param itask Pointer to the IO task (is_Data)
+ * @returns 1 if the interrupt was ours
+*/
+ULONG __attribute__((used)) tf_irq_handler(struct IOTask *itask asm("a1")) {
+    struct ExecBase *SysBase = itask->SysBase;
+    volatile UBYTE *intchg = (volatile UBYTE *)TF_IDE_INTCHG;
+    UWORD sr;
+
+    if ((*intchg & 0x80) == 0) return 0;
+
+    // Reading the status register makes the drive release INTRQ
+    (void)*(volatile UBYTE *)(BOARD_BASE + CHANNEL_0 + ata_reg_status);
+
+    // Clear the pending bit like Gayle: write 0 to clear, 1 to leave alone, keep bits 0-1
+    asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr));
+    *intchg = (*intchg & 0x03) | 0x7C;
+    asm volatile ("move.w %0,sr" : : "d" (sr));
+
+    Signal(itask->task,itask->irqSigMask);
+    return 1;
+}
+
+/**
+ * tf_irq_server
+ *
+ * Interrupt server entry: exec checks the Z flag rather than d0
+*/
+void tf_irq_server(void);
+asm (
+    "    .text                 \n"
+    "    .even                 \n"
+    "_tf_irq_server:           \n"
+    "    jsr    _tf_irq_handler\n"
+    "    tst.l  d0             \n"
+    "    rts                   \n"
+);
+
+/**
+ * tf_irq_install
+ *
+ * Add the INT2 server and unmask the TF IDE interrupt
+ * Must be called from the IO task, which owns the signal
+ *
+ * @param itask Pointer to the IO task
+*/
+static void tf_irq_install(struct IOTask *itask) {
+    struct ExecBase *SysBase = itask->SysBase;
+
+    if ((itask->irqSigBit = AllocSignal(-1)) == -1) {
+        Info("TF: No free signal, polling the drive\n");
+        return;
+    }
+
+    itask->irqSigMask                = 1UL << itask->irqSigBit;
+    itask->irqServer.is_Node.ln_Type = NT_INTERRUPT;
+    itask->irqServer.is_Node.ln_Pri  = TF_IRQ_PRI;
+    itask->irqServer.is_Node.ln_Name = ATA_TASK_NAME;
+    itask->irqServer.is_Data         = itask;
+    itask->irqServer.is_Code         = tf_irq_server;
+
+    AddIntServer(INTB_PORTS,&itask->irqServer);
+    itask->irqInstalled = true;
+
+    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x00; // Device control: clear nIEN
+    *(volatile UBYTE *)TF_IDE_INTENA |= 0x80;
+}
+
+/**
+ * tf_irq_remove
+ *
+ * Mask the TF IDE interrupt and remove the INT2 server
+ *
+ * @param itask Pointer to the IO task
+*/
+static void tf_irq_remove(struct IOTask *itask) {
+    struct ExecBase *SysBase = itask->SysBase;
+
+    if (!itask->irqInstalled) return;
+
+    *(volatile UBYTE *)TF_IDE_INTENA &= ~0x80;
+    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
+
+    RemIntServer(INTB_PORTS,&itask->irqServer);
+    FreeSignal(itask->irqSigBit);
+    itask->irqInstalled = false;
+}
+#endif
+
 /**
  * create_timer
  *
@@ -302,6 +398,9 @@ static BYTE init_units(struct IOTask *itask) {
 */
 static void cleanup(struct IOTask *itask) {
     struct ExecBase *SysBase = itask->SysBase;
+#ifdef TF_IDE
+    tf_irq_remove(itask);
+#endif
     if (itask->iomp)
         L_DeletePort(itask->iomp);
 
@@ -620,6 +719,10 @@ void __attribute__((noreturn)) io_task () {
         RemTask(NULL);
         Wait(0);
     }
+
+#ifdef TF_IDE
+    tf_irq_install(itask);
+#endif
 
     itask->active = true;
     itask->paused = false;

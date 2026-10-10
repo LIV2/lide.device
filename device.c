@@ -275,8 +275,8 @@ static void Cleanup(struct DeviceBase *dev) {
  * tf_ide_init
  *
  * The TF1260/TF4060 IDE window is not autoconfig, so only touch it when a TerribleFire
- * board is present.
- * lide polls the drive, so mask the IDE interrupt; nothing would acknowledge it.
+ * board is present. Keep IDE interrupts masked until the IO task installs its
+ * interrupt server.
  *
  * @returns true if the TF IDE port can be used
 */
