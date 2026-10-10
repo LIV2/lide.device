@@ -121,4 +121,5 @@ struct Config* configure(int argc, char *argv[]) {
 */
 void usage() {
     printf("\nUsage: lidetool -u <unit> -m <method> [-d <device>] [-P <pio mode>] [-p] [-I]\n\n");
+    printf("Methods: 0 longword_movem, 1 longword_move, 2 word_move, a auto\n\n");
 }

@@ -150,6 +150,21 @@ static void doScsiInquiry(struct IOStdReq *req) {
   }
 }
 
+/**
+ * xferName
+ *
+ * @param method Transfer method
+ * @returns Printable name of the transfer method
+ */
+static const char * xferName(enum xfer method) {
+  switch (method) {
+    case longword_movem: return "longword_movem";
+    case longword_move:  return "longword_move";
+    case word_move:      return "word_move";
+    default:             return "unknown";
+  }
+}
+
 /** 
  * DumpUnit
  * 
@@ -162,7 +177,7 @@ static void DumpUnit(struct IOStdReq *req) {
     struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
 
     printf("Device Type:         %d\n", unit->deviceType);
-    printf("Transfer method:     %d\n", unit->xferMethod);
+    printf("Transfer method:     %s\n", xferName(unit->xferMethod));
     printf("Primary:             %s\n", (unit->flags.primary) ? "Yes" : "No");
     printf("ATAPI:               %s\n", (unit->flags.atapi) ? "Yes" : "No");
     printf("Medium Present:      %s\n", (unit->flags.mediumPresent) ? "Yes" : "No");
@@ -190,8 +205,14 @@ static void DumpUnit(struct IOStdReq *req) {
 BYTE setTransferMode(struct IOStdReq *req) {
   BYTE error = 0;
 
+  struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
+
   if (config->Mode == 'a'-'0') {
-    req->io_Length = (SysBase->AttnFlags & (AFF_68030 | AFF_68040 | AFF_68060)) ? longword_move : longword_movem;
+    if (unit->xferMethod == word_move) {
+      req->io_Length = word_move; // Word-only data ports (TF IDE) must stay on word accesses
+    } else {
+      req->io_Length = (SysBase->AttnFlags & (AFF_68030 | AFF_68040 | AFF_68060)) ? longword_move : longword_movem;
+    }
   } else {
       req->io_Length = config->Mode;
   }
@@ -201,9 +222,8 @@ BYTE setTransferMode(struct IOStdReq *req) {
   req->io_Command = CMD_XFER;
   error = DoIO((struct IORequest *)req);
   if (error == 0) {
-    const char *mode = (req->io_Length == longword_move) ? "longword_move" :
-                       (req->io_Length == word_move)     ? "word_move"     : "longword_movem";
-    printf("Transfer mode %s configured for unit %d\n", mode, config->Unit);
+    // The driver may substitute a method the board supports, so report what it picked
+    printf("Transfer mode %s configured for unit %d\n", xferName(unit->xferMethod), config->Unit);
   } else {
     printf("IO Error %d\n", error);
   }
