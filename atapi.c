@@ -59,79 +59,43 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
 }
 
 /**
- * atapi_wait_drq_not_bsy
+ * atapi_wait_status
  *
- * Poll the status register until DRQ set and BSY clear or timeout
- * @param unit Pointer to an IDEUnit struct
- * @param tries Tries, sets the timeout
-*/
-static bool atapi_wait_drq_not_bsy(struct IDEUnit *unit, ULONG tries) {
-    atapi_status_reg_delay();
-
-    for (int i=0; i < tries; i++) {
-        if ((*unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == ata_flag_drq) return true;
-        atapi_status_reg_delay();
-    }
-    return false;
-}
-
-/**
- * atapi_wait_not_bsy
+ * Polls status register until it shows the expected value
  *
- * Polls the BSY bit in the status register until cleared, an error occurs, or the timeout is reached.
- *
- * For long-running commands (e.g., FORMAT UNIT, BLANK, up to 30 minutes), uses timer-based waits (1 ms per poll) to yield to other tasks, ensuring AmigaOS multitasking friendliness.
- * For faster commands (e.g., READ (10), WRITE (10)), uses a ~1.4 µs delay via CIA register reads for CPU-independent timing and high throughput.
+ * For the fast path (longDelay == false), spins on the status register a number of times per
+ * outer iteration before paying for a timer.device wait, so the common case (BSY clears quickly)
+ * is resolved without ever touching the timer.
  *
  * Timeout durations:
- * - Short (~40 seconds, CIA-based): For fast commands like READ (10), WRITE (10).
- * - Medium (120 seconds, timer-based): For cache flushes (e.g., SYNCHRONIZE CACHE, CLOSE TRACK/SESSION).
- * - Long (30 minutes, timer-based): For formatting (e.g., FORMAT UNIT, BLANK).
- *
- * Returns true if BSY clears, false on timeout or if error/device fault bits are set (ERR, DF).
+ * - Short (~40 seconds): For fast commands like READ (10), WRITE (10).
+ * - Medium (120 seconds): For cache flushes (e.g., SYNCHRONIZE CACHE, CLOSE TRACK/SESSION).
+ * - Long (30 minutes): For formatting (e.g., FORMAT UNIT, BLANK).
  *
  * @param unit Pointer to an IDEUnit struct.
- * @param tries Number of polling iterations—timeout depends on longDelay: ~1.4 µs/try (CIA) or 1 ms/try (timer).
- * @param longDelay If true, uses timer.device (1 ms waits) for multitasking; if false, uses CIA (~1.4 µs) for speed.
+ * @param tries Number of outer polling iterations, each worth one timer wait of micros if unresolved.
+ * @param mask Mask to apply to the status register
+ * @param value The expected value seen after masking
+ * @param longDelay If true, waits via timer.device every iteration; if false, spins before falling back to the timer.
  */
-static bool atapi_wait_not_bsy(struct IDEUnit *unit, ULONG tries, bool longDelay) {
-    Trace("atapi_wait_not_bsy enter\n");
-    atapi_status_reg_delay();
+static bool atapi_wait_status(struct IDEUnit *unit, ULONG tries, UBYTE mask, UBYTE value, bool longDelay) {
+    struct timerequest *tr = unit->itask->tr;
+    ULONG micros = (longDelay) ? ATAPI_BSY_WAIT_LOOP_LONG_US : ATAPI_BSY_WAIT_LOOP_SHORT_US;
+    int loops    = (longDelay) ? 1 : ATAPI_STATUS_SPIN_LOOPS;
 
-    if (longDelay) {
-        struct timerequest *tr = unit->itask->tr;
-        for (int i=0; i < tries; i++) {
-            if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
-            sleep_us(tr,ATAPI_BSY_WAIT_LOOP_LONG_US);
-        }
-    } else {
-        for (int i=0; i < tries; i++) {
-            if ((*unit->drive.status_command & ata_flag_busy) == 0) return true;
-            atapi_status_reg_delay();
-        }
-    }
-    Trace("atapi_wait_not_bsy timeout\n");
-    return false;
-}
-
-/**
- * atapi_wait_not_drqbsy
- *
- * Poll DRQ & BSY in the status register until clear or timeout
- * @param unit Pointer to an IDEUnit struct
- * @param tries Tries, sets the timeout
-*/
-static bool atapi_wait_not_drqbsy(struct IDEUnit *unit, ULONG tries) {
-    Trace("atapi_wait_not_drqbsy enter\n");
-
-    atapi_status_reg_delay();
     for (int i=0; i < tries; i++) {
-        if ((*(volatile BYTE *)unit->drive.status_command & (ata_flag_busy | ata_flag_drq)) == 0) return true;
-        atapi_status_reg_delay();
+        // Try a bunch of times before imposing the speed penalty of the timer...
+        for (int j=0; j < loops; j++) {
+            atapi_status_reg_delay();
+            if ((*unit->drive.status_command & mask) == value) return true;
+        }
+        sleep_us(tr,micros);
     }
-    Trace("atapi_wait_not_drqbsy timeout\n");
+
+    Trace("atapi_wait_status timeout\n");
     return false;
 }
+
 
 /**
  * atapi_check_ir
@@ -173,9 +137,9 @@ static bool atapi_check_error(struct IDEUnit *unit) {
 */
 void atapi_dev_reset(struct IDEUnit *unit) {
     Info("ATAPI: Resetting device\n");
-    atapi_wait_not_bsy(unit,10000,true);
+    atapi_wait_status(unit,ATAPI_BSY_WAIT_COUNT_RESET,ata_flag_busy,0,true);
     *unit->drive.status_command = ATA_CMD_DEVICE_RESET;
-    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT,false);
+    atapi_wait_status(unit,ATAPI_BSY_WAIT_COUNT_SHORT,ata_flag_busy,0,false);
 
 }
 
@@ -248,7 +212,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 }
 
 /** atapi_init_unit
- * 
+ *
  * Check if the unit is an ATAPI unit and if it is setup the unit struct
  * @param unit Pointer to an IDEUnit struct
  * @param buffer Pointer to a buffer for the IDENTIFY PACKET DEVICE data
@@ -439,7 +403,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
             break;
         default:
             busy_useTimer = false;
-            busy_wait = ATAPI_BSY_WAIT_COUNT_SHORT; // 30 seconds
+            busy_wait = ATAPI_BSY_WAIT_COUNT_SHORT; // 40 seconds
             break;
     }
 
@@ -450,7 +414,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
 
-    if (!atapi_wait_not_drqbsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT)) {
+    if (!atapi_wait_status(unit,ATAPI_BSY_WAIT_COUNT_SHORT,ata_flag_busy|ata_flag_drq,0,false)) {
         ret = IOERR_UNITBUSY;
         goto end;
     }
@@ -472,7 +436,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         goto ata_error;
     }
 
-    if (!atapi_wait_drq_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT)) {
+    if (!atapi_wait_status(unit,ATAPI_BSY_WAIT_COUNT_SHORT,ata_flag_busy|ata_flag_drq,ata_flag_drq,false)) {
         Trace("ATAPI: Packet bsy timeout\n");
         ret = IOERR_UNITBUSY;
         goto end;
@@ -510,7 +474,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
     ULONG index = 0;
 
     while (1) {
-        if (!atapi_wait_not_bsy(unit,busy_wait,busy_useTimer)) {
+        if (!atapi_wait_status(unit,busy_wait,ata_flag_busy,0,busy_useTimer)) {
           ret = IOERR_UNITBUSY;
           goto end;
         }
@@ -565,7 +529,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
         CacheClearE(cmd->scsi_Data,cmd->scsi_Length,CACRF_ClearI);
     }
 
-    atapi_wait_not_bsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT,false);
+    atapi_wait_status(unit,ATAPI_BSY_WAIT_COUNT_SHORT,ata_flag_busy,0,false);
     if (!atapi_check_ir(unit,atapi_flag_cd,IR_COMMAND,10)) {
         // Drive is still in the data phase but should be either reporting completion or ready for a command
         Warn("ATAPI: Completion not reported at end of command\n");
