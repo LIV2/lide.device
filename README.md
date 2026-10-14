@@ -87,12 +87,12 @@ The following boards support loading ODFileSystem from ROM:
 * 68EC020-TK
 * 68030-TK2
 
-The rom version of ODFileSystem is included on the lide-update adf in the file named `cdfs.rom`  
+The rom version of ODFileSystem is included on the lide-update adf in the file named `odfs.rom`  
 This must be flashed to the second bank of the ROM.  
 This can be achieved on RIPPLE and 68EC020-TK boards using `lideflash` i.e  
-`lideflash -C cdfs.rom`
+`lideflash -C odfs.rom`
 
-For other boards (i.e 68030-TK2) place cdfs.rom immediately after lide-atbus.rom when programming the flash
+For other boards (i.e 68030-TK2) place odfs.rom immediately after lide-atbus.rom when programming the flash
 
 ## Large drive (>4GB) support
 For drives larger than 4GB it is required to use a Filesystem that supports TD64, NSD or SCSI-Direct  
@@ -143,7 +143,7 @@ Thanks to [MHeinrichs](https://gitlab.com/MHeinrichs) for contributing improveme
 reloc.S is adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright Stefan Reinauer  
 mounter.c adapted from the [A4091](https://github.com/A4091/a4091-software) open-source driver and is Copyright 2021-2022 Toni Wilen  
 The fast read/write routines for ATA devices are adapted from [Frédéric REQUIN](https://github.com/fredrequin)'s [at_apollo_device](https://github.com/fredrequin/at_apollo_device)  
-cdfs.rom, included in releases and on the update ADF, is taken unmodified from the upstream [ODFileSystem](https://github.com/reinauer/ODFileSystem) release page and is Copyright Stefan Reinauer  
+odfs.rom, included in releases and on the update ADF, is taken unmodified from the upstream [ODFileSystem](https://github.com/reinauer/ODFileSystem) release page and is Copyright Stefan Reinauer  
 decompress.S - The ZX0 data compression format and algorithm was designed by [Einar Saukas](https://github.com/einar-saukas/ZX0).  
 
 ## License
