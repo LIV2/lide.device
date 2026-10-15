@@ -24,7 +24,7 @@ STRIDE       = 1
     ENDIF
 
 ;; Registers used:
-;; A0: BoardBase, A1: ConfigDev, A2: BoardBase, A3: ConfigDev, D2: Rom Alignment
+;; A0: BoardBase, A1: ConfigDev, A2: BoardBase, A3: ConfigDev, A5: CDFS SegList, D2: Rom Alignment
 Stage2: move.l  a0,a2                         ; BoardBase
         move.l  a1,a3                         ; ConfigDev
         move.l  #0,a5
@@ -105,7 +105,7 @@ LoadDriver:
         move.l  RT_INIT(a1),a1
         move.l  #0,a0
         jmp     (a1)            ; Will RTS back to DiagArea
-.fail:  moveq.l #0,d0
+.fail:  moveq.l #-1,d0
         rts
 
 ; CallReloc: Add Alignment to Offset and call _relocate
