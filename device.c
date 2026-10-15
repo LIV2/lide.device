@@ -1152,13 +1152,14 @@ static struct Library * init(BPTR seg_list asm("a0"), ULONG cookie asm("d0"), BP
 
         MountDrive(&ms);
 
-        if (!ctx.cdfs_active) {
-            FreeSeglist(SysBase,ctx.cdfs_seg);
-        }
-
         if (!seg_list) // Only tweak if we're in boot
             TweakBootList(SysBase,mydev->lib.lib_Node.ln_Name);
     }
+
 done:
+    if (!ctx.cdfs_active) {
+        FreeSeglist(SysBase,ctx.cdfs_seg);
+    }
+
     return (struct Library *)mydev;
 }
