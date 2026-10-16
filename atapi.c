@@ -238,7 +238,10 @@ bool atapi_init_unit(struct IDEUnit *unit, UWORD *buffer) {
     unit->flags.scsiCmdInUse = false;
     unit->flags.senseCmdInUse = false;
 
-    atapi_test_unit_ready(unit,true); // Clear the Unit attention check condition
+    // Don't wait for medium to become ready for CDROM so we don't stall boot
+    // If CD Boot is enabled the mounter will spool up the disk itself using CMD_START
+    bool immediate = unit->deviceType == DG_CDROM;
+    atapi_test_unit_ready(unit,immediate);
     return true;
 }
 
