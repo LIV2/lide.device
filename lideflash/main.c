@@ -668,8 +668,16 @@ int main(int argc, char *argv[])
 
                   setup_matzetk_board(&board);
                   break;
-                }
+                } else if (boardIs68030tkV2(cd)) {
+                  printf("Found 68030-TK V2");
 
+                  if (!matzetk_fw_supported(cd,TK030_MIN_FW_VER,false)) {
+                    continue;
+                  }
+
+                  setup_matzetk_board(&board);
+                  break;
+				}
             }
 
             continue;
@@ -711,7 +719,16 @@ int main(int argc, char *argv[])
 
                   setup_matzetk_board(&board);
                   break;
-                }
+                } else if (boardIs68030tkV2(cd)) {
+                  printf("Found 68030-TK V2");
+
+                  if (!matzetk_fw_supported(cd,TK030_MIN_FW_VER,false)) {
+                    continue;
+                  }
+
+                  setup_matzetk_board(&board);
+                  break;
+				}
               }
 
               continue; // Skip this board
@@ -727,6 +744,7 @@ int main(int argc, char *argv[])
           printCurrentVersion(cd);
 
         }
+
 
         printf("\n");
         bool update = (config->ide_rom_filename != NULL|| config->misc_filename != NULL);
