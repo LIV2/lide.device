@@ -41,7 +41,6 @@ extern ULONG flashbase;
 */
 void matzetk_enable_flash(struct ideBoard *board) {
     UWORD *configReg = (UWORD *)(board->cd->cd_BoardAddr + CONFIG_REG_OFFSET);
-
     *configReg |= CONFIG_FLASH_EN;
 }
 
@@ -97,11 +96,13 @@ void setup_matzetk_board(struct ideBoard *board) {
   if ((board->cd->cd_BoardSize >= 131072) && 
       (boardIs68ec020tk(board->cd) ||
       boardIsOlga(board->cd) ||
-      boardIsZorroLanIDE(board->cd))
+      boardIsZorroLanIDE(board->cd) ||
+      boardIs68030tkV2(board->cd))
     ) {
     board->bankSelect    = &matzetk_bankSelect;
     board->banks         = 2;
-  } else {
+  } 
+  else {
     board->bankSelect    = NULL;
   }
 
@@ -138,6 +139,23 @@ bool boardIs68ec020tk(struct ConfigDev *cd) {
 
       return true;
 
+  return false;
+}
+
+/**
+ * boardIs68030tkV2
+ *
+ * Returns true the board is a 68030TK V2
+*/
+bool boardIs68030tkV2(struct ConfigDev *cd) {
+  struct ConfigDev *nextCd = (struct ConfigDev *)cd->cd_Node.ln_Succ;
+
+  if(nextCd){
+    if (nextCd->cd_Rom.er_Manufacturer == MANUF_ID_A1K &&
+        nextCd->cd_Rom.er_Product == PROD_ID_68030_TK_2)
+
+        return true;
+  }
   return false;
 }
 

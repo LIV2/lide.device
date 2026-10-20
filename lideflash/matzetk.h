@@ -21,6 +21,7 @@
 
 #define OLGA_MIN_FW_VER 9
 #define TK020_MIN_FW_VER 5
+#define TK030_MIN_FW_VER 0xC
 #define LAN_IDE_MIN_FW_VER 2
 #define MANUF_ID_A1K  0x0A1C
 
@@ -30,6 +31,7 @@
 #define PROD_ID_MATZE_IDE       0x7D
 #define PROD_ID_68EC020_TK_1    0x08
 #define PROD_ID_68EC020_TK_2    0x09
+#define PROD_ID_68030_TK_2      0x0F
 
 #define SERIAL_MATZE 0xB16B00B5
 
@@ -38,5 +40,6 @@ void matzetk_bankSelect(UBYTE bank, struct ideBoard *board);
 void setup_matzetk_board(struct ideBoard *);
 bool boardIsOlga(struct ConfigDev *);
 bool boardIs68ec020tk(struct ConfigDev *);
+bool boardIs68030tkV2(struct ConfigDev *);
 bool boardIsZorroLanIDE(struct ConfigDev *);
 #endif
