@@ -1,7 +1,7 @@
 PROJECT=lide.device
 BUILDDIR=build
 ROM=$(BUILDDIR)/lide.rom
-VERSION := $(shell git describe --tags --dirty | sed -r 's/^Release-//')
+VERSION := $(shell git describe --tags --dirty | sed -r 's/^[[:alnum:]]+-//')
 TARGET=lide.device
 
 ODFS_VERSION=0.8.0
