@@ -361,7 +361,7 @@ static BOOL lseg_read_long(struct MountData *md, ULONG *data)
 {
 	BOOL v;
 	if (md->lseghasword) {
-		ULONG temp;
+		ULONG temp = 0;
 		v = lseg_read_longs(md, 1, &temp);
 		*data = (md->lsegwordbuf << 16) | (temp >> 16);
 		md->lsegwordbuf = (UWORD)temp;
@@ -567,7 +567,7 @@ static APTR fsrelocate(struct MountData *md)
 							hData[2] = v >>  8;
 							hData[3] = v >>  0;
 						} else {
-							*((ULONG*)hData) += (ULONG)rhr->hunkData;
+							*((ULONG*)(void *)hData) += (ULONG)rhr->hunkData;
 						}
 						relocCnt--;
 					}
@@ -593,7 +593,7 @@ end:
 		dbg("reloc failed\n");
 		hunkCnt = 0;
 		while (hunkCnt < totalHunks) {
-			struct RelocHunk *rh = &relocHunks[hunkCnt];
+			rh = &relocHunks[hunkCnt];
 			if (rh->hunkData) {
 				FreeMem(rh->hunkData - 2, (rh->hunkSize + 2) * sizeof(ULONG));
 			}
@@ -657,7 +657,7 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 			if (found_existing_fse->fse_Version >= version) {
 				if (newOnly) {
 					// Existing entry is suitable, and we only want to add a new one if necessary.
-					dbg("FileSystem.resource scan: Existing up-to-date entry 0x%p for 0x%08X found. Version 0x%08X >= requested 0x%08X. No action needed.\n",
+					dbg("FileSystem.resource scan: Existing up-to-date entry 0x%p for 0x%08"PRIX32" found. Version 0x%08"PRIX32" >= requested 0x%08"PRIX32". No action needed.\n",
 						found_existing_fse, dostype, found_existing_fse->fse_Version, version);
 					Permit();
 					return NULL; // Indicate no new/updated fse needed from this call
@@ -702,7 +702,7 @@ static struct FileSysEntry *FSHDProcess(struct FileSysHeaderBlock *fshb, ULONG d
 					result_fse->fse_PatchFlags = fshb->fhb_PatchFlags;
 					strcpy((char *)(result_fse + 1), (const char *)creator);
 					result_fse->fse_Node.ln_Name = (UBYTE *)(result_fse + 1);
-					dbg("FileSystem.resource scan: new FileSysEntry 0x%p created for 0x%08X based on fshb.\n", result_fse, dostype);
+					dbg("FileSystem.resource scan: new FileSysEntry 0x%p created for 0x%08"PRIX32" based on fshb.\n", result_fse, dostype);
 				}
 			}
 		} else if (fshb && !newOnly && found_existing_fse) {
@@ -736,7 +736,7 @@ static void FSHDAdd(struct FileSysEntry *fse, struct MountData *md)
 // Parse FileSystem Header Blocks, load and relocate filesystem if needed.
 static struct FileSysEntry *ParseFSHD(UBYTE *buf, ULONG block, ULONG dostype, struct MountData *md)
 {
-	struct FileSysHeaderBlock *fshb = (struct FileSysHeaderBlock*)buf;
+	struct FileSysHeaderBlock *fshb = (void *)buf;
 	struct FileSysEntry *fse = NULL;
 
 	for (;;) {
@@ -752,7 +752,7 @@ static struct FileSysEntry *ParseFSHD(UBYTE *buf, ULONG block, ULONG dostype, st
 			fse = FSHDProcess(fshb, dostype, fshb->fhb_Version, TRUE, md);
 			if (fse) {
 				md->lsegblock = fshb->fhb_SegListBlocks;
-				md->lsegbuf = (struct LoadSegBlock*)(buf + md->blocksize);
+				md->lsegbuf = (void *)(buf + md->blocksize);
 				md->lseglongs = 0;
 				APTR seg = fsrelocate(md);
 				fse->fse_SegList = MKBADDR(seg);
@@ -975,7 +975,7 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 {
 	struct ExecBase *SysBase = md->SysBase;
 	struct ExpansionBase *ExpansionBase = md->ExpansionBase;
-	struct PartitionBlock *part = (struct PartitionBlock*)buf;
+	struct PartitionBlock *part = (void *)buf;
 	ULONG nextpartblock = 0xffffffff;
 
 	if (!readblock(buf, block, IDNAME_PARTITION, md)) {
@@ -1021,7 +1021,7 @@ static ULONG ParsePART(UBYTE *buf, ULONG block, ULONG filesysblock, struct Mount
 // Scan PART blocks
 static LONG ParseRDSK(UBYTE *buf, struct MountData *md)
 {
-	struct RigidDiskBlock *rdb = (struct RigidDiskBlock*)buf;
+	struct RigidDiskBlock *rdb = (void *)buf;
 	ULONG partblock = rdb->rdb_PartitionList;
 	ULONG filesysblock = rdb->rdb_FileSysHeaderList;
 	ULONG flags = rdb->rdb_Flags;
@@ -1044,9 +1044,9 @@ static LONG ScanRDSK(struct MountData *md)
 	LONG ret = -1;
 	for (UWORD i = 0; i < RDB_LOCATION_LIMIT; i++) {
 		if (readblock(md->buf, i, 0xffffffff, md)) {
-			struct RigidDiskBlock *rdb = (struct RigidDiskBlock*)md->buf;
+			struct RigidDiskBlock *rdb = (void *)md->buf;
 			if (rdb->rdb_ID == IDNAME_RIGIDDISK) {
-				dbg("RDB found, block %"PRIu32"\n", i);
+				dbg("RDB found, block %"PRIu32"\n", (ULONG)i);
 				ret = ParseRDSK(md->buf, md);
 				break;
 			}
@@ -1640,7 +1640,7 @@ next_lun:
 								break;
 							}
 						} else {
-							dbg("OpenDevice(%s,%"PRId32") failed: %"PRId32"\n", ms->deviceName, unitNum, (BYTE)err);
+							dbg("OpenDevice(%s,%"PRId32") failed: %"PRId32"\n", ms->deviceName, unitNum, (LONG)(BYTE)err);
 						}
 					}
 					W_DeleteIORequest(request, SysBase);
