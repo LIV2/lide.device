@@ -42,7 +42,7 @@ void fake_scsi_sense(struct SCSICmd* command, ULONG info, ULONG specific, BYTE e
     sense->response   = 0x70; // Fixed format, current status
     sense->pad        = 0;
     sense->info       = info;
-    sense->additional = (UBYTE)sizeof(struct SCSI_FIXED_SENSE) - 7;
+    sense->additional = 10;
     sense->specific   = specific;
     sense->fru        = error;
     switch (error) {
