@@ -732,6 +732,7 @@ const UWORD supported_commands[] =
     TD_PROTSTATUS,
     TD_READ64,
     TD_WRITE64,
+    TD_FORMAT,
     TD_FORMAT64,
     ETD_READ,
     ETD_WRITE,
@@ -1150,7 +1151,7 @@ static struct Library * init(BPTR seg_list asm("a0"), ULONG cookie asm("d0"), BP
                                                                 sizeof(struct DeviceBase), // Library data size
                                                                 seg_list);                 // Segment list
 
-#ifdef CDBOOT
+#if CDBOOT
     CDBoot = (cookie == 'BOOT' && cdfs_seg != 0) || FindCDFS();
 #endif
 
