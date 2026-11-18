@@ -1011,6 +1011,9 @@ void AdjustBootPriority(struct ExecBase *SysBase, char *deviceName, char *bootna
     {
         dn = bn->bn_DeviceNode;
         fssm = BADDR(dn->dn_Startup);
+
+        if (!fssm) continue;
+
         char *bn_deviceName = (char *)BADDR(fssm->fssm_Device) + 1;
 
         // Only tweak boot nodes created by this instance
