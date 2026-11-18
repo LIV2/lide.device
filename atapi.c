@@ -233,6 +233,7 @@ bool atapi_init_unit(struct IDEUnit *unit, UWORD *buffer) {
 
     if ((unit->senseCmd = MakeSCSICmd(SZ_CDB_12)) == NULL) {
         DeleteSCSICmd(unit->scsiCmd);
+        unit->scsiCmd = NULL;
         return false;
     }
 
@@ -277,7 +278,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
     }
     Trace("%ld lba %ld count\n %ld bs\n",lba,count,unit->blockShift);
     BYTE err = 0;
-    BYTE ret = 0;
+    BYTE ret = TDERR_NotSpecified;
 
     for (int tries = 4; tries > 0; tries--) {
         cmd->scsi_CmdLength   = sizeof(struct SCSI_CDB_10);
@@ -297,6 +298,7 @@ BYTE atapi_translate(APTR io_Data, ULONG lba, ULONG count, ULONG *io_Actual, str
         cdb->length    = (UWORD)count;
 
         if ((err = atapi_packet(cmd,unit)) == 0) {
+            ret = 0;
             goto done;
         } else {
             if (cmd->scsi_Status == 2) {
@@ -526,8 +528,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 }
                 byte_count -= 2;
             }
+            remaining = cmd->scsi_Length - cmd->scsi_Actual;
         }
-        remaining = cmd->scsi_Length - cmd->scsi_Actual;
     }
 
     if (unit->SysBase->LibNode.lib_Version > 36) {
@@ -743,6 +745,9 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
         if ((ret = atapi_packet(cmd,unit)) == 0) {
             unit->logicalSectors  = capacity.logicalSectors + 1;
             unit->blockSize       = capacity.blockSize;
+            unit->cylinders       = unit->logicalSectors;
+            unit->heads           = 1;
+            unit->sectorsPerTrack = 1;
 
             while ((unit->blockSize >> unit->blockShift) > 1) {
                 unit->blockShift++;
@@ -978,6 +983,8 @@ BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
     if (!cdb) return TDERR_NoMem;
 
     struct SCSI_CDB_6 *oldcdb  = (struct SCSI_CDB_6 *)cmd->scsi_Command;
+    ULONG oldCmdLen = cmd->scsi_CmdLength;
+    cmd->scsi_CmdLength = sizeof(struct SCSI_CDB_10);
 
     cdb->operation = oldcdb->operation | 0x20;
     cdb->length    = oldcdb->length;
@@ -994,6 +1001,8 @@ BYTE atapi_scsi_read_write_6 (struct SCSICmd *cmd, struct IDEUnit *unit) {
     } else {
         ret = atapi_packet_unaligned(cmd,unit);
     }
+    
+    cmd->scsi_CmdLength = oldCmdLen;
 
     FreeMem(cdb,sizeof(struct SCSI_CDB_10));
 
@@ -1142,17 +1151,20 @@ BYTE atapi_check_wp(struct IDEUnit *unit) {
 bool atapi_update_presence(struct IDEUnit *unit, bool present) {
     bool ret = false;
     if (present && unit->flags.mediumPresent == false) {
-        unit->changeCount++;
         if (atapi_get_capacity(unit) == 0) {
+            unit->changeCount++;
             unit->flags.mediumPresent = true;
         }
         ret = true;
     } else if (!present && unit->flags.mediumPresent == true) {
         unit->changeCount++;
         unit->flags.mediumPresent = false;
-        unit->logicalSectors = 0;
-        unit->blockShift     = 0;
-        unit->blockSize      = 0;
+        unit->logicalSectors  = 0;
+        unit->blockShift      = 0;
+        unit->blockSize       = 0;
+        unit->cylinders       = 0;
+        unit->heads           = 0;
+        unit->sectorsPerTrack = 0;
         ret = true;
     }
     return ret;
@@ -1267,20 +1279,20 @@ BYTE atapi_play_track_index(struct IDEUnit *unit, UBYTE start, UBYTE end) {
     ret = atapi_read_toc(unit,(BYTE *)toc,SCSI_TOC_SIZE);
 
     if (ret == 0) {
-
-        if (end > toc->lastTrack) end = 0xAA; // Lead out
+        // The end track is played in full, so stop where the following track starts (or at the lead-out)
+        UBYTE endMarker = (end >= toc->lastTrack) ? 0xAA : end + 1;
 
         if (atapi_get_track_msf(toc,start,&startmsf) &&
-            atapi_get_track_msf(toc,end,&endmsf))
+            atapi_get_track_msf(toc,endMarker,&endmsf))
         {
-            // Point to end of last track rather than lead-out
-            if (end == 0xAA) atapi_adjust_end_msf(&endmsf);
+            // Step back one frame so we stop on the last frame of the end track
+            atapi_adjust_end_msf(&endmsf);
             ret = atapi_play_audio_msf(unit,&startmsf,&endmsf);
         } else {
             ret = IOERR_BADADDRESS;
         }
-
     }
+
 
     FreeMem(toc,SCSI_TOC_SIZE);
     return ret;
