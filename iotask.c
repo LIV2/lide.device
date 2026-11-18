@@ -250,6 +250,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 break;
 
             case SCSI_CMD_READ_6:
+                direction = READ;
             case SCSI_CMD_WRITE_6:
                 lba   = (((((struct SCSI_CDB_6 *)command)->lba_high & 0x1F) << 16) |
                         ((struct SCSI_CDB_6 *)command)->lba_mid << 8 |
@@ -260,12 +261,14 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                 goto do_scsi_transfer;
 
             case SCSI_CMD_READ_10:
+                direction = READ;
             case SCSI_CMD_WRITE_10:
                 lba   = ((struct SCSI_CDB_10 *)command)->lba;
                 count = ((struct SCSI_CDB_10 *)command)->length;
                 goto do_scsi_transfer;
 
             case SCSI_CMD_READ_16:
+                direction = READ;
             case SCSI_CMD_WRITE_16:
                 lba   = ((struct SCSI_CDB_16 *)command)->lba;
                 count = ((struct SCSI_CDB_16 *)command)->length;
@@ -277,12 +280,12 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
                     break;
                 }
 
-                direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
+                if (count > (scsi_command->scsi_Length >> unit->blockShift)) count = (scsi_command->scsi_Length >> unit->blockShift);
 
                 error = ata_readwrite(data,lba,count,unit,direction);
 
                 if (error == 0) {
-                    scsi_command->scsi_Actual = scsi_command->scsi_Length;
+                    scsi_command->scsi_Actual = count << unit->blockShift;
                 } else {
                     if (error == TDERR_NotSpecified) {
                         fake_scsi_sense(scsi_command,lba,
@@ -405,14 +408,13 @@ static void cleanup(struct IOTask *itask) {
     delete_timer(SysBase,itask->dcTimerMp,itask->dcTimerReq,itask->dcTimerArmed);
 
     struct IDEUnit *unit;
-
+    struct IDEUnit *next = NULL;
+    ObtainSemaphore(&itask->dev->ulSem);
     for (unit = (struct IDEUnit *)itask->dev->units.mlh_Head;
-         unit->mn_Node.mln_Succ != NULL;
-         unit =  (struct IDEUnit *)unit->mn_Node.mln_Succ) {
+         (next = (struct IDEUnit *)unit->mn_Node.mln_Succ) != NULL;
+         unit = next) {
             if (unit->itask == itask) {
-                ObtainSemaphore(&itask->dev->ulSem);
                 Remove((struct Node *)unit);
-                ReleaseSemaphore(&itask->dev->ulSem);
                 if (unit->scsiCmd != NULL) {
                     unit->scsiCmd->scsi_CmdLength = SZ_CDB_12;
                     DeleteSCSICmd(unit->scsiCmd);
@@ -424,7 +426,7 @@ static void cleanup(struct IOTask *itask) {
                 FreeMem(unit,sizeof(struct IDEUnit));
             }
          }
-
+    ReleaseSemaphore(&itask->dev->ulSem);
     itask->active = false;
     itask->task   = NULL;
     Signal(itask->parent, SIGF_SINGLE);
@@ -454,7 +456,7 @@ static void diskchange_check(struct IOTask *itask) {
         unit->mn_Node.mln_Succ != NULL;
         unit = (struct IDEUnit *)unit->mn_Node.mln_Succ)
     {
-        if (unit->flags.present && unit->flags.atapi) {
+        if (unit->itask == itask && unit->flags.present && unit->flags.atapi) {
 
             present = (atapi_test_unit_ready(unit,true) == 0) ? true : false;
 
@@ -511,8 +513,8 @@ static void process_ioreq(struct IOTask *itask, struct IOStdReq *ioreq) {
         case CMD_PAUSE:
             itask->paused = true;
             ioreq->io_Error = 0;
-            ReplyMsg(&ioreq->io_Message);
             SetSignal(0,SIGBREAKF_CTRL_D);
+            ReplyMsg(&ioreq->io_Message);
             Wait(SIGBREAKF_CTRL_D);
             return;
 
@@ -598,7 +600,20 @@ transfer:
                 break;
             }
 
-            blockShift = ((struct IDEUnit *)ioreq->io_Unit)->blockShift;
+            // Guard against accesses that are not divisible / aligned by the block size
+            ULONG blockMask = unit->blockSize - 1;
+
+            if (ioreq->io_Length & blockMask) {
+                error = IOERR_BADLENGTH;
+                break;
+            }
+
+            if (ioreq->io_Offset & blockMask) {
+                error = IOERR_BADADDRESS;
+                break;
+            }
+
+            blockShift = unit->blockShift;
 
             // This looks like a lond-winded way to get the LBA doesn't it?
             // Splitting up the operation like this results in smaller code size (avoids 64-bit math from libgcc)
