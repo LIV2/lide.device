@@ -72,9 +72,11 @@
 #define ATA_CMD_DEVICE_RESET       0x08
 #define ATA_CMD_IDENTIFY           0xEC
 #define ATA_CMD_READ               0x20
+#define ATA_CMD_READ_EXT           0x24
 #define ATA_CMD_READ_MULTIPLE      0xC4
 #define ATA_CMD_READ_MULTIPLE_EXT  0x29
 #define ATA_CMD_WRITE              0x30
+#define ATA_CMD_WRITE_EXT          0x34
 #define ATA_CMD_WRITE_MULTIPLE     0xC5
 #define ATA_CMD_WRITE_MULTIPLE_EXT 0x39
 #define ATA_CMD_SET_MULTIPLE       0xC6

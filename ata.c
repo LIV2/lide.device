@@ -610,7 +610,7 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *un
     volatile void *dataRegister = unit->drive.data;
 
     if (unit->flags.lba48) {
-        command = ATA_CMD_READ_MULTIPLE_EXT;
+        command = (unit->flags.xferMultiple) ? ATA_CMD_READ_MULTIPLE_EXT : ATA_CMD_READ_EXT;
     } else {
         command = (unit->flags.xferMultiple) ? ATA_CMD_READ_MULTIPLE : ATA_CMD_READ;
     }
@@ -699,7 +699,7 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *u
     volatile void *dataRegister = unit->drive.data;
 
     if (unit->flags.lba48) {
-        command = ATA_CMD_WRITE_MULTIPLE_EXT;
+        command = (unit->flags.xferMultiple) ? ATA_CMD_WRITE_MULTIPLE_EXT : ATA_CMD_WRITE_EXT;
     } else {
         command = (unit->flags.xferMultiple) ? ATA_CMD_WRITE_MULTIPLE : ATA_CMD_WRITE;
     }
@@ -761,6 +761,11 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *u
                 txn_count--;
                 buffer += 512;
             }
+        }
+
+        if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT) || ata_check_error(unit)) {
+            ata_save_error(unit);
+            return TDERR_NotSpecified;
         }
 
     }
@@ -994,13 +999,17 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
     bool byt_blok  = (cdb->length & ATA_BYT_BLOK) ? true : false;
     UBYTE protocol = (cdb->protocol >> 1) & 0x0F;
     UBYTE t_length = cdb->length & ATA_TLEN_MASK;
+    
+    ULONG lba = ((cdb->devHead & 0x0F) << 24) |
+                (cdb->lbaHigh << 16) |
+                (cdb->lbaMid << 8) | 
+                cdb->lbaLow;
 
-    ULONG lba   = (cdb->lbaHigh << 16 | cdb->lbaMid << 8 | cdb->lbaLow);
     ULONG count = 0;
     BYTE  error = 0;
 
-    UWORD *src  = NULL;
-    UWORD *dest = NULL;
+    volatile UWORD *src  = NULL;
+    volatile UWORD *dest = NULL;
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
 
@@ -1009,11 +1018,9 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
             break;
         case 0x01: // Transfer length in feature field
             count = cdb->features;
-            cdb->features = 0;
             break;
         case 0x02: // Transfer length in sector_count field
             count = cdb->sectorCount;
-            cdb->sectorCount = 0;
             break;
         default:
             return IOERR_BADLENGTH;
@@ -1074,8 +1081,11 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
                     return IOERR_UNITBUSY;
                 }
             }
-
-                dest[i] = src[i];
+            if (protocol == ATA_PIO_IN) {
+                dest[i] = *src;
+            } else {
+                *dest = src[i];
+            }
         }
     }
 
@@ -1089,7 +1099,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
         return IOERR_ABORTED;
     }
 
-    cmd->scsi_Actual = cmd->scsi_Length;
+    cmd->scsi_Actual = count;
 
     return 0;
 }
