@@ -405,12 +405,12 @@ static int find_lide_version(const unsigned char *buffer, ULONG romSize) {
 static void printVersion(char *version) {
   char *temp;
   int len = strcspn(version,")");
-  len++;                                    // Leave space for null terminator
-  if ((temp = AllocMem(len,MEMF_ANY))) {
+  len++;
+  if ((temp = AllocMem(len + 1,MEMF_ANY))) {
     temp[len] = 0;
     strncpy(temp,version,len);
     printf("%s\n",temp);
-    FreeMem(temp,len);
+    FreeMem(temp,len + 1);
   }
 }
 
@@ -814,7 +814,7 @@ int main(int argc, char *argv[])
 
         } else {
           printf("Error: IDE - Unknown Flash device Manufacturer: %02X Device: %02X\n", manufId, devId);
-          if (cd->cd_BoardSize == 65535) {
+          if (cd->cd_BoardSize == 65536) {
             printf("Turn IDE off and try again.\n");
           }
           rc = 5;

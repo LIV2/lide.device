@@ -323,7 +323,7 @@ static void identify_decode(UWORD *buf) {
                bit,
                (buf[88] & BIT(8 + bit)) ? "]" : "");
       }
-    if ((buf[63] & 0xff) == 0)
+    if ((buf[88] & 0xff) == 0)
       printf("<none>");
     printf("\nTiming:       tPIO=[min:%u,w/IORDY:%u}, tDMA={min:%u,rec:%u}\n",
            buf[67], buf[68], buf[65], buf[66]);
@@ -369,7 +369,7 @@ BYTE identify(struct IOStdReq *req) {
 
       req->io_Offset  = 0;
       req->io_Actual  = 0;
-      req->io_Length  = 12;
+      req->io_Length  = sizeof(struct SCSICmd);
       req->io_Command = HD_SCSICMD;
       req->io_Data = cmd;
 

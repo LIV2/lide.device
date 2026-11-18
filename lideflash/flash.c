@@ -103,12 +103,12 @@ static UWORD flash_get_sectorSize(UBYTE manufacturer, UBYTE device) {
  * @param data The data to be written
 */
 void flash_writeByte(ULONG address, UBYTE data) {
-  ULONG shifted = address & (FLASH_SIZE-1);
-  shifted <<= 1;
+  address &= (FLASH_SIZE-1);
+  address <<= 1;
   Forbid();
   flash_unlock_sdp();
   flash_command(CMD_BYTE_PROGRAM);
-  *(volatile UBYTE *)(flashbase + shifted) = data;
+  *(volatile UBYTE *)(flashbase + address) = data;
   flash_poll(address);
   Permit();
   return;
@@ -186,11 +186,9 @@ void flash_erase_sector(ULONG address) {
 /** flash_poll
  *
  * @brief Poll the status bits at address, until they indicate that the operation has completed.
- * @param address Address to poll
+ * @param address Shifted Address to poll
 */
 static inline void flash_poll(ULONG address) {
-  address &= (FLASH_SIZE-1);
-  address <<= 1;
   volatile UBYTE *read1 = ((void *)flashbase + address);
   volatile UBYTE *read2 = ((void *)flashbase + address);
   while (((*read1 & 1<<6) != (*read2 & 1<<6))) {;;}
