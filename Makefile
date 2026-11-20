@@ -4,7 +4,7 @@ ROM=$(BUILDDIR)/lide.rom
 VERSION ?= $(shell { git describe --tags --dirty 2>/dev/null || echo 40.0; } | sed -E 's/^[[:alnum:]]+-//')
 TARGET=lide.device
 
-ODFS_VERSION=0.8.0
+ODFS_VERSION=0.9.0
 ODFS_URL="https://github.com/reinauer/ODFileSystem/releases/download/v$(ODFS_VERSION)/ODFileSystem-rom"
 
 BGREEN = \033[1;32m
