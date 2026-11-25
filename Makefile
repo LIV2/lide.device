@@ -63,7 +63,7 @@ ASMOBJ =  $(OBJDIR)/endskip.o
 
 ifdef DEBUG
 CFLAGS+= -DDEBUG=$(DEBUG)
-LDFLAGS=-ldebug -lgcc -lc -L/opt/amiga/lib/gcc/m68k-amigaos/6.5.0b/
+LDFLAGS=-ldebug -lgcc -lc -L$(dir $(shell $(CC) -print-libgcc-file-name))
 .PHONY: build $(SRCS)
 endif
 
