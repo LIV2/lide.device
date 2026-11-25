@@ -57,6 +57,7 @@ jobs:
             artifacts/software/**/*.lha
             artifacts/software/**/amigapci-lide.device
             artifacts/software/**/AIDE-lide.device
+            artifacts/software/**/TF-lide.device
             artifacts/software/**/*.readme
 
   aminet:

@@ -7,6 +7,7 @@
     * [lide-update.adf](#lide-updateadf)
     * [AIDE-boot.adf](#aide-bootadf)
     * [ROM images](#rom-images)
+* [TerribleFire TF1260/TF4060 (Experimental)](#terriblefire-tf1260tf4060-experimental)
 * [Boot from CDROM](#boot-from-cdrom)
     * [Loading ODFileSystem from Board ROM](#loading-odfilesystem-from-board-rom)
 * [Large drive (>4GB) support](#large-drive-4gb-support)
@@ -41,6 +42,7 @@ lide.device supports the following devices:
 * [CDTV-RAM-IDE](https://gitlab.com/MHeinrichs/CDTV-RAM-IDE)
 * [AIDE](https://gitlab.com/MHeinrichs/AIDE)
 * AT-Bus 2008 and clones
+* TerribleFire TF1260/TF4060 **([Experimental](#terriblefire-tf1260tf4060-experimental))**
 
 This list is not exhaustive, lide may also support other devices that implement the same IDE interface as Matzes TKs  
 Let me know if there's something that should be added to this list!
@@ -69,6 +71,18 @@ Releases contain the following builds
 |lide.rom|[CIDER](https://github.com/LIV2/CIDER)<br/>[RIPPLE](https://github.com/LIV2/RIPPLE-IDE)<br/>[RIDE](https://github.com/LIV2/RIDE)|Update by booting the latest lide-update adf under [releases](https://github.com/LIV2/lide.device/releases)|
 |lide-N2630-high.rom<br>lide-N2630-low.rom|[N2630](https://github.com/jasonsbeer/Amiga-N2630)|Follow the N2630 documentation to combine LIDE with the N2630 ROM|
 |lide-atbus.rom|AT-Bus 2008 and clones<br>[Dicke Olga](https://gitlab.com/Hamag/dickeolga)<br>[68030-TK2](https://gitlab.com/MHeinrichs/68030-tk2)<br>[68EC020-TK](https://gitlab.com/MHeinrichs/68EC020-TK)<br>[CDTV-RAM-IDE](https://gitlab.com/MHeinrichs/CDTV-RAM-IDE)<br>[Zorro-LAN-IDE](https://gitlab.com/MHeinrichs/Zorro-LAN-IDE)|ROM must be repeated as many times as needed to completely fill the flash i.e:<br>xxF010: 4x<br>xxF020: 8x<br>xxF040: 16x|
+
+## TerribleFire TF1260/TF4060 (Experimental)
+**Support for the IDE port on the TerribleFire TF1260 and TF4060 accelerators is experimental and has had limited testing, make sure you have a backup of your data before using it.**
+
+Like AIDE, lide is not in the board ROM so the driver must first be loaded from disk with `LoadModule` or added to a custom kickstart.  
+The driver for these boards is `TF-lide.device`, it will only attach if a TerribleFire board is found, otherwise it does nothing.  
+`TF-lide.device` is available under [releases](https://github.com/LIV2/lide.device/releases) and is also included in lide-update.lha
+
+Differences from the other supported boards:
+* The data port only supports word accesses so the `word_move` transfer method is used, `lidetool` will report this as the active transfer method
+* PIO mode 3/4 is selected if the drive supports it
+* Reads and writes wait on the drive interrupt rather than polling
 
 ## Boot from CDROM
 lide.device supports booting from CD-ROM but requires a CD Filesystem to be loaded for this to work.

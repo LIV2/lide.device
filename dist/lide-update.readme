@@ -36,9 +36,23 @@ Supported hardware
 * CDTV-RAM-IDE
 * AIDE/SimpleIDE
 * AT-Bus 2008 and clones
+* TerribleFire TF1260/TF4060 (Experimental)
 
 This list is not exhaustive, lide may also support other devices that implement the same IDE interface as Matzes TKs
 Let me know if there's something that should be added to this list!
+
+=========================================
+TerribleFire TF1260/TF4060 (Experimental)
+=========================================
+Support for the IDE port on the TerribleFire TF1260 and TF4060 accelerators is experimental and has had limited testing, make sure you have a backup of your data before using it.
+
+Like AIDE, lide is not in the board ROM so the driver must first be loaded from disk with LoadModule or added to a custom kickstart.
+The driver for these boards is TF-lide.device which is included in this archive, it will only attach if a TerribleFire board is found, otherwise it does nothing.
+
+Differences from the other supported boards:
+* The data port only supports word accesses so the word_move transfer method is used, lidetool will report this as the active transfer method
+* PIO mode 3/4 is selected if the drive supports it
+* Reads and writes wait on the drive interrupt rather than polling
 
 ===============
 Boot from CDROM

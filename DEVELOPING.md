@@ -50,7 +50,7 @@ If you'd rather install the toolchain natively, you'll need to build/install eac
 ## Build targets
 
 The top-level [`Makefile`](Makefile) drives the whole build:
-* `make all` — builds `lide.device`, ROM images (`lide.rom`, `lide-atbus.rom`, N2630 ROMs, AmigaPCI ROM), `AIDE-lide.device`, and the `lidetool`/`lideflash`/`renamelide` utilities
+* `make all` — builds `lide.device`, ROM images (`lide.rom`, `lide-atbus.rom`, N2630 ROMs, AmigaPCI ROM), `AIDE-lide.device`, `TF-lide.device`, and the `lidetool`/`lideflash`/`renamelide` utilities
 * `make disk` — builds the `lide-update-<version>.adf` and `aide-boot-<version>.adf` disk images
 * `make lha` — packages a release archive (`lide-update-<version>.lha`)
 * `make clean` — removes build output
