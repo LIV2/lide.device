@@ -30,9 +30,9 @@ static inline void ata_read_long_movem (void *source asm("a0"), void *destinatio
     ".endr                              \n\t"
     "movem.l 8(%0),d0-d7/a1-a3          \n\t"
     "movem.l d0-d7/a1-a3,offset(%1)     \n\t"
+    :"+a" (source),"+a" (destination)
     :
-    :"a" (source),"a" (destination)
-    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
+    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7","memory"
     );
 }
 
@@ -55,9 +55,9 @@ static inline void ata_write_long_movem (void *source asm("a0"), void *destinati
     ".endr                        \n\t"
     "movem.l (%0)+,d0-d7/a1-a3    \n\t"
     "movem.l d0-d7/a1-a3,(%1)     \n\t"
+    :"+a" (source),"+a" (destination)
     :
-    :"a" (source),"a" (destination)
-    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7"
+    :"a1","a2","a3","a4","a6","d0","d1","d2","d3","d4","d5","d6","d7","memory"
     );
 }
 
@@ -70,14 +70,14 @@ static inline void ata_write_long_movem (void *source asm("a0"), void *destinati
 static inline void ata_read_long_move (void *source asm("a0"), void *destination asm("a1")) {
     asm volatile (
         "moveq.l #3,d0          \n\t"
-        ".l1:                   \n\t"
+        "1:                     \n\t"
         ".rept  32              \n\t"
         "move.l (%0),(%1)+      \n\t"
         ".endr                  \n\t"
-        "dbra   d0,.l1"
+        "dbra   d0,1b"
+    :"+a" (source), "+a" (destination)
     :
-    :"a" (source), "a" (destination)
-    :"d0"
+    :"d0","memory"
     );
 }
 
@@ -90,14 +90,14 @@ static inline void ata_read_long_move (void *source asm("a0"), void *destination
 static inline void ata_write_long_move (void *source asm("a0"), void *destination asm("a1")) {
     asm volatile (
         "moveq.l #3,d0          \n\t"
-        ".l2:                   \n\t"
+        "1:                     \n\t"
         ".rept  32              \n\t"
         "move.l (%0)+,(%1)      \n\t"
         ".endr                  \n\t"
-        "dbra   d0,.l2"
+        "dbra   d0,1b"
+    :"+a" (source), "+a" (destination)
     :
-    :"a" (source), "a" (destination)
-    :"d0"
+    :"d0","memory"
     );
 }
 
