@@ -37,7 +37,7 @@
 
 const char ver[] = VERSION_STRING;
 
-struct ExecBase *SysBase;
+extern struct ExecBase *SysBase; // Defined and set up by the libnix startup code
 struct Config *config;
 
 /**
@@ -402,8 +402,6 @@ static void setMultiple(struct IOStdReq *req, int multiple) {
 }
 int main(int argc, char *argv[])
 {
-  SysBase = *((struct ExecBase **)4UL);
-
   int rc = 0;
   int error = 0;
 
