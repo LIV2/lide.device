@@ -59,7 +59,11 @@ static void ata_status_reg_delay(struct IDEUnit *unit) {
         "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
         ".endr      \n\t"
         :
+#ifndef TF_IDE
         : "a" (unit->drive.status_command)
+#else
+        : "a" (unit->drive.alt_status) // Don't clear the interrupt
+#endif
         :
     );
 }
@@ -140,7 +144,6 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
     struct ExecBase *SysBase    = unit->SysBase;
     struct IOTask *itask        = unit->itask;
     struct timerequest *tr      = itask->tr;
-    volatile UBYTE *alt_status  = (volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus);
     ULONG timerSig              = 1UL << tr->tr_node.io_Message.mn_ReplyPort->mp_SigBit;
     bool timedOut               = false;
     bool result                 = false;
@@ -150,7 +153,7 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
 
     // Drives with a buffer often have the next block ready straight away
     for (int i=0; i<TF_IRQ_POLL_LOOPS; i++) {
-        status = *alt_status;
+        status = *unit->drive.alt_status;
         if ((status & ata_flag_busy) == 0) {
             if (status & (ata_flag_error | ata_flag_df)) return false;
             if (status & ata_flag_drq) return true;
@@ -163,7 +166,7 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
     SendIO((struct IORequest *)tr);
 
     for (;;) {
-        status = *alt_status;
+        status = *unit->drive.alt_status;
         if ((status & ata_flag_busy) == 0) {
             if (status & (ata_flag_error | ata_flag_df)) break;
             if (status & ata_flag_drq) {
@@ -306,6 +309,8 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
 
     if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT)) return false;
 
+    ata_irq_enable(unit,false);
+
     *unit->drive.sectorCount    = 0;
     *unit->drive.lbaLow         = 0;
     *unit->drive.lbaMid         = 0;
@@ -408,8 +413,12 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
     unit->drive.lbaHigh        = (UBYTE*) (base + ata_reg_lbaHigh);
     unit->drive.devHead        = (UBYTE*) (base + ata_reg_devHead);
     unit->drive.status_command = (UBYTE*) (base + ata_reg_status);
-
     *unit->shadowDevHead = *unit->drive.devHead = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
+
+#ifdef TF_IDE
+    unit->drive.alt_status = (UBYTE*) (base + CHANNEL_1 + ata_reg_altStatus);
+    *unit->drive.alt_status = nIEN; // Disable interrupts
+#endif
 
     ata_set_xfer(unit,longword_movem);
 
@@ -482,7 +491,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
             unit->write_taskfile = &write_taskfile_chs;
             unit->logicalSectors = (unit->cylinders * unit->heads * unit->sectorsPerTrack);
         }
-        
+
         if (unit->flags.lba48) {
             Info("INIT: Logical sectors: 0x%lx%08lx\n",(uint64_t)unit->logicalSectors);
         } else {
@@ -530,7 +539,7 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         }
         Info("INIT: Blockshift: %ld\n",unit->blockShift);
     }
-    
+
     if (buf) FreeMem(buf,512);
     return unit->flags.present;
 }
@@ -547,6 +556,8 @@ BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
     UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0; // Select drive
 
     ata_select(unit,drvSel,true);
+
+    ata_irq_enable(unit,false);
 
     if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT))
             return HFERR_SelTimeout;
@@ -587,7 +598,7 @@ BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
+static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -675,7 +686,7 @@ BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
  * @param unit Pointer to the unit structure
  * @returns error
 */
-BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
+static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -755,6 +766,31 @@ BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
     }
 
     return 0;
+}
+
+/**
+ * ata_readwrite
+ *
+ * A wrapper around ata_read/write
+ *
+ * @param buffer destination buffer
+ * @param lba LBA Address
+ * @param count Number of blocks to transfer
+ * @param unit Pointer to the unit structure
+ * @param dir Direction (read/write)
+ * @returns error
+ */
+BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit, enum xfer_dir dir) {
+    BYTE error;
+    ata_irq_enable(unit,true);
+    if (dir == READ) {
+        error = ata_read(buffer,lba,count,unit);
+    } else {
+        error = ata_write(buffer,lba,count,unit);
+    }
+    ata_irq_enable(unit,false);
+
+    return error;
 }
 
 /**
@@ -924,6 +960,11 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
 
     if (pio > 0) pio |= 0x08;
 
+    UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
+    ata_select(unit,drvSel,true);
+
+    ata_irq_enable(unit,false);
+
     if ((error = write_taskfile_lba(unit,ATA_CMD_SET_FEATURES,0,pio,0x03)) != 0)
         return error;
 
@@ -941,7 +982,7 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
  * Handle SCSI ATA PASSTHROUGH (12) command to send ATA commands to the drive
  *
  * Requires that the cmd->scsi_Data buffer is word aligned
- * 
+ *
  * @param unit Pointer to an IDEUnit struct
  * @param cmd Pointer to a SCSICmd struct
  * @return non-zero on error
@@ -1017,6 +1058,8 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
         ata_save_error(unit);
         return HFERR_SelTimeout;
     }
+
+    ata_irq_enable(unit,false);
 
     if ((error = write_taskfile_lba(unit,cdb->command,lba,cdb->sectorCount,cdb->features)) != 0) {
         ata_save_error(unit);

@@ -42,7 +42,7 @@ ULONG __attribute__((used)) tf_irq_handler(struct IOTask *itask asm("a1")) {
     (void)*(volatile UBYTE *)(BOARD_BASE + CHANNEL_0 + ata_reg_status);
 
     // Clear the pending bit like Gayle: write 0 to clear, 1 to leave alone, keep bits 0-1
-    asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr));
+    asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr)); // Setting interrupt mask is faster than Disable
     *intchg = (*intchg & 0x03) | 0x7C;
     asm volatile ("move.w %0,sr" : : "d" (sr));
 
@@ -91,7 +91,7 @@ static void tf_irq_install(struct IOTask *itask) {
     AddIntServer(INTB_PORTS,&itask->irqServer);
     itask->irqInstalled = true;
 
-    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x00; // Device control: clear nIEN
+    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
     *(volatile UBYTE *)TF_IDE_INTENA |= 0x80;
 }
 
@@ -279,11 +279,8 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
                 direction = (scsi_command->scsi_Flags & SCSIF_READ) ? READ : WRITE;
 
-                if (direction == READ) {
-                    error = ata_read(data,lba,count,unit);
-                } else {
-                    error = ata_write(data,lba,count,unit);
-                }
+                error = ata_readwrite(data,lba,count,unit,direction);
+
                 if (error == 0) {
                     scsi_command->scsi_Actual = scsi_command->scsi_Length;
                 } else {
@@ -627,11 +624,7 @@ transfer:
             if (unit->flags.atapi == true) {
                 error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
             } else {
-                if (direction == READ) {
-                    error  = ata_read(ioreq->io_Data, lba, count, unit);
-                } else {
-                    error  = ata_write(ioreq->io_Data, lba, count, unit);
-                }
+                error = ata_readwrite(ioreq->io_Data, lba, count, unit, direction);
                 ioreq->io_Actual = ioreq->io_Length;
             }
             break;

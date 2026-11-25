@@ -211,6 +211,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSel,false);
+    ata_irq_enable(unit,false);
 
     //if (!atapi_wait_rdy(unit,ATAPI_RDY_WAIT_COUNT))
     //        return HFERR_SelTimeout;
@@ -248,7 +249,7 @@ bool atapi_identify(struct IDEUnit *unit, UWORD *buffer) {
 }
 
 /** atapi_init_unit
- * 
+ *
  * Check if the unit is an ATAPI unit and if it is setup the unit struct
  * @param unit Pointer to an IDEUnit struct
  * @param buffer Pointer to a buffer for the IDENTIFY PACKET DEVICE data
@@ -449,6 +450,7 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
     // Only update the devHead register if absolutely necessary to save time
     ata_select(unit,drvSelHead,true);
+    ata_irq_enable(unit,false);
 
     if (!atapi_wait_not_drqbsy(unit,ATAPI_BSY_WAIT_COUNT_SHORT)) {
         ret = IOERR_UNITBUSY;

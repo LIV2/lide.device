@@ -62,6 +62,7 @@ struct Drive {
     volatile UBYTE *lbaHigh;
     volatile UBYTE *devHead;
     volatile UBYTE *status_command;
+    volatile UBYTE *alt_status;
 };
 
 struct IDEUnit {

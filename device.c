@@ -154,7 +154,10 @@ struct ConfigDev *CreateFakeConfigDev(struct ExecBase *SysBase, struct Library *
  * @param seconds Seconds to wait
  * @param microseconds Microseconds to wait
 */
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Wunused-function"
 static void sleep(ULONG seconds, ULONG microseconds) {
+#pragma GCC pop_options
     struct ExecBase *SysBase = *(struct ExecBase**)4UL;
 
     struct timerequest *tr = NULL;

@@ -104,6 +104,8 @@
 #define ata_pio_mode_3      (1<<0)
 #define ata_pio_mode_4      (1<<1)
 
+#define nIEN 0x02
+
 enum xfer_dir {
     READ,
     WRITE
@@ -128,8 +130,7 @@ bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
-BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit);
-BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit);
+BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit, enum xfer_dir dir);
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 
@@ -137,4 +138,20 @@ void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1")
 void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1"));
 void ata_read_unaligned_word(void *source asm("a0"), void *destination asm("a1"));
 void ata_write_unaligned_word(void *source asm("a0"), void *destination asm("a1"));
+
+/**
+ * ata_irq_enable
+ *
+ * Enable/Disable drive interrupts
+ *
+ * @param unit Pointer to an IDEUnit struct
+ * @param enable Enable IRQs
+ */
+static inline void ata_irq_enable (struct IDEUnit *unit, bool enable) {
+#ifdef TF_IDE
+    if (unit->itask->irqInstalled)
+        *unit->drive.alt_status = (enable) ? 0 : nIEN;
+#endif
+}
+
 #endif
