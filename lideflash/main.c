@@ -51,7 +51,7 @@
 const char ver[] = VERSION_STRING;
 
 struct Library *DosBase;
-struct ExecBase *SysBase;
+extern struct ExecBase *SysBase; // Defined and set up by the libnix startup code
 struct ExpansionBase *ExpansionBase = NULL;
 struct Config *config;
 bool devsInhibited = false;
@@ -93,7 +93,7 @@ bool inhibitDosDevs(bool inhibit) {
   bool success = true;
   struct MsgPort *mp = CreatePort(NULL,0);
   struct Message msg;
-  struct DosPacket __aligned packet;
+  struct DosPacket packet __attribute__((aligned(4)));
   struct DosList *dl;
   struct dosDev *dd;
 
@@ -479,7 +479,6 @@ static char *getbasename(char *path) {
 
 int main(int argc, char *argv[])
 {
-  SysBase = *((struct ExecBase **)4UL);
   DosBase = OpenLibrary("dos.library",0);
 
   int rc = 0;
