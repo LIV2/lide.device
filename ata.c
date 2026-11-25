@@ -805,7 +805,7 @@ void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1")
     UBYTE *dest = (UBYTE *)destination;
 
     for (int i=0; i<(512/4); i++) {          // Read (512 / 4) Long words from drive
-        readLong = *(ULONG *)source;
+        readLong = *(volatile ULONG *)source;
         dest[0] = ((readLong >> 24) & 0xFF); // Write it out in 4 bytes
         dest[1] = ((readLong >> 16) & 0xFF);
         dest[2] = ((readLong >> 8) & 0xFF);
@@ -824,7 +824,7 @@ void ata_read_unaligned_long(void *source asm("a0"), void *destination asm("a1")
 void ata_write_unaligned_long(void *source asm("a0"), void *destination asm("a1")) {
     UBYTE *src = (UBYTE *)source;
     for (int i=0; i<(512/4); i++) {  // Write (512 / 4) Long words to drive
-        *(ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
+        *(volatile ULONG *)destination = (src[0] << 24 | src[1] << 16 | src[2] << 8 | src[3]);
         src += 4;
     }
 }
