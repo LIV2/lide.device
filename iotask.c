@@ -42,9 +42,9 @@ ULONG __attribute__((used)) tf_irq_handler(struct IOTask *itask asm("a1")) {
     (void)*(volatile UBYTE *)(BOARD_BASE + CHANNEL_0 + ata_reg_status);
 
     // Clear the pending bit like Gayle: write 0 to clear, 1 to leave alone, keep bits 0-1
-    asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr)); // Setting interrupt mask is faster than Disable
+    asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr) : : "cc", "memory"); // Setting interrupt mask is faster than Disable
     *intchg = (*intchg & 0x03) | 0x7C;
-    asm volatile ("move.w %0,sr" : : "d" (sr));
+    asm volatile ("move.w %0,sr" : : "d" (sr) : "cc", "memory");
 
     Signal(itask->task,itask->irqSigMask);
     return 1;
