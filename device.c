@@ -1045,7 +1045,7 @@ void AdjustBootPriority(struct ExecBase *SysBase, char *deviceName, char *bootna
 void TweakBootList(struct ExecBase *SysBase, char *deviceName) {
     struct ExpansionBase *ExpansionBase;
 
-    if (ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0)) {
+    if ((ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library",0))) {
         char bootname[] = "\6BOOT00"; // BSTR
 
         UWORD major = (ExpansionBase->LibNode.lib_Version)%100;  // we assume version number is under 100, but better safe than sorry

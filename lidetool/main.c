@@ -183,7 +183,7 @@ static void DumpUnit(struct IOStdReq *req) {
     printf("Medium Present:      %s\n", (unit->flags.mediumPresent) ? "Yes" : "No");
     printf("Supports LBA:        %s\n", (unit->flags.lba) ? "Yes" : "No");
     printf("Supports LBA48:      %s\n", (unit->flags.lba48) ? "Yes" : "No");
-    printf("C/H/S:               %d/%d/%d\n", unit->cylinders, unit->heads, unit->sectorsPerTrack);
+    printf("C/H/S:               %d/%d/%d\n", (int)unit->cylinders, unit->heads, unit->sectorsPerTrack);
     printf("Logical Sectors:     %llu\n", (uint64_t)unit->logicalSectors);
     printf("READ/WRITE Multiple: %s\n", (unit->flags.xferMultiple) ? "Yes" : "No");
     printf("Multiple count:      %d\n", unit->multipleCount);
@@ -430,8 +430,8 @@ int main(int argc, char *argv[])
   if ((config = configure(argc,argv)) != NULL) {
     struct MsgPort *mp = NULL;
     struct IOStdReq *req = NULL;
-    if (mp = CreateMsgPort()) {
-      if (req = CreateIORequest(mp,sizeof(struct IOStdReq))) {
+    if ((mp = CreateMsgPort())) {
+      if ((req = CreateIORequest(mp,sizeof(struct IOStdReq)))) {
         if ((error = OpenDevice(config->Device,config->Unit,(struct IORequest *)req,0)) == 0) {
 
           if (config->Mode != -1) {

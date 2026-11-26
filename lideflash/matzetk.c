@@ -60,7 +60,7 @@ bool matzetk_fw_supported(struct ConfigDev *cd, ULONG minVersion, bool silent) {
   UWORD version = (*fwreg) >> 12;
 
   if (version < minVersion && !silent)
-    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",minVersion);
+    printf("\nFirmware version %d or newer is required, please update and try again.\n\n",(int)minVersion);
 
   return (version >= minVersion);
 }

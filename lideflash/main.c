@@ -915,7 +915,7 @@ BOOL readFileToBuf(char *filename, void *buffer) {
       actual = Read(fh,buffer,romSize);
       if (actual < 0) {
         LONG errno = IoErr();
-        printf("IO Error %d while reading %s\n",errno,filename);
+        printf("IO Error %d while reading %s\n",(int)errno,filename);
         ret = false;
       }
       Close(fh);
