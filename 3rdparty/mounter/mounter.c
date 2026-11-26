@@ -1046,13 +1046,10 @@ static LONG ScanRDSK(struct MountData *md)
 {
 	LONG ret = -1;
 	for (UWORD i = 0; i < RDB_LOCATION_LIMIT; i++) {
-		if (readblock(md->buf, i, 0xffffffff, md)) {
-			struct RigidDiskBlock *rdb = (void *)md->buf;
-			if (rdb->rdb_ID == IDNAME_RIGIDDISK) {
-				dbg("RDB found, block %"PRIu32"\n", (ULONG)i);
-				ret = ParseRDSK(md->buf, md);
-				break;
-			}
+		if (readblock(md->buf, i, IDNAME_RIGIDDISK, md)) {
+			dbg("RDB found, block %"PRIu32"\n", (ULONG)i);
+			ret = ParseRDSK(md->buf, md);
+			break;
 		}
 	}
 	return ret;
