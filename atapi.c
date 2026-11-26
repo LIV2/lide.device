@@ -743,6 +743,10 @@ BYTE atapi_get_capacity(struct IDEUnit *unit) {
 
     for (int retry = 3; retry > 0; retry--) {
         if ((ret = atapi_packet(cmd,unit)) == 0) {
+            if (cmd->scsi_Actual < sizeof(capacity) || capacity.blockSize == 0) {
+                ret = IOERR_BADLENGTH;
+                continue; //retry
+            }
             unit->logicalSectors  = capacity.logicalSectors + 1;
             unit->blockSize       = capacity.blockSize;
             unit->cylinders       = unit->logicalSectors;
