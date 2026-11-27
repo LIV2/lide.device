@@ -26,47 +26,17 @@ static BYTE write_taskfile_lba(struct IDEUnit *unit, UBYTE command, uint64_t lba
 static BYTE write_taskfile_lba48(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba, UBYTE sectorCount, UBYTE features);
 
-#ifdef TF_IDE
 /**
- * ata_tf_settle
- *
- * On the TF IDE window a fast 68060 can poll the status register within 400ns of the
- * last data word of a DRQ block and still see the stale DRQ. A CIA access takes a
- * fixed number of E-clock cycles regardless of CPU speed; ehide does the same before
- * it checks status.
-*/
-static inline void ata_tf_settle(void) {
-    asm volatile (
-        "tst.b 0xBFE001"
-        : : : "cc", "memory"
-    );
-}
-#endif
-
-/**
- * ata_status_reg_delay
+ * ata_cia_settle
  *
  * We need a short delay before actually checking the status register to let the drive update the status
- * To get the right delay we read the status register 4 times but just throw away the result
- * More info: https://wiki.osdev.org/ATA_PIO_Mode#400ns_delays
+ * A CIA access takes a fixed number of E-clock cycles regardless of CPU speed
  *
- * @param unit Pointer to an IDEUnit struct
 */
-static void ata_status_reg_delay(struct IDEUnit *unit) {
-#ifdef TF_IDE
-    ata_tf_settle();
-#endif
+static inline void ata_cia_settle(void) {
     asm volatile (
-        ".rep 4     \n\t"
-        "tst.b (%0) \n\t"
-        ".endr      \n\t"
-        :
-#ifndef TF_IDE
-        : "a" (unit->drive.status_command)
-#else
-        : "a" (unit->drive.alt_status) // Don't clear the interrupt
-#endif
-        : "cc"
+        "tst.b 0xBFE001"
+        : : : "cc"
     );
 }
 
@@ -112,7 +82,7 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
 
     int loops = (fast) ? 1000 : 100;
 
-    ata_status_reg_delay(unit);
+    ata_cia_settle();
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -152,7 +122,7 @@ static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
     bool result                 = false;
     UBYTE status;
 
-    ata_tf_settle();
+    ata_cia_settle();
 
     // Drives with a buffer often have the next block ready straight away
     for (int i=0; i<TF_IRQ_POLL_LOOPS; i++) {
@@ -218,7 +188,7 @@ static bool ata_wait_complete(struct IDEUnit *unit, bool irq) {
 #ifdef TF_IDE
     if (irq && unit->itask->irqInstalled) return ata_tf_wait_status_irq(unit,false);
 #endif
-    ata_status_reg_delay(unit);
+    ata_cia_settle();
     for (ULONG i=0; i<ATA_BSY_WAIT_COUNT; i++) {
         for (int j=0; j<100; j++) {
             UBYTE status = *unit->drive.status_command;
@@ -242,7 +212,7 @@ static bool ata_wait_complete(struct IDEUnit *unit, bool irq) {
 static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
 
-    ata_status_reg_delay(unit);
+    ata_cia_settle();
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -264,7 +234,7 @@ static bool ata_wait_not_busy(struct IDEUnit *unit, ULONG tries) {
 static bool ata_wait_ready(struct IDEUnit *unit, ULONG tries) {
     struct timerequest *tr = unit->itask->tr;
 
-    ata_status_reg_delay(unit);
+    ata_cia_settle();
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
@@ -306,7 +276,7 @@ bool ata_select(struct IDEUnit *unit, UBYTE select, bool wait)
     *unit->drive.devHead = select;
 
     if (changed && wait) {
-        sleep_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_status_reg_delay
+        sleep_us(unit->itask->tr,5); // Could possibly be replaced with call to ata_cia_settle
         ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT);
     }
 

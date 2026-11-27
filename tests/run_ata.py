@@ -122,8 +122,7 @@ static UBYTE read_status(void) {
     if (++reads == transition_read) status = transition_status;
     return status;
 }
-static void ata_tf_settle(void) {}
-static void ata_status_reg_delay(struct IDEUnit *u) { (void)u; }
+static void ata_cia_settle(void) {}
 static void atapi_status_reg_delay(void) {}
 static void sleep_us(struct timerequest *t, ULONG us) { (void)t; (void)us; }
 static void SendIO(struct IORequest *r) { (void)r; }
