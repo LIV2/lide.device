@@ -667,6 +667,8 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
 
         lba += txn_count;
 
+        ULONG txn_bytes = txn_count << 9;
+
         while (txn_count) {
             if (!ata_wait_data(unit,true)) {
                 ata_save_error(unit);
@@ -683,13 +685,13 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
             }
             txn_count -= block;
             buffer += block << 9;
-            *actual += block << 9;
         }
 
         if (!ata_wait_complete(unit,false)) {
             ata_save_error(unit);
             return TDERR_NotSpecified;
         }
+        *actual += txn_bytes;
     }
 
     return 0;
