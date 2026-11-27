@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Replace ehide.device in the supported TF4060r5 release ZIP.
+"""Replace the embedded IDE driver in a TF4060 firmware ZIP.
 
 Uses only Python's standard library. See tools/README.md for input requirements
 and the firmware layout. This program creates an archive; it does not flash it.
@@ -11,24 +11,15 @@ import copy
 from dataclasses import dataclass
 import hashlib
 import io
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import struct
 import sys
 import zipfile
 import zlib
 
 
-RELEASE = "v0.8.6_2026-11-26_19799ac"
-ZIP_SHA256 = "d6e5cbe4e1d45e8c9c3217ebb3d2b58b2732823fb13f017c0a883061ab08b7d6"
-FLASH_SHA256 = "248a120aca753da9c3a9f77abcf5aaf10ac6234e3a1aaada016c22e97640cfad"
-FLASH_MEMBER = RELEASE + "/tf4060r5_ram_flash.bin"
-README_MEMBER = RELEASE + "/README.md"
-SPI_OFFSET = 0x21000
 FLASH_CAPACITY = 2 * 1024 * 1024
 SECTOR = 512
-TOC_BEGIN = 0x416C
-RELOC_POINTER = 0x56
-IDE_INDEX = 2
 MARKER = struct.pack(">III", 0xFFFFFFFF, 0, 0)
 
 
@@ -128,7 +119,7 @@ def check_driver(data):
 def prepare_driver(data):
     resident = check_driver(data)
     result = bytearray(data)
-    # The bundled ODFileSystem has priority 10. Preserve ehide's priority 5
+    # The bundled ODFileSystem has priority 10. Use device priority 5
     # so the filesystem is registered before LIDE looks for CD boot support.
     result[resident + 13] = 5
     return bytes(result)
@@ -159,35 +150,44 @@ class Ssbl:
     relocations: list
 
 
-def parse_ssbl(part):
-    """Parse this release's TOC and vlink -mrel relocation table."""
-    require(part[TOC_BEGIN:TOC_BEGIN + 12] == MARKER, "SSBL TOC marker does not match")
-    table = u32(part, RELOC_POINTER)
-    require(TOC_BEGIN < table <= len(part) - 8, "invalid SSBL relocation table pointer")
-    end = table + 4 + u32(part, table)
-    require(end + 4 <= len(part), "truncated SSBL relocation table")
-    data = part[:end + 4]
-    require(zlib.crc32(data) == 0xFFFFFFFF, "SSBL checksum does not match")
-    require(not any(part[end + 4:]), "nonzero SSBL partition padding")
-    pos = TOC_BEGIN + 12
-    modules = []
-    while u32(data, pos):
-        require(len(modules) < 8, "too many SSBL modules")
-        require(pos + 16 <= table, "truncated SSBL module header")
-        nxt, size, zero1, zero2 = struct.unpack_from(">4I", data, pos)
-        require(size > 0 and size % 4 == 0 and nxt == pos + size + 28 and nxt < table,
-                "invalid SSBL module extent")
-        require(zero1 == zero2 == 0 and data[nxt - 12:nxt] == MARKER,
-                "unexpected SSBL module metadata")
-        modules.append(Module(pos, data[pos + 16:nxt - 12]))
-        pos = nxt
-    require(len(modules) == 8 and data[pos:pos + 12] == struct.pack(">III", 0, 8, 0xDEADBEEF),
-            "SSBL TOC terminator does not match")
-    require(pos + 24 == table and data[pos + 12:table] == b"\0" * 12,
-            "unexpected data after SSBL TOC")
+def find_toc(data):
+    """Find a complete module chain with a matching terminator count."""
+    candidates = {}
+    begin = data.find(MARKER)
+    while begin >= 0:
+        if begin % 2 == 0:
+            pos = begin + len(MARKER)
+            modules = []
+            while pos + 16 <= len(data):
+                nxt, size, zero1, zero2 = struct.unpack_from(">4I", data, pos)
+                if nxt == 0:
+                    if modules and zero1 == 0xDEADBEEF:
+                        # Every module trailer also looks like a TOC start.
+                        # Keep the longest chain to each terminator so a bad
+                        # count cannot turn a suffix into a valid table.
+                        candidates.setdefault(pos, (begin, pos + 12, modules, size))
+                    break
+                if (not size or size % 4 or nxt != pos + size + 28 or
+                        nxt + 12 > len(data) or zero1 or zero2 or
+                        data[nxt - 12:nxt] != MARKER):
+                    break
+                modules.append(Module(pos, data[pos + 16:nxt - 12]))
+                pos = nxt
+        begin = data.find(MARKER, begin + 2)
+    require(len(candidates) == 1, "SSBL needs one complete module table")
+    begin, end, modules, count = next(iter(candidates.values()))
+    require(count == len(modules), "SSBL module count does not match its chain")
+    return begin, end, modules
+
+
+def parse_relocations(data, table, toc_begin, modules):
+    end = table + 4 + u32(data, table)
+    require(end == len(data) - 4, "SSBL relocation table length does not match")
     sites = []
     site = 0
     pos = table + 4
+    headers = {m.offset for m in modules}
+    toc_end = modules[-1].offset + len(modules[-1].data) + 28
     while pos < end:
         delta = data[pos]
         pos += 1
@@ -197,28 +197,84 @@ def parse_ssbl(part):
             pos += 4
         require(delta > 0, "duplicate SSBL relocation")
         site += delta
-        require(site % 2 == 0 and site + 4 <= table, "invalid SSBL relocation site")
-        require(site < TOC_BEGIN or site in {m.offset for m in modules},
+        require(site % 2 == 0 and site + 4 <= table and
+                (not sites or site - sites[-1] >= 4), "invalid SSBL relocation site")
+        require(site + 4 <= toc_begin or site in headers or site >= toc_end + 12,
                 "SSBL relocation overlaps an embedded module")
         require(u32(data, site) <= table, "SSBL relocation target outside image")
         sites.append(site)
-    require(len(sites) == 65 and RELOC_POINTER in sites and
-            all(m.offset in sites for m in modules), "unexpected SSBL relocation coverage")
+    require(headers <= set(sites) and
+            any(site < toc_begin and u32(data, site) == table for site in sites),
+            "incomplete SSBL relocation coverage")
     require(encode_relocations(sites) == data[table:end],
             "noncanonical SSBL relocation encoding")
-    return Ssbl(data, modules, table, sites)
+    return sites
 
 
-def replace_module(ssbl, replacement):
-    """Rebase addresses and relocation *sites* after replacing TOC entry 2.
+def parse_ssbl(part):
+    """Discover the TOC, exact CRC extent and vlink -mrel table."""
+    require(len(part) <= FLASH_CAPACITY, "SSBL exceeds flash capacity")
+    toc_begin, toc_end, modules = find_toc(part)
+    # Zero partition padding and trailing zero CRC bytes are indistinguishable.
+    # Use each candidate's recorded length to locate the complete CRC word.
+    nonzero_end = len(part.rstrip(b"\0"))
+    candidates = []
+    error = "SSBL needs one vlink relocation table"
+    for table in range(toc_end, len(part) - 7, 2):
+        end = table + 8 + u32(part, table)
+        if not nonzero_end <= end <= len(part):
+            continue
+        data = part[:end]
+        try:
+            sites = parse_relocations(data, table, toc_begin, modules)
+            require(zlib.crc32(data) == 0xFFFFFFFF, "SSBL checksum does not match")
+        except PatchError as exc:
+            error = str(exc)
+            continue
+        candidates.append(Ssbl(data, modules, table, sites))
+    require(len(candidates) == 1, error if not candidates else
+            "SSBL has ambiguous vlink relocation tables")
+    return candidates[0]
 
-    The firmware hash is checked by patch_flash before this is used. In this
-    particular SSBL all PC-relative references stay before TOC_BEGIN; moved
-    globals and TOC pointers use the recorded absolute relocations.
+
+def ide_index(ssbl):
+    """Select the device by its Resident, independent of module order."""
+    matches = []
+    for index, module in enumerate(ssbl.modules):
+        data = module.data
+        # The IDE modules use a single CODE hunk. Confirm Resident identity
+        # through its self pointer and name pointer, not a string search.
+        if len(data) < 36 or struct.unpack_from(">5I", data) != (0x3F3, 0, 1, 0, 0):
+            continue
+        if u32(data, 24) != 0x3E9:
+            continue
+        size = u32(data, 28) * 4
+        if 32 + size > len(data):
+            continue
+        body = data[32:32 + size]
+        for at in range(0, size - 25, 2):
+            if (body[at:at + 2] != b"\x4a\xfc" or
+                    u32(body, at + 2) != at or body[at + 12] != 3):
+                continue
+            name = u32(body, at + 14)
+            if any(body[name:name + len(n)] == n for n in
+                   (b"ehide.device\0", b"lide.device\0")):
+                matches.append(index)
+    require(len(matches) == 1, "SSBL needs exactly one ehide.device or lide.device module")
+    return matches[0]
+
+
+def replace_module(ssbl, replacement, index=None):
+    """Rebase absolute addresses and relocation sites around a TOC payload.
+
+    The SSBL format places position-independent code before the TOC and
+    records absolute references to the TOC and following data in -mrel.
     """
+    if index is None:
+        index = ide_index(ssbl)
     require(len(replacement) > 0 and len(replacement) % 4 == 0,
             "replacement must be longword aligned")
-    module = ssbl.modules[IDE_INDEX]
+    module = ssbl.modules[index]
     start = module.offset + 16
     end = start + len(module.data)
     delta = len(replacement) - len(module.data)
@@ -236,9 +292,9 @@ def replace_module(ssbl, replacement):
     put32(body, module.offset + 4, len(replacement))
     result = with_crc(body + encode_relocations(sites))
     parsed = parse_ssbl(result)
-    require(parsed.modules[IDE_INDEX].data == replacement, "driver replacement mismatch")
+    require(parsed.modules[index].data == replacement, "driver replacement mismatch")
     require(all(a.data == b.data for i, (a, b) in
-                enumerate(zip(ssbl.modules, parsed.modules)) if i != IDE_INDEX),
+                enumerate(zip(ssbl.modules, parsed.modules)) if i != index),
             "another SSBL module changed")
     return result
 
@@ -263,8 +319,7 @@ def make_spirom(ssbl, romfs):
     return bytes(mbr) + ssbl.ljust(n1 * SECTOR, b"\0") + romfs.ljust(n2 * SECTOR, b"\0")
 
 
-def split_flash(flash):
-    spirom = flash[SPI_OFFSET:]
+def split_spirom(spirom):
     require(len(spirom) >= SECTOR and spirom[510:512] == b"\x55\xaa", "invalid SPI ROM MBR")
     parts = []
     next_lba = 1
@@ -288,54 +343,88 @@ def split_flash(flash):
     return ssbl, romfs
 
 
+def split_flash(flash):
+    """Locate a sector-aligned SPI ROM behind the FPGA bitstream."""
+    require(len(flash) <= FLASH_CAPACITY, "input exceeds the 2 MiB flash capacity")
+    offsets = [at for at in range(0, len(flash) - SECTOR + 1, SECTOR)
+               if flash[at + 510:at + 512] == b"\x55\xaa" and
+               flash[at + 450] == 0x68 and flash[at + 466] == 0x69]
+    require(len(offsets) == 1, "flash image needs one SPI ROM partition table")
+    offset = offsets[0]
+    ssbl, romfs = split_spirom(flash[offset:])
+    return offset, ssbl, romfs
+
+
 def patch_flash(flash, driver):
-    require(sha256(flash) == FLASH_SHA256, "unsupported firmware image SHA-256")
     driver = prepare_driver(driver)
-    ssbl, romfs = split_flash(flash)
-    require(replace_module(ssbl, ssbl.modules[IDE_INDEX].data) == ssbl.data,
+    offset, ssbl, romfs = split_flash(flash)
+    index = ide_index(ssbl)
+    require(replace_module(ssbl, ssbl.modules[index].data) == ssbl.data,
             "SSBL does not reproduce byte-for-byte")
     updated = replace_module(ssbl, driver)
-    result = flash[:SPI_OFFSET] + make_spirom(updated, romfs)
+    result = flash[:offset] + make_spirom(updated, romfs)
     require(len(result) <= FLASH_CAPACITY, "replacement exceeds the 2 MiB flash capacity")
-    new_ssbl, new_romfs = split_flash(result)
-    require(new_romfs == romfs and new_ssbl.data == updated, "rebuilt SPI ROM mismatch")
-    require(replace_module(new_ssbl, ssbl.modules[IDE_INDEX].data) == ssbl.data,
+    new_offset, new_ssbl, new_romfs = split_flash(result)
+    require(new_offset == offset and new_romfs == romfs and new_ssbl.data == updated,
+            "rebuilt SPI ROM mismatch")
+    require(replace_module(new_ssbl, ssbl.modules[index].data) == ssbl.data,
             "SSBL replacement does not reverse to the original")
     return result
 
 
+def flash_member(archive):
+    candidates = [n for n in archive.namelist()
+                  if PurePosixPath(n).name.startswith("tf4060") and n.endswith("_ram_flash.bin")]
+    require(len(candidates) == 1, "ZIP needs exactly one TF4060 *_ram_flash.bin image")
+    return candidates[0]
+
+
 def patch_archive(archive_data, driver):
-    require(sha256(archive_data) == ZIP_SHA256,
-            "unsupported ZIP: use the unmodified tf4060r5_" + RELEASE + ".zip")
     with zipfile.ZipFile(io.BytesIO(archive_data)) as original:
-        flash = patch_flash(original.read(FLASH_MEMBER), driver)
-        readme = original.read(README_MEMBER).decode("utf-8")
-        old_hash = hashlib.sha1(original.read(FLASH_MEMBER)).hexdigest()[:8]
-        new_hash = hashlib.sha1(flash).hexdigest()[:8]
-        require(readme.count(old_hash) == 1, "original README flash checksum not found")
-        readme = readme.replace(old_hash, new_hash)
-        note = ("# TF4060r5 with TF-lide.device\n\n"
-                "Custom image: TF-lide.device replaces ehide.device in the SSBL.\n"
+        names = original.namelist()
+        require(len(names) == len(set(names)), "ZIP contains duplicate member names")
+        require(sum(e.file_size for e in original.infolist()) <= 64 * 1024 * 1024,
+                "uncompressed ZIP is too large")
+        member = flash_member(original)
+        source = original.read(member)
+        flash = patch_flash(source, driver)
+        readme_member = str(PurePosixPath(member).with_name("README.md"))
+        readme = original.read(readme_member) if readme_member in names else b""
+        for heading in (b"# TF4060 firmware with TF-lide.device\n",
+                        b"# TF4060r5 with TF-lide.device\n"):
+            if readme.startswith(heading) and b"\n---\n\n" in readme:
+                readme = readme.split(b"\n---\n\n", 1)[1]
+                break
+        # Release notes are optional. Update checksums where provided without
+        # depending on a particular release's text or encoding.
+        for digest in (hashlib.sha1, hashlib.sha256):
+            old, new = digest(source).hexdigest(), digest(flash).hexdigest()
+            readme = readme.replace(old.encode(), new.encode())
+            readme = readme.replace(old[:8].encode(), new[:8].encode())
+        note = ("# TF4060 firmware with TF-lide.device\n\n"
+                "Custom image: the SSBL IDE module is TF-lide.device.\n"
                 "The installed Exec device name is `lide.device`.\n"
                 "Its Resident priority is set to 5 so the bundled CD filesystem starts first.\n"
                 "The FPGA bitstream, other resident modules, ROMFS and CPLD files are unchanged.\n\n"
-                f"- Original ZIP SHA-256: `{ZIP_SHA256}`\n"
+                f"- Input ZIP SHA-256: `{sha256(archive_data)}`\n"
                 f"- Supplied driver SHA-256: `{sha256(driver)}`\n"
                 f"- Embedded driver SHA-256: `{sha256(prepare_driver(driver))}`\n"
                 f"- Patched flash SHA-256: `{sha256(flash)}`\n\n"
-                "This custom image requires TF4060 hardware boot testing.\n"
                 "The original release notes below describe the base firmware.\n\n---\n\n")
-        changes = {FLASH_MEMBER: flash, README_MEMBER: (note + readme).encode("utf-8")}
+        changes = {member: flash, readme_member: note.encode("utf-8") + readme}
         output = io.BytesIO()
         with zipfile.ZipFile(output, "w") as patched:
             patched.comment = original.comment
             for entry in original.infolist():
                 patched.writestr(copy.copy(entry), changes.get(entry.filename, original.read(entry)))
+            if readme_member not in names:
+                patched.writestr(readme_member, changes[readme_member])
         result = output.getvalue()
         with zipfile.ZipFile(io.BytesIO(result)) as patched:
             require(patched.testzip() is None, "output ZIP checksum failure")
-            require(patched.namelist() == original.namelist(), "output ZIP member list changed")
-            for name in original.namelist():
+            expected_names = names + ([] if readme_member in names else [readme_member])
+            require(patched.namelist() == expected_names, "output ZIP member list changed")
+            for name in names:
                 expected = changes.get(name, original.read(name))
                 require(patched.read(name) == expected, "output ZIP member mismatch: " + name)
     return result
@@ -343,7 +432,7 @@ def patch_archive(archive_data, driver):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("firmware", type=Path, help="unmodified TF4060r5 release ZIP")
+    parser.add_argument("firmware", type=Path, help="TF4060 firmware ZIP containing a RAM flash image")
     parser.add_argument("driver", type=Path, help="TF-lide.device Amiga HUNK executable")
     parser.add_argument("-o", "--output", required=True, type=Path, help="new output ZIP (must not exist)")
     args = parser.parse_args(argv)

@@ -76,7 +76,7 @@ Releases contain the following builds
 **Support for the IDE port on the TerribleFire TF1260 and TF4060 accelerators is experimental and has had limited testing, make sure you have a backup of your data before using it.**
 
 The driver can be loaded from disk with `LoadModule` or added to a custom
-Kickstart. For TF4060r5 firmware `v0.8.6_2026-11-26_19799ac`,
+Kickstart. For TF4060 firmware archives,
 [replace_tf_ide.py](tools/README.md) can replace the embedded ehide driver
 with `TF-lide.device` in a copy of the release ZIP.
 

@@ -1,9 +1,11 @@
 # TF4060 firmware with LIDE
 
-`replace_tf_ide.py` replaces the embedded `ehide.device` in
-`tf4060r5_v0.8.6_2026-11-26_19799ac.zip` with the TF build of LIDE. It needs
-Python 3.8 or newer and the original ZIP; no extra Python packages, firmware
-SDK or Amiga toolchain are needed to patch an existing driver binary.
+`replace_tf_ide.py` replaces the embedded IDE driver in a TF4060 firmware
+ZIP with the TF build of LIDE. It supports firmware versions that use the
+TF4060 SPI ROM and SSBL module format, including repacked archives and
+images already containing LIDE. It needs Python 3.8 or newer; no extra
+Python packages, firmware SDK or Amiga toolchain are needed to patch an
+existing driver binary.
 
 Supply `TF-lide.device` from a build with TF4060 support. To build it from
 this repository with the Amiga cross toolchain installed:
@@ -16,7 +18,7 @@ Create a separate firmware archive:
 
 ```sh
 python3 tools/replace_tf_ide.py \
-    tf4060r5_v0.8.6_2026-11-26_19799ac.zip \
+    tf4060-firmware.zip \
     build/TF-lide.device \
     --output tf4060r5_lide.zip
 ```
@@ -29,20 +31,19 @@ device is called `lide.device`, regardless of the input filename.
 RDB partitions use that name automatically. Any explicit `ehide.device`
 references in mount files or scripts must be changed to `lide.device`.
 
-The input ZIP must have SHA-256:
+The ZIP must contain exactly one `tf4060*_ram_flash.bin` image. The script
+finds the SPI ROM partition table, SSBL module chain and relocation table
+from their contents, then selects the `ehide.device` or `lide.device`
+Resident. A previously converted image can therefore receive a newer driver.
 
-```text
-d6e5cbe4e1d45e8c9c3217ebb3d2b58b2732823fb13f017c0a883061ab08b7d6
-```
+The output keeps the original archive paths. The RAM flash image contains
+LIDE, and its adjacent README identifies the custom image and records the
+input archive, driver and output image hashes. Existing flash checksums in
+the README are updated; a README is added if needed. Other archive members
+and the source ZIP and driver file are unchanged.
 
-Only this exact release is supported. Other versions, modified or repacked
-archives, unsupported HUNK layouts, oversized images and existing output
-paths are rejected. There is no option to bypass the firmware identity check.
-
-The output keeps the original archive paths. Its
-`v0.8.6_2026-11-26_19799ac/tf4060r5_ram_flash.bin` contains LIDE. The README
-identifies the custom image and records the input driver and output image
-hashes. The source ZIP and driver file are unchanged.
+Malformed or ambiguous images, unsupported bootloader/HUNK layouts,
+oversized images and existing output paths are rejected.
 
 The script creates an image only. TF4060 support is experimental; a successful
 patch does not establish physical boot or disk I/O correctness. Keep the
@@ -50,33 +51,37 @@ original firmware available for recovery when testing on hardware.
 
 ## Image layout
 
-The FPGA bitstream before `0x21000` is preserved. The SPI ROM after it contains
+The FPGA bitstream before the SPI ROM is preserved. The SPI ROM contains
 an MBR, an SSBL partition (type `0x68`) and a ROMFS partition (type `0x69`).
-LIDE replaces ehide's HUNK file in SSBL module slot 2. Its embedded Resident
-priority is set to ehide's priority 5, below the bundled ODFileSystem's
-priority 10, so the CD filesystem is available when LIDE initializes.
-This changes one byte in the embedded copy of a normal priority-10 TF build.
+Its offset is discovered rather than assumed. The SSBL module count,
+IDE module position and relocation table location may vary between builds.
+LIDE's embedded Resident priority is set to 5, below the bundled
+ODFileSystem's priority 10, so the CD filesystem is available when LIDE
+initializes. This changes one byte in the embedded copy of a normal
+priority-10 TF build.
 
 The SSBL's absolute pointers and their relocation locations are adjusted
 for the new module length. The compact vlink relocation table and SSBL CRC
 are regenerated, followed by the MBR partition sizes, addresses and disk ID.
-The ROMFS, seven other resident modules and both CPLD files retain their
-original bytes. The flash image must fit within 2 MiB.
+The ROMFS, other resident modules and CPLD files retain their original
+bytes. The flash image must fit within 2 MiB.
 
-This is specific to the identified SSBL: its PC-relative references stay
-before the module table, and references to data moved by the replacement use
-the absolute relocation table. A different bootloader needs an implementation
-for its layout as well as an accepted hash.
+The supported SSBL layout places position-independent code before the
+module table and records references to the table and following data as
+absolute relocations. Firmware with a different bootloader format needs
+corresponding parser support; a version number alone cannot establish
+compatibility.
 
 ## Checks
 
 ```sh
 python3 tests/test_replace_tf_ide.py
 python3 tests/test_replace_tf_ide.py \
-    --firmware tf4060r5_v0.8.6_2026-11-26_19799ac.zip \
+    --firmware tf4060-firmware.zip \
     --driver build/TF-lide.device
 ```
 
-The first command uses generated fixtures. The second also checks the real
-release, preservation of the other ZIP entries and modules, and reproduction
+The first command uses generated fixtures with varying module layouts,
+relocation tables and ZIP packaging. The second also checks the supplied
+firmware, preservation of other ZIP entries and modules, and reproduction
 of the original SSBL after reversing the replacement.
