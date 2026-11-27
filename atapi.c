@@ -512,8 +512,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                   unit->write_fast(cmd->scsi_Data + index, (void *)unit->drive.data);
               }
               index += 256;
-              cmd->scsi_Actual += 512;
               byte_count -= 512;
+              remaining -= 512;
             } else if (remaining > 0) {
                 // Less than 512 bytes means we can't use the fast ATA transfer routines, copy word-by-word
                 if (cmd->scsi_Flags & SCSIF_READ) {
@@ -522,8 +522,8 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                     *unit->drive.data = cmd->scsi_Data[index];
                 }
                 index++;
-                cmd->scsi_Actual+=2;
                 byte_count -= 2;
+                remaining -= 2;
             } else {
                 // If we got here the drive wanted to transfer more data than the buffer could take
                 //
@@ -535,8 +535,10 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
                 }
                 byte_count -= 2;
             }
-            remaining = cmd->scsi_Length - cmd->scsi_Actual;
         }
+        // remaining only drops when data goes into the buffer, so it also gives the
+        // transferred count; update scsi_Actual once per DRQ block rather than per chunk
+        cmd->scsi_Actual = cmd->scsi_Length - remaining;
     }
 
     if (unit->SysBase->LibNode.lib_Version > 36) {
