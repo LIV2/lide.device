@@ -201,3 +201,9 @@ clean:
 	@${MAKE} -C lideflash clean
 	@${MAKE} -C lidetool clean
 	@${MAKE} BUILDDIR=$(BUILDDIR) -C aide-boot clean
+
+.PHONY: test test-firmware
+test: test-firmware
+
+test-firmware:
+	python3 tests/test_replace_tf_ide.py

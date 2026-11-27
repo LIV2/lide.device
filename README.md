@@ -75,7 +75,11 @@ Releases contain the following builds
 ## TerribleFire TF1260/TF4060 (Experimental)
 **Support for the IDE port on the TerribleFire TF1260 and TF4060 accelerators is experimental and has had limited testing, make sure you have a backup of your data before using it.**
 
-Like AIDE, lide is not in the board ROM so the driver must first be loaded from disk with `LoadModule` or added to a custom kickstart.  
+The driver can be loaded from disk with `LoadModule` or added to a custom
+Kickstart. For TF4060r5 firmware `v0.8.6_2026-11-26_19799ac`,
+[replace_tf_ide.py](tools/README.md) can replace the embedded ehide driver
+with `TF-lide.device` in a copy of the release ZIP.
+
 The driver for these boards is `TF-lide.device`, it will only attach if a TerribleFire board is found, otherwise it does nothing.  
 `TF-lide.device` is available under [releases](https://github.com/LIV2/lide.device/releases) and is also included in lide-update.lha
 
