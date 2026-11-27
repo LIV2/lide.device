@@ -16,15 +16,12 @@
 
 #if defined(TF_IDE)
 
-// TerribleFire TF1260/TF4060 IDE: a Gayle-like register window decoded by the accelerator
+// Legacy TerribleFire IDE window; TF4060 uses its configured board address.
 #define BOARD_BASE 0xDA4000
 #define CHANNEL_0  0x0000
 #define CHANNEL_1  0x1000
 #define IDE_CSMASK 0x0000
 #define NEXT_REG   0x4
-
-#define TF_IDE_INTCHG 0xDAD000 // Bit 7 is set while the IDE interrupt is pending
-#define TF_IDE_INTENA 0xDAE000 // Bit 7 enables the IDE interrupt
 
 #define TF_IRQ_PRI        20  // Same INT2 server priority as ehide
 #define TF_IRQ_POLL_LOOPS 100 // Status polls before sleeping on the interrupt

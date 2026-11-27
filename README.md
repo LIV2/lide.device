@@ -80,9 +80,22 @@ The driver for these boards is `TF-lide.device`, it will only attach if a Terrib
 `TF-lide.device` is available under [releases](https://github.com/LIV2/lide.device/releases) and is also included in lide-update.lha
 
 Differences from the other supported boards:
-* The data port only supports word accesses so the `word_move` transfer method is used, `lidetool` will report this as the active transfer method
-* PIO mode 3/4 is selected if the drive supports it
-* Reads and writes wait on the drive interrupt rather than polling
+* The ordinary data port uses word accesses (`word_move`)
+* PIO mode 3/4 is selected if the drive accepts it
+* TF4060 IDE and interrupt registers follow the board's configured address;
+  older TF boards use the fixed IDE window
+* Capable TF4060 firmware uses host timing selected for the slower of the
+  attached drives, with the original timing retained for other devices
+* On TF4060 firmware advertising the read block mover, aligned reads into
+  TF RAM use hardware transfers with cache maintenance. Other buffers and
+  all writes use CPU copies. `lidetool` reports `tf_block_move` for this mode
+* Reads and writes poll briefly before waiting on the drive interrupt,
+  with a timer bounding the wait
+
+Use `lidetool -u 0 -m 2` to select CPU word copies, or `-m 3` to enable
+the TF4060 read mover where supported. Add `-d <device>` when using a
+device name other than `lide.device`. Host timing can be reduced separately
+with `-P 3`.
 
 ## Boot from CDROM
 lide.device supports booting from CD-ROM but requires a CD Filesystem to be loaded for this to work.

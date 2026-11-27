@@ -161,6 +161,7 @@ static const char * xferName(enum xfer method) {
     case longword_movem: return "longword_movem";
     case longword_move:  return "longword_move";
     case word_move:      return "word_move";
+    case tf_block_move:  return "tf_block_move";
     default:             return "unknown";
   }
 }
@@ -208,8 +209,8 @@ BYTE setTransferMode(struct IOStdReq *req) {
   struct IDEUnit *unit = (struct IDEUnit *)req->io_Unit;
 
   if (config->Mode == 'a'-'0') {
-    if (unit->xferMethod == word_move) {
-      req->io_Length = word_move; // Word-only data ports (TF IDE) must stay on word accesses
+    if (unit->xferMethod == word_move || unit->xferMethod == tf_block_move) {
+      req->io_Length = unit->xferMethod; // Keep TF transfers on the supported word/mover paths
     } else {
       req->io_Length = (SysBase->AttnFlags & (AFF_68030 | AFF_68040 | AFF_68060)) ? longword_move : longword_movem;
     }

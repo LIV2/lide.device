@@ -27,7 +27,7 @@
 #endif
 
 #ifdef TF_IDE
-#define TF_MANUF_ID   5080
+#include "tfide.h"
 #define NO_AUTOCONFIG 1
 #define ATA_CHANNELS  1
 #endif
@@ -44,7 +44,8 @@
 enum xfer {
     longword_movem,
     longword_move,
-    word_move
+    word_move,
+    tf_block_move
 };
 
 typedef void (*ata_xfer_func)(void * asm("a0"), void * asm("a1"));
@@ -142,6 +143,7 @@ struct IOTask {
     UBYTE              taskNum;
     UBYTE              channel;
 #ifdef TF_IDE
+    struct TFController tf;
     struct Interrupt   irqServer;
     ULONG              irqSigMask;
     BYTE               irqSigBit;
