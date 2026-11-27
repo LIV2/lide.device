@@ -132,7 +132,7 @@ bool ata_identify(struct IDEUnit *, UWORD *);
 BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple);
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method);
 
-BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit, enum xfer_dir dir);
+BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir dir);
 BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio);
 BYTE scsi_ata_passthrough( struct IDEUnit *unit, struct SCSICmd *cmd);
 

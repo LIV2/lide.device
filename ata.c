@@ -37,6 +37,7 @@ static BYTE write_taskfile_chs(struct IDEUnit *unit, UBYTE command, uint64_t lba
 static inline void ata_tf_settle(void) {
     asm volatile (
         "tst.b 0xBFE001"
+        : : : "cc", "memory"
     );
 }
 #endif
@@ -56,7 +57,7 @@ static void ata_status_reg_delay(struct IDEUnit *unit) {
 #endif
     asm volatile (
         ".rep 4     \n\t"
-        "tst.l (%0) \n\t" // Use tst.l so we don't need to save/restore some other register
+        "tst.b (%0) \n\t"
         ".endr      \n\t"
         :
 #ifndef TF_IDE
@@ -64,7 +65,7 @@ static void ata_status_reg_delay(struct IDEUnit *unit) {
 #else
         : "a" (unit->drive.alt_status) // Don't clear the interrupt
 #endif
-        :
+        : "cc", "memory"
     );
 }
 
@@ -110,16 +111,16 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
 
     int loops = (fast) ? 1000 : 100;
 
-#ifdef TF_IDE
-    ata_tf_settle();
-#endif
+    ata_status_reg_delay(unit);
 
     for (int i=0; i < tries; i++) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<loops; j++) {
             status = *unit->drive.status_command;
-            if ((status & ata_flag_drq) != 0) return true;
-            if (status & (ata_flag_error | ata_flag_df)) return false;
+            if ((status & ata_flag_busy) == 0) {
+                if (status & (ata_flag_error | ata_flag_df)) return false;
+                if (status & ata_flag_drq) return true;
+            }
         }
         sleep_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
@@ -129,18 +130,19 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
 
 #ifdef TF_IDE
 /**
- * ata_tf_wait_drq_irq
+ * ata_tf_wait_status_irq
  *
- * Wait for DRQ, sleeping on the drive interrupt instead of polling
+ * Wait for data or command completion, sleeping on the drive interrupt
  *
  * Status is checked through the alternate status register, which does not clear INTRQ.
  * The interrupt signal is only ever cleared by Wait(), so an interrupt that arrives
  * before the check, or one left over from an earlier poll, only causes one more check.
  *
  * @param unit Pointer to an IDEUnit struct
- * @returns True if DRQ was set, false on error or timeout
+ * @param data True for DRQ set, false for DRQ clear at command completion
+ * @returns True on the expected status, false on error or timeout
 */
-static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
+static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
     struct ExecBase *SysBase    = unit->SysBase;
     struct IOTask *itask        = unit->itask;
     struct timerequest *tr      = itask->tr;
@@ -156,7 +158,7 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
         status = *unit->drive.alt_status;
         if ((status & ata_flag_busy) == 0) {
             if (status & (ata_flag_error | ata_flag_df)) return false;
-            if (status & ata_flag_drq) return true;
+            if (!!(status & ata_flag_drq) == data) return true;
         }
     }
 
@@ -169,14 +171,14 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
         status = *unit->drive.alt_status;
         if ((status & ata_flag_busy) == 0) {
             if (status & (ata_flag_error | ata_flag_df)) break;
-            if (status & ata_flag_drq) {
+            if (!!(status & ata_flag_drq) == data) {
                 result = true;
                 break;
             }
         }
 
         if (timedOut) {
-            Trace("wait_drq_irq timeout\n");
+            Trace("wait_status_irq timeout\n");
             break;
         }
 
@@ -205,9 +207,28 @@ static bool ata_tf_wait_drq_irq(struct IDEUnit *unit) {
 */
 static inline bool ata_wait_data(struct IDEUnit *unit, bool irq) {
 #ifdef TF_IDE
-    if (irq && unit->itask->irqInstalled) return ata_tf_wait_drq_irq(unit);
+    if (irq && unit->itask->irqInstalled) return ata_tf_wait_status_irq(unit,true);
 #endif
     return ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true);
+}
+
+/* A command is complete only after both BSY and DRQ have cleared. */
+static bool ata_wait_complete(struct IDEUnit *unit, bool irq) {
+#ifdef TF_IDE
+    if (irq && unit->itask->irqInstalled) return ata_tf_wait_status_irq(unit,false);
+#endif
+    ata_status_reg_delay(unit);
+    for (ULONG i=0; i<ATA_BSY_WAIT_COUNT; i++) {
+        for (int j=0; j<100; j++) {
+            UBYTE status = *unit->drive.status_command;
+            if ((status & ata_flag_busy) == 0) {
+                if (status & (ata_flag_error | ata_flag_df)) return false;
+                if ((status & ata_flag_drq) == 0) return true;
+            }
+        }
+        sleep_us(unit->itask->tr,ATA_BSY_WAIT_LOOP_US);
+    }
+    return false;
 }
 
 /**
@@ -319,7 +340,7 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
     *unit->drive.devHead        = drvSel;
     *unit->drive.status_command = ATA_CMD_IDENTIFY;
 
-    if (ata_check_error(unit) || !ata_wait_drq(unit,500,false)) {
+    if (!ata_wait_drq(unit,500,false)) {
         Warn("ATA: IDENTIFY Status: Error\n");
         Warn("ATA: last_error: %08lx\n",&unit->last_error[0]);
         // Save error information
@@ -595,10 +616,11 @@ BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
  * @param buffer destination buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
+ * @param actual Completed byte count
  * @param unit Pointer to the unit structure
  * @returns error
 */
-static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
+static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_read enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -668,9 +690,14 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *un
                 ata_xfer((void *)dataRegister,buffer);
                 txn_count--;
                 buffer += 512;
+                *actual += 512;
             }
         }
 
+        if (!ata_wait_complete(unit,false)) {
+            ata_save_error(unit);
+            return TDERR_NotSpecified;
+        }
     }
 
     return 0;
@@ -683,10 +710,11 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *un
  * @param buffer source buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
+ * @param actual Completed byte count
  * @param unit Pointer to the unit structure
  * @returns error
 */
-static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit) {
+static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, ULONG *actual, struct IDEUnit *unit) {
     Trace("ata_write enter\n");
     Trace("ATA: Request sector count: %ld\n",count);
 
@@ -746,6 +774,7 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *u
 
         lba += txn_count;
 
+        ULONG txn_bytes = txn_count * 512;
         bool firstBlock = true; // The drive does not interrupt for the first PIO out block
 
         while (txn_count) {
@@ -763,10 +792,11 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *u
             }
         }
 
-        if (!ata_wait_not_busy(unit,ATA_BSY_WAIT_COUNT) || ata_check_error(unit)) {
+        if (!ata_wait_complete(unit,true)) {
             ata_save_error(unit);
             return TDERR_NotSpecified;
         }
+        *actual += txn_bytes;
 
     }
 
@@ -781,17 +811,19 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *u
  * @param buffer destination buffer
  * @param lba LBA Address
  * @param count Number of blocks to transfer
+ * @param actual Receives the completed byte count, including on error
  * @param unit Pointer to the unit structure
  * @param dir Direction (read/write)
  * @returns error
  */
-BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, struct IDEUnit *unit, enum xfer_dir dir) {
+BYTE ata_readwrite(void *buffer, uint64_t lba, ULONG count, ULONG *actual, struct IDEUnit *unit, enum xfer_dir dir) {
     BYTE error;
+    *actual = 0;
     ata_irq_enable(unit,true);
     if (dir == READ) {
-        error = ata_read(buffer,lba,count,unit);
+        error = ata_read(buffer,lba,count,actual,unit);
     } else {
-        error = ata_write(buffer,lba,count,unit);
+        error = ata_write(buffer,lba,count,actual,unit);
     }
     ata_irq_enable(unit,false);
 
@@ -1012,6 +1044,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
     volatile UWORD *dest = NULL;
 
     cmd->scsi_CmdActual = cmd->scsi_CmdLength;
+    cmd->scsi_Actual = 0;
 
     switch (t_length) {
         case 0x00: // No Data transferred
@@ -1034,6 +1067,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     switch (protocol) {
         case ATA_NODATA:
+            if (count != 0) return IOERR_BADLENGTH;
             break;
 
         case ATA_PIO_IN: // Data to Host
@@ -1055,7 +1089,8 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     }
 
-    count += (count & 1); // Ensure byte count is even
+    /* PIO is word-wide; reject odd lengths before touching the command or buffer. */
+    if (count & 1) return IOERR_BADLENGTH;
 
     UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
 
@@ -1089,7 +1124,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
         }
     }
 
-    if (!ata_wait_ready(unit,ATA_RDY_WAIT_COUNT)) {
+    if (!ata_wait_complete(unit,false)) {
         ata_save_error(unit);
         return HFERR_BadStatus;
     }
