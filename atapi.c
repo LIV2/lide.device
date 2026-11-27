@@ -34,7 +34,7 @@
 static void atapi_status_reg_delay() {
     asm volatile (
         "tst.b 0xBFE001"
-        : : : "cc", "memory"
+        : : : "cc"
     );
 }
 

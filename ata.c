@@ -66,7 +66,7 @@ static void ata_status_reg_delay(struct IDEUnit *unit) {
 #else
         : "a" (unit->drive.alt_status) // Don't clear the interrupt
 #endif
-        : "cc", "memory"
+        : "cc"
     );
 }
 
