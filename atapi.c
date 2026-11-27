@@ -491,9 +491,13 @@ BYTE atapi_packet(struct SCSICmd *cmd, struct IDEUnit *unit) {
 
         if (cmd->scsi_Length == 0) break;
 
-        if ((atapi_check_ir(unit,0x03,IR_STATUS,100))) break;
+        // BSY is clear so DRQ is valid; if it's set the drive has another data block ready.
+        // Otherwise, check for completion or a drive that is slow to raise DRQ.
+        if (!(*status & ata_flag_drq)) {
+            if ((atapi_check_ir(unit,0x03,IR_STATUS,100))) break;
 
-        if (!(atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT))) break;
+            if (!(atapi_wait_drq(unit,ATAPI_DRQ_WAIT_COUNT))) break;
+        }
 
 
         byte_count = *unit->drive.lbaHigh << 8 | *unit->drive.lbaMid;
