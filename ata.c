@@ -591,8 +591,10 @@ BYTE ata_set_multiple(struct IDEUnit *unit, BYTE multiple) {
 
 // -fno-unroll-loops: amiga-gcc's -O3 defaults to -funroll-loops, which bloats
 // the PIO transfer/poll loops below and hurts perf
+// -fno-tree-scev-cprop: stops gcc replacing the per-sector buffer steps with
+// buffer + (block << 9) after the loop, which costs a 68000 two slow shifts per DRQ block
 #pragma GCC push_options
-#pragma GCC optimize ("-O3","-fno-unroll-loops")
+#pragma GCC optimize ("-O3","-fno-unroll-loops","-fno-tree-scev-cprop")
 
 /**
  * ata_read
@@ -676,15 +678,18 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
             }
 
             ULONG block = (txn_count < multipleCount) ? txn_count : multipleCount;
-#ifdef TF_IDE
-            if (!tfRead || !tf_read_block(unit,buffer,block))
-#endif
-            {
-                for (ULONG i=0; i<block; i++)
-                    ata_xfer((void *)dataRegister,buffer + (i << 9));
-            }
             txn_count -= block;
-            buffer += block << 9;
+#ifdef TF_IDE
+            if (tfRead && tf_read_block(unit,buffer,block)) {
+                buffer += block << 9;
+                continue;
+            }
+#endif
+            // Step the buffer per sector: a 68000 has no barrel shifter, so block << 9 is costly
+            do {
+                ata_xfer((void *)dataRegister,buffer);
+                buffer += 512;
+            } while (--block);
         }
 
         if (!ata_wait_complete(unit,false)) {
@@ -779,11 +784,12 @@ static BYTE ata_write(void *buffer, uint64_t lba, ULONG count, ULONG *actual, st
             firstBlock = false;
 
             /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < multipleCount && txn_count; i++) {
+            ULONG block = (txn_count < multipleCount) ? txn_count : multipleCount;
+            txn_count -= block;
+            do {
                 ata_xfer(buffer,(void *)dataRegister);
-                txn_count--;
                 buffer += 512;
-            }
+            } while (--block);
         }
 
         if (!ata_wait_complete(unit,true)) {
