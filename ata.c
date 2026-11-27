@@ -88,10 +88,10 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
         // Try a bunch of times before imposing the speed penalty of the timer...
         for (int j=0; j<loops; j++) {
             status = *unit->drive.status_command;
-            if ((status & ata_flag_busy) == 0) {
-                if (status & (ata_flag_error | ata_flag_df)) return false;
-                if (status & ata_flag_drq) return true;
-            }
+            // Fast path: BSY clear, DRQ set and no error
+            if ((status & (ata_flag_busy | ata_flag_drq | ata_flag_error | ata_flag_df)) == ata_flag_drq) return true;
+            // Status bits other than BSY are only valid once BSY is clear
+            if ((status & ata_flag_busy) == 0 && (status & (ata_flag_error | ata_flag_df))) return false;
         }
         sleep_us(tr,ATA_DRQ_WAIT_LOOP_US);
     }
