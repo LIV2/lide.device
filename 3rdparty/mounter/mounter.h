@@ -8,17 +8,16 @@ struct MountStruct
 	// Device name. ("myhddriver.device")
 	// Offset 0.
 	const UBYTE *deviceName;
-	// Unit number pointer or single integer value.
-	// if >= 0x100 (256), pointer to array of ULONGs, first ULONG is number of unit numbers followed (for example { 2, 0, 1 }. 2 units, unit numbers 0 and 1).
-	// if < 0x100 (256): used as a single unit number value.
+	// Unused. MountDrive() always scans SCSI targets 0-7 (and LUNs 0-7
+	// if luns is set). Kept so the structure layout does not change.
 	// Offset 4.
 	ULONG *unitNum;
 	// Name string used to set Creator field in FileSystem.resource (if KS 1.3) and in FileSystem.resource entries.
-	// If NULL: use device name.
+	// If NULL: an empty string is used.
 	// Offset 8.
 	const UBYTE *creatorName;
 	// ConfigDev: set if autoconfig board autoboot support is wanted.
-	// If NULL and bootable partition found: fake ConfigDev is automatically created.
+	// If NULL, built with NO_CONFIGDEV and bootable partition found: fake ConfigDev is automatically created.
 	// Offset 12.
 	struct ConfigDev *configDev;
 	// SysBase.
@@ -39,7 +38,7 @@ struct MountStruct
 	// Short/Long Spinup
 	// Offset 30.
 	BOOL slowSpinup;
-	// Enahle CD Boot
+	// Enable CD Boot
 	BOOL cdBoot;
 	// Ignore RDBFF_LAST flag
 	BOOL ignoreLast;
