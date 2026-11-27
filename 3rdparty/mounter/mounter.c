@@ -1538,15 +1538,13 @@ static LONG ScanMBR(struct MountData *md)
 }
 #endif
 
-// Return values:
-// If single unit number:
-// -1 = No RDB found, device failed to open, disk error or RDB block checksum error.
-// 0 = RDB found but no partitions found, disk error or mount failure.
-// >0: Number of partitions mounted.
-// If unit number array:
-// Unit number is replaced with error code:
-// Error codes are same as above except:
-// -2 = Skipped, previous unit had RDBFF_LAST set.
+// Scans SCSI targets 0-7 (skipping ms->hostId), and LUNs 0-7 if ms->luns
+// is set, and mounts what it finds. ms->unitNum is not used.
+//
+// Return value: the scan result of the last unit that could be opened.
+// -1 = No RDB (or bootable CD) found, disk error or RDB block checksum error.
+// >= 0: Total number of RDB partitions mounted so far (1 for a booted CD).
+// The value is informational only; it says nothing about earlier units.
 LONG MountDrive(struct MountStruct *ms)
 {
 	LONG ret = -1;
@@ -1631,7 +1629,7 @@ next_lun:
 
 							CloseDevice((struct IORequest*)request);
 
-							if (ms->luns && (lun++ < 8) &&
+							if (ms->luns && (++lun < 8) &&
 							    (!md->wasLastLun)) {
 								goto next_lun;
 							}
