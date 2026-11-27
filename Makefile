@@ -60,7 +60,11 @@ test:
 
 OBJDIR = obj/$(TARGET)
 
-SRCS = device.c ata.c atapi.c scsi.c iotask.c tfide.c lide_alib.c 3rdparty/mounter/mounter.c debug.c
+SRCS = device.c ata.c atapi.c scsi.c iotask.c lide_alib.c 3rdparty/mounter/mounter.c debug.c
+
+ifdef TF_IDE
+SRCS+= tfide.c
+endif
 
 OBJ = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:%c=%o)))
 
@@ -104,7 +108,7 @@ $(BUILDDIR)/AIDE-lide.device: $(SRCS)
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=AIDE-lide.device SIMPLE_IDE=1 build
 
-$(BUILDDIR)/TF-lide.device: $(SRCS)
+$(BUILDDIR)/TF-lide.device: $(SRCS) tfide.c
 	@printf "${WHITE}#### Building $@ ####${NC}\n"
 	@${MAKE} TARGET=TF-lide.device TF_IDE=1 build
 
