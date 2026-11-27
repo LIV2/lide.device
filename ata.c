@@ -9,6 +9,7 @@
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <exec/errors.h>
+#include <exec/execbase.h>
 #include <stdbool.h>
 
 #include "debug.h"
@@ -370,17 +371,22 @@ bool ata_identify(struct IDEUnit *unit, UWORD *buffer)
  */
 void ata_set_xfer(struct IDEUnit *unit, enum xfer method) {
 #ifdef TF_IDE
-    // The TF data port is word-only by default; longword_move stays selectable for testing
-    if (method != longword_move) method = word_move;
+    bool mover = method == tf_block_move && !unit->flags.atapi &&
+                 (unit->itask->tf.caps & TF_CAP_READ) &&
+                 unit->SysBase->LibNode.lib_Version >= 37;
+    if (!mover && method != longword_move) method = word_move;
 #endif
     switch (method) {
+#ifdef TF_IDE
+        case tf_block_move:
+#endif
         case word_move:
             unit->read_fast       = ata_read_word_move;
             unit->read_unaligned  = ata_read_unaligned_word;
             unit->write_fast      = ata_write_word_move;
             unit->write_unaligned = ata_write_unaligned_word;
 
-            unit->xferMethod = word_move;
+            unit->xferMethod = method;
             break;
 
         default:
@@ -482,13 +488,16 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
         }
 
 #ifdef TF_IDE
-        // Select the fastest flow-controlled PIO mode the drive supports, like ehide does
+        unit->itask->tf.maxTiming[unit->flags.primary ? 0 : 1] =
+            tf_drive_timing(buf,unit->itask->tf.caps);
+        unit->itask->tf.timing[unit->flags.primary ? 0 : 1] = 0;
+        // Change host timing only after the drive accepts the transfer mode.
         if (buf[ata_identify_field_valid] & ata_field_valid_pio) {
-            if (buf[ata_identify_pio_modes] & ata_pio_mode_4) {
-                ata_set_pio(unit,4);
-            } else if (buf[ata_identify_pio_modes] & ata_pio_mode_3) {
+            BYTE pioError = IOERR_NOCMD;
+            if (buf[ata_identify_pio_modes] & ata_pio_mode_4)
+                pioError = ata_set_pio(unit,4);
+            if (pioError && (buf[ata_identify_pio_modes] & ata_pio_mode_3))
                 ata_set_pio(unit,3);
-            }
         }
 #endif
 
@@ -552,9 +561,15 @@ bool ata_init_unit(struct IDEUnit *unit, void *base) {
 
     } else if (atapi_init_unit(unit,buf)) {
         unit->flags.present = true;
+#ifdef TF_IDE
+        unit->itask->tf.timing[unit->flags.primary ? 0 : 1] = 0;
+#endif
     }
 
     if (unit->flags.present) {
+#ifdef TF_IDE
+        if (!unit->flags.atapi) ata_set_xfer(unit,tf_block_move);
+#endif
         while ((unit->blockSize >> unit->blockShift) > 1) {
             unit->blockShift++;
         }
@@ -630,6 +645,9 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
     UBYTE command;
     UBYTE multipleCount = unit->multipleCount;
     volatile void *dataRegister = unit->drive.data;
+#ifdef TF_IDE
+    bool tfRead = unit->xferMethod == tf_block_move;
+#endif
 
     if (unit->flags.lba48) {
         command = (unit->flags.xferMultiple) ? ATA_CMD_READ_MULTIPLE_EXT : ATA_CMD_READ_EXT;
@@ -685,13 +703,17 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
                 return IOERR_UNITBUSY;
             }
 
-            /* Transfer up to (multiple_count) sectors before polling DRQ again */
-            for (int i = 0; i < multipleCount && txn_count; i++) {
-                ata_xfer((void *)dataRegister,buffer);
-                txn_count--;
-                buffer += 512;
-                *actual += 512;
+            ULONG block = (txn_count < multipleCount) ? txn_count : multipleCount;
+#ifdef TF_IDE
+            if (!tfRead || !tf_read_block(unit,buffer,block))
+#endif
+            {
+                for (ULONG i=0; i<block; i++)
+                    ata_xfer((void *)dataRegister,buffer + (i << 9));
             }
+            txn_count -= block;
+            buffer += block << 9;
+            *actual += block << 9;
         }
 
         if (!ata_wait_complete(unit,false)) {
@@ -995,6 +1017,12 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
 
     if (pio > 4) return IOERR_BADADDRESS;
 
+#ifdef TF_IDE
+    struct TFController *tf = &unit->itask->tf;
+    UBYTE timing = pio == 4 ? tf->maxTiming[unit->flags.primary ? 0 : 1] : 0;
+    tf_restore_timing(tf);
+    tf->timing[unit->flags.primary ? 0 : 1] = 0;
+#endif
     if (pio > 0) pio |= 0x08;
 
     UBYTE drvSel = (unit->flags.primary) ? 0xE0 : 0xF0;
@@ -1010,6 +1038,10 @@ BYTE ata_set_pio(struct IDEUnit *unit, UBYTE pio) {
 
     if (ata_check_error(unit)) return IOERR_BADLENGTH;
 
+#ifdef TF_IDE
+    tf->timing[unit->flags.primary ? 0 : 1] = timing;
+    tf_apply_timing(tf);
+#endif
     return 0;
 }
 
@@ -1072,6 +1104,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
         case ATA_PIO_IN: // Data to Host
             if (count < 2) return IOERR_BADLENGTH;
+            if (!cmd->scsi_Data) return IOERR_BADADDRESS;
             if ((ULONG)cmd->scsi_Data & 1) return IOERR_BADADDRESS;
             src = (UWORD *)unit->drive.data;
             dest = cmd->scsi_Data;
@@ -1079,6 +1112,7 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
         case ATA_PIO_OUT: // Data to Drive
             if (count < 2) return IOERR_BADLENGTH;
+            if (!cmd->scsi_Data) return IOERR_BADADDRESS;
             if ((ULONG)cmd->scsi_Data & 1) return IOERR_BADADDRESS;
             src = cmd->scsi_Data;
             dest = (UWORD *)unit->drive.data;
@@ -1103,6 +1137,13 @@ BYTE scsi_ata_passthrough(struct IDEUnit *unit, struct SCSICmd *cmd) {
 
     ata_irq_enable(unit,false);
 
+#ifdef TF_IDE
+    if (cdb->command == ATA_CMD_SET_FEATURES && cdb->features == 3) {
+        /* A raw transfer-mode change invalidates the negotiated host timing. */
+        tf_restore_timing(&unit->itask->tf);
+        unit->itask->tf.timing[unit->flags.primary ? 0 : 1] = 0;
+    }
+#endif
     if ((error = write_taskfile_lba(unit,cdb->command,lba,cdb->sectorCount,cdb->features)) != 0) {
         ata_save_error(unit);
         return error;

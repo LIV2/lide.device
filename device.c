@@ -273,29 +273,6 @@ static void Cleanup(struct DeviceBase *dev) {
     FreeMem((char *)dev - dev->lib.lib_NegSize, dev->lib.lib_NegSize + dev->lib.lib_PosSize);
 }
 
-#ifdef TF_IDE
-/**
- * tf_ide_init
- *
- * The TF1260/TF4060 IDE window is not autoconfig, so only touch it when a TerribleFire
- * board is present. Keep IDE interrupts masked until the IO task installs its
- * interrupt server.
- *
- * @returns true if the TF IDE port can be used
-*/
-static bool tf_ide_init(struct Library *ExpansionBase) {
-    if (FindConfigDev(NULL,TF_MANUF_ID,-1) == NULL) {
-        Info("TF: No TerribleFire board found\n");
-        return false;
-    }
-
-    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
-    *(volatile UBYTE *)TF_IDE_INTENA &= ~0x80;
-
-    return true;
-}
-#endif
-
 #ifndef ATA_CHANNELS
 /**
  * detectChannels
@@ -436,7 +413,8 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
          * This could also be done in mounter.c but that would create a new ConfigDev for each unit
          */
 #ifdef TF_IDE
-        if (!tf_ide_init(ExpansionBase)) {
+        struct TFController tf = {0};
+        if (!tf_ide_init(ExpansionBase,&tf)) {
             Cleanup(dev);
             return NULL;
         }
@@ -456,8 +434,13 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
         }
         APTR BOARD_BASE = realcd->cd_BoardAddr;
 #endif
+#ifdef TF_IDE
+        cd->cd_BoardAddr = (APTR)tf.ide;
+        cd->cd_BoardSize = 0xc000;
+#else
         cd->cd_BoardAddr = (APTR)BOARD_BASE;
         cd->cd_BoardSize = 0x1000;
+#endif
         numBoards = 1;
 #endif
 #ifndef ATA_CHANNELS
@@ -484,6 +467,9 @@ struct Library * init_device(struct ExecBase *SysBase asm("a6"), BPTR seg_list a
             itask->parent        = self;
             itask->boardNum      = (numBoards - 1);
             itask->hasRemovables = false;
+#ifdef TF_IDE
+            itask->tf           = tf;
+#endif
 
             SetSignal(0,SIGF_SINGLE);
 

@@ -60,6 +60,8 @@ typedef uintptr_t ULONG;
 #define ATA_CMD_WRITE_EXT 0x34
 #define ATA_CMD_WRITE_MULTIPLE 0xc5
 #define ATA_CMD_WRITE_MULTIPLE_EXT 0x39
+#define ATA_CMD_SET_FEATURES 0xef
+#define TF_CAP_READ 1
 #define ATA_NODATA 3
 #define ATA_PIO_IN 4
 #define ATA_PIO_OUT 5
@@ -82,7 +84,8 @@ struct timerequest {
     struct IORequest tr_node;
     struct { ULONG tv_sec, tv_micro; } tr_time;
 };
-struct IOTask { struct timerequest *tr; bool irqInstalled; ULONG irqSigMask; };
+struct TFController { UBYTE timing[2], maxTiming[2], caps; };
+struct IOTask { struct timerequest *tr; bool irqInstalled; ULONG irqSigMask; struct TFController tf; };
 typedef void (*ata_xfer_func)(void *, void *);
 struct IDEUnit {
     struct ExecBase *SysBase;
@@ -91,10 +94,12 @@ struct IDEUnit {
     struct { bool primary, lba48, xferMultiple; } flags;
     UBYTE multipleCount;
     UWORD blockSize;
+    int xferMethod;
     ata_xfer_func write_fast, write_unaligned, read_fast, read_unaligned;
     BYTE (*write_taskfile)(struct IDEUnit *, UBYTE, uint64_t, UBYTE, UBYTE);
 };
 enum xfer_dir { READ, WRITE };
+enum xfer { longword_movem, longword_move, word_move, tf_block_move };
 struct SCSI_CDB_ATA {
     UBYTE operation, protocol, length, features, sectorCount, lbaLow,
           lbaMid, lbaHigh, devHead, command, reserved, control;
@@ -110,6 +115,9 @@ static unsigned reads, transition_read, command_count, data_count, left;
 static UBYTE transition_status;
 static unsigned fail_command;
 static bool passthrough;
+static bool use_mover;
+static unsigned mover_calls, mover_blocks[100], restores, applies;
+static BYTE taskfile_error;
 static UBYTE read_status(void) {
     if (++reads == transition_read) status = transition_status;
     return status;
@@ -135,6 +143,17 @@ static bool ata_check_error(struct IDEUnit *u) {
     (void)u; return status & (ata_flag_error | ata_flag_df);
 }
 static void ata_irq_enable(struct IDEUnit *u, bool e) { (void)u; (void)e; }
+static void transfer_sector(void *, void *);
+static bool tf_read_block(struct IDEUnit *u, void *p, ULONG n) {
+    (void)u; (void)p;
+    if (!use_mover) return false;
+    assert(mover_calls<100 && n>0 && n<=8);
+    mover_blocks[mover_calls++]=n;
+    for (ULONG i=0;i<n;i++) transfer_sector(NULL,NULL);
+    return true;
+}
+static void tf_restore_timing(struct TFController *tf) { (void)tf; ++restores; }
+static void tf_apply_timing(struct TFController *tf) { (void)tf; ++applies; }
 static BYTE write_taskfile_lba(struct IDEUnit *u, UBYTE c, uint64_t lba,
                               UBYTE count, UBYTE f) {
     (void)u; (void)lba;
@@ -142,7 +161,7 @@ static BYTE write_taskfile_lba(struct IDEUnit *u, UBYTE c, uint64_t lba,
     left=count ? count : 256;
     status=ata_flag_drq;
     if (passthrough) { transition_read=reads+2; transition_status=0; }
-    return 0;
+    return taskfile_error;
 }
 static void transfer_sector(void *src, void *dst) {
     (void)src; (void)dst; ++data_count;
@@ -155,6 +174,7 @@ tests = r'''
 static void reset(void) {
     status=reads=transition_read=command_count=data_count=fail_command=0;
     passthrough=false;
+    use_mover=false; mover_calls=restores=applies=0; taskfile_error=0;
 }
 int main(void) {
     struct MsgPort port={.mp_SigBit=0};
@@ -162,7 +182,7 @@ int main(void) {
     struct IOTask task={.tr=&timer, .irqSigMask=2};
     UWORD mmio[256], buffer[257*256];
     struct IDEUnit unit={.itask=&task, .drive.data=mmio,
-        .flags.primary=true, .multipleCount=1, .blockSize=512,
+        .flags.primary=true, .multipleCount=1, .blockSize=512, .xferMethod=word_move,
         .write_fast=transfer_sector, .write_unaligned=transfer_sector,
         .read_fast=transfer_sector, .read_unaligned=transfer_sector,
         .write_taskfile=write_taskfile_lba};
@@ -229,13 +249,36 @@ int main(void) {
         }
     }
     puts("PASS: LBA28/LBA48 ordinary and multiple command selection");
+#ifdef TF_IDE
+    reset(); use_mover=true; task.tf.caps=1; unit.xferMethod=tf_block_move;
+    unit.flags.xferMultiple=true; unit.multipleCount=8;
+    ULONG actual;
+    assert(ata_readwrite(buffer,0,17,&actual,&unit,READ)==0);
+    assert(actual==17*512 && data_count==17 && mover_calls==3);
+    assert(mover_blocks[0]==8 && mover_blocks[1]==8 && mover_blocks[2]==1);
+    reset(); use_mover=true; unit.xferMethod=word_move;
+    assert(ata_readwrite(buffer,0,17,&actual,&unit,READ)==0);
+    assert(actual==17*512 && data_count==17 && !mover_calls);
+    unit.xferMethod=word_move;
+    puts("PASS: accelerated reads stop at DRQ boundaries and honor CPU-copy selection");
+
+    reset(); task.tf.maxTiming[0]=2; task.tf.timing[1]=1;
+    assert(ata_set_pio(&unit,4)==0 && task.tf.timing[0]==2);
+    assert(sector_count==12 && restores==1 && applies==1);
+    assert(ata_set_pio(&unit,3)==0 && task.tf.timing[0]==0);
+    assert(sector_count==11 && restores==2 && applies==2);
+    task.tf.timing[0]=2; taskfile_error=IOERR_UNITBUSY;
+    assert(ata_set_pio(&unit,4)==IOERR_UNITBUSY && task.tf.timing[0]==0);
+    assert(restores==3 && applies==2 && task.tf.timing[1]==1);
+    puts("PASS: PIO changes restore timing before commands and keep failures conservative");
+#endif
     return 0;
 }
 '''
 
 names = ["ata_wait_drq", "ata_tf_wait_status_irq", "ata_wait_data",
          "ata_wait_complete", "ata_read", "ata_write", "ata_readwrite",
-         "scsi_ata_passthrough"]
+         "ata_set_pio", "scsi_ata_passthrough"]
 with tempfile.TemporaryDirectory(prefix="lide-ata-") as directory:
     path = Path(directory)
     for tf in (False, True):
@@ -243,7 +286,7 @@ with tempfile.TemporaryDirectory(prefix="lide-ata-") as directory:
         source = preamble + "\n".join(function("ata.c", n) for n in selected)
         source += function("atapi.c", "atapi_wait_drq") + tests
         (path / "test.c").write_text(source)
-        command = [os.environ.get("CC", "cc"), "-std=gnu11", "-O2", "-g",
+        command = [os.environ.get("HOSTCC", "cc"), "-std=gnu11", "-O2", "-g",
                    "-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
         if tf:
             command.append("-DTF_IDE=1")

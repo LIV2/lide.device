@@ -33,13 +33,13 @@
 */
 ULONG __attribute__((used)) tf_irq_handler(struct IOTask *itask asm("a1")) {
     struct ExecBase *SysBase = itask->SysBase;
-    volatile UBYTE *intchg = (volatile UBYTE *)TF_IDE_INTCHG;
+    volatile UBYTE *intchg = itask->tf.intchg;
     UWORD sr;
 
     if ((*intchg & 0x80) == 0) return 0;
 
     // Reading the status register makes the drive release INTRQ
-    (void)*(volatile UBYTE *)(BOARD_BASE + CHANNEL_0 + ata_reg_status);
+    (void)itask->tf.ide[ata_reg_status];
 
     // Clear the pending bit like Gayle: write 0 to clear, 1 to leave alone, keep bits 0-1
     asm volatile ("move.w sr,%0\n\tor.w #0x0700,sr" : "=d" (sr) : : "cc", "memory"); // Setting interrupt mask is faster than Disable
@@ -91,8 +91,8 @@ static void tf_irq_install(struct IOTask *itask) {
     AddIntServer(INTB_PORTS,&itask->irqServer);
     itask->irqInstalled = true;
 
-    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
-    *(volatile UBYTE *)TF_IDE_INTENA |= 0x80;
+    itask->tf.ide[CHANNEL_1 + ata_reg_altStatus] = nIEN;
+    *itask->tf.intena |= 0x80;
 }
 
 /**
@@ -107,8 +107,8 @@ static void tf_irq_remove(struct IOTask *itask) {
 
     if (!itask->irqInstalled) return;
 
-    *(volatile UBYTE *)TF_IDE_INTENA &= ~0x80;
-    *(volatile UBYTE *)(BOARD_BASE + CHANNEL_1 + ata_reg_altStatus) = 0x02; // Device control: nIEN
+    *itask->tf.intena &= ~0x80;
+    itask->tf.ide[CHANNEL_1 + ata_reg_altStatus] = nIEN;
 
     RemIntServer(INTB_PORTS,&itask->irqServer);
     FreeSignal(itask->irqSigBit);
@@ -388,6 +388,10 @@ static BYTE init_units(struct IOTask *itask) {
         }
     }
 
+#ifdef TF_IDE
+    itask->tf.timingReady = true;
+    tf_apply_timing(&itask->tf);
+#endif
     return num_units;
 }
 
@@ -400,6 +404,7 @@ static void cleanup(struct IOTask *itask) {
     struct ExecBase *SysBase = itask->SysBase;
 #ifdef TF_IDE
     tf_irq_remove(itask);
+    tf_restore_timing(&itask->tf);
 #endif
     if (itask->iomp)
         L_DeletePort(itask->iomp);
@@ -649,7 +654,11 @@ transfer:
             break;
 
         case CMD_XFER:
-            if (ioreq->io_Length < 3) {
+            if (ioreq->io_Length <= word_move
+#ifdef TF_IDE
+                || ioreq->io_Length == tf_block_move
+#endif
+            ) {
                 ata_set_xfer(unit,ioreq->io_Length);
                 error = 0;
             } else {

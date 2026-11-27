@@ -42,7 +42,7 @@ else
 DISK=lide-update.adf
 endif
 
-.PHONY:	clean all lideflash disk lha lidetool/lidetool build
+.PHONY:	clean all lideflash disk lha lidetool/lidetool build test
 
 all:	$(BUILDDIR)/$(PROJECT) \
 		$(ROM) \
@@ -54,9 +54,13 @@ all:	$(BUILDDIR)/$(PROJECT) \
 		$(BUILDDIR)/lide-N2630-low.rom \
 		lideflash
 
+test:
+	python3 tests/run_ata.py
+	python3 tests/run_tfide.py
+
 OBJDIR = obj/$(TARGET)
 
-SRCS = device.c ata.c atapi.c scsi.c iotask.c lide_alib.c 3rdparty/mounter/mounter.c debug.c
+SRCS = device.c ata.c atapi.c scsi.c iotask.c tfide.c lide_alib.c 3rdparty/mounter/mounter.c debug.c
 
 OBJ = $(addprefix $(OBJDIR)/,$(notdir $(SRCS:%c=%o)))
 
