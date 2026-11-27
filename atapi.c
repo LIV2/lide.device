@@ -50,8 +50,10 @@ static bool atapi_wait_drq(struct IDEUnit *unit, ULONG tries) {
     atapi_status_reg_delay();
     for (int i=0; i < tries; i++) {
         status = *unit->drive.status_command;
-        if ((status & ata_flag_drq) != 0) return true;
-        if (status & (ata_flag_error | ata_flag_df)) return false;
+        if ((status & ata_flag_busy) == 0) {
+            if (status & (ata_flag_error | ata_flag_df)) return false;
+            if (status & ata_flag_drq) return true;
+        }
         atapi_status_reg_delay();
     }
     Trace("atapi_wait_drq timeout\n");

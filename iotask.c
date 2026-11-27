@@ -282,7 +282,7 @@ static BYTE handle_scsi_command(struct IOStdReq *ioreq) {
 
                 if (count > (scsi_command->scsi_Length >> unit->blockShift)) count = (scsi_command->scsi_Length >> unit->blockShift);
 
-                error = ata_readwrite(data,lba,count,unit,direction);
+                error = ata_readwrite(data,lba,count,&scsi_command->scsi_Actual,unit,direction);
 
                 if (error == 0) {
                     scsi_command->scsi_Actual = count << unit->blockShift;
@@ -639,8 +639,7 @@ transfer:
             if (unit->flags.atapi == true) {
                 error  = atapi_translate(ioreq->io_Data, (ULONG)lba, count, &ioreq->io_Actual, unit, direction);
             } else {
-                error = ata_readwrite(ioreq->io_Data, lba, count, unit, direction);
-                ioreq->io_Actual = ioreq->io_Length;
+                error = ata_readwrite(ioreq->io_Data, lba, count, &ioreq->io_Actual, unit, direction);
             }
             break;
 
