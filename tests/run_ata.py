@@ -17,12 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 def function(filename, name):
     source = (ROOT / filename).read_text()
     match = re.search(r"^(?:static )?(?:inline )?(?:bool|BYTE|void) "
+                      r"(?:__attribute__\(\((?:noinline|always_inline)\)\) )?"
                       + name + r"\([^\n]*\)\s*\{", source, re.M)
     assert match, name
     end = source.index("\n}", match.end()) + 2
     body = source[match.start():end]
     body = body.replace("*unit->drive.status_command", "read_status()")
-    body = body.replace("*unit->drive.alt_status", "read_status()")
+    body = body.replace("*unit->drive.alt_status", "read_alt_status()")
     line = source.count("\n", 0, match.start()) + 1
     return f'#line {line} "{filename}"\n{body}\n'
 
@@ -44,7 +45,7 @@ typedef uintptr_t ULONG;
 #define ata_flag_df 32
 #define ata_flag_drq 8
 #define ata_flag_error 1
-#define TF_IRQ_POLL_LOOPS 100
+#define TF_STATUS_POLL_LOOPS 100
 #define ATA_DRQ_WAIT_LOOP_US 1000
 #define ATA_DRQ_WAIT_S 5
 #define ATA_DRQ_WAIT_COUNT 3
@@ -84,7 +85,7 @@ struct timerequest {
     struct IORequest tr_node;
     struct { ULONG tv_sec, tv_micro; } tr_time;
 };
-struct TFController { UBYTE timing[2], maxTiming[2], caps; };
+struct TFController { UBYTE timing[2], maxTiming[2], caps; volatile UBYTE *board; };
 struct IOTask { struct timerequest *tr; bool irqInstalled; ULONG irqSigMask; struct TFController tf; };
 typedef void (*ata_xfer_func)(void *, void *);
 struct IDEUnit {
@@ -114,6 +115,9 @@ static UBYTE status, final_status, command, features, sector_count;
 static unsigned reads, transition_read, command_count, data_count, left;
 static UBYTE transition_status;
 static unsigned fail_command;
+static unsigned cia_settles, alt_reads, sends, waits, aborts, waitios, signal_clears;
+static unsigned timer_checks;
+static bool stale_alt, timer_done, ready_on_irq;
 static bool passthrough;
 static bool use_mover;
 static unsigned mover_calls, mover_blocks[100], restores, applies;
@@ -122,15 +126,31 @@ static UBYTE read_status(void) {
     if (++reads == transition_read) status = transition_status;
     return status;
 }
-static void ata_cia_settle(void) {}
+static UBYTE read_alt_status(void) {
+    ++alt_reads;
+    UBYTE value=read_status();
+    if (stale_alt) { stale_alt=false; return ata_flag_drq; }
+    return value;
+}
+static void ata_cia_settle(void) { ++cia_settles; }
 static void atapi_status_reg_delay(void) {}
 static void sleep_us(struct timerequest *t, ULONG us) { (void)t; (void)us; }
-static void SendIO(struct IORequest *r) { (void)r; }
-static struct IORequest *CheckIO(struct IORequest *r) { return r; }
-static void AbortIO(struct IORequest *r) { (void)r; }
-static void WaitIO(struct IORequest *r) { (void)r; }
-static ULONG Wait(ULONG mask) { return mask & 1; }
-static ULONG SetSignal(ULONG v, ULONG m) { (void)v; (void)m; return 0; }
+static void SendIO(struct IORequest *r) { (void)r; ++sends; timer_done=false; }
+static struct IORequest *CheckIO(struct IORequest *r) {
+    if (++timer_checks == 4) timer_done=true;
+    return timer_done ? r : NULL;
+}
+static void AbortIO(struct IORequest *r) { (void)r; ++aborts; }
+static void WaitIO(struct IORequest *r) { (void)r; ++waitios; }
+static ULONG Wait(ULONG mask) {
+    ++waits;
+    if (ready_on_irq) { status=ata_flag_drq; return mask & 2; }
+    timer_done=true;
+    return mask & 1;
+}
+static ULONG SetSignal(ULONG v, ULONG m) {
+    (void)v; (void)m; ++signal_clears; return 0;
+}
 static bool ata_select(struct IDEUnit *u, UBYTE s, bool w) {
     (void)u; (void)s; (void)w; return false;
 }
@@ -174,12 +194,15 @@ static void reset(void) {
     status=reads=transition_read=command_count=data_count=fail_command=0;
     passthrough=false;
     use_mover=false; mover_calls=restores=applies=0; taskfile_error=0;
+    cia_settles=alt_reads=sends=waits=aborts=waitios=signal_clears=0;
+    timer_checks=0;
+    stale_alt=timer_done=ready_on_irq=false;
 }
 int main(void) {
     struct MsgPort port={.mp_SigBit=0};
     struct timerequest timer={.tr_node.io_Message.mn_ReplyPort=&port};
     struct IOTask task={.tr=&timer, .irqSigMask=2};
-    UWORD mmio[256], buffer[257*256];
+    UWORD mmio[256], buffer[1024*256];
     struct IDEUnit unit={.itask=&task, .drive.data=mmio,
         .flags.primary=true, .multipleCount=1, .blockSize=512, .xferMethod=word_move,
         .write_fast=transfer_sector, .write_unaligned=transfer_sector,
@@ -192,7 +215,7 @@ int main(void) {
         assert(ata_wait_drq(&unit,1,false) == (states[i]==8));
         assert(atapi_wait_drq(&unit,1) == (states[i]==8));
 #ifdef TF_IDE
-        assert(ata_tf_wait_status_irq(&unit,true) == (states[i]==8));
+        assert(ata_tf_wait_status(&unit,true) == (states[i]==8));
 #endif
     }
     reset(); status=0x89; transition_read=3; transition_status=8;
@@ -249,6 +272,67 @@ int main(void) {
     }
     puts("PASS: LBA28/LBA48 ordinary and multiple command selection");
 #ifdef TF_IDE
+    /* Every new command settles fully; later TF4060 CPU read blocks use
+     * one discarded alternate-status cycle, including multiple mode.
+     */
+    const ULONG counts[]={1,255,256,257,1024};
+    for (unsigned irq=0;irq<2;irq++) for (unsigned board=0;board<2;board++)
+    for (unsigned mover=0;mover<2;mover++) for (unsigned multiple=1;multiple<=8;multiple*=8)
+    for (unsigned i=0;i<sizeof(counts)/sizeof(counts[0]);i++) {
+        reset(); task.irqInstalled=irq; task.tf.board=board ? (UBYTE *)mmio : NULL;
+        unit.xferMethod=mover ? tf_block_move : word_move;
+        unit.multipleCount=multiple; unit.flags.xferMultiple=multiple>1;
+        ULONG actual=0, count=counts[i];
+        unsigned commands=(count+255)/256, blocks=(count+multiple-1)/multiple;
+        assert(ata_readwrite(buffer,0,count,&actual,&unit,READ)==0);
+        assert(actual==count*512 && data_count==count && command_count==commands);
+        bool gap=board && !mover;
+        assert(cia_settles==(gap ? 2*commands : blocks+commands));
+        assert(alt_reads==((irq || gap) ? blocks+(gap ? blocks-commands : 0) : 0));
+        assert(sends==0);
+    }
+    puts("PASS: TF4060 read settling across command, multiple and fallback boundaries");
+
+    task.irqInstalled=true; task.tf.board=(UBYTE *)mmio; unit.xferMethod=word_move;
+    reset(); status=ata_flag_error; stale_alt=true;
+    assert(!ata_wait_read_data(&unit,false));
+    assert(alt_reads==2 && cia_settles==0 && sends==0);
+    reset(); status=ata_flag_drq;
+    assert(ata_wait_read_data(&unit,true));
+    assert(alt_reads==1 && cia_settles==1 && sends==0);
+    reset(); status=ata_flag_drq;
+    assert(ata_wait_data(&unit,true));
+    assert(cia_settles==1 && alt_reads==1);
+    puts("PASS: stale DRQ is discarded; first reads and writes retain settling");
+
+    reset(); status=ata_flag_busy; ready_on_irq=true;
+    assert(ata_tf_wait_status(&unit,true));
+    assert(sends==1 && waits==1 && aborts==1 && waitios==1 && signal_clears==1);
+    reset(); status=ata_flag_busy;
+    assert(!ata_tf_wait_status(&unit,true));
+    assert(sends==1 && waits==1 && aborts==0 && waitios==1 && signal_clears==1);
+    puts("PASS: TF interrupt wakeup and timeout both clean up the timer");
+
+    task.irqInstalled=false;
+    for (unsigned first=0; first<2; first++) {
+        reset(); status=ata_flag_error; stale_alt=!first;
+        assert(!ata_wait_read_data(&unit,first));
+        assert(sends==0 && waits==0 && cia_settles==first);
+        reset(); status=ata_flag_busy;
+        transition_read=TF_STATUS_POLL_LOOPS+50; transition_status=ata_flag_drq;
+        assert(ata_wait_read_data(&unit,first));
+        assert(sends==1 && waits==0 && aborts==1 && waitios==1 && signal_clears==1);
+        reset(); status=ata_flag_busy;
+        transition_read=TF_STATUS_POLL_LOOPS+50; transition_status=ata_flag_df;
+        assert(!ata_wait_read_data(&unit,first));
+        assert(sends==1 && waits==0 && aborts==1 && waitios==1);
+        reset(); status=ata_flag_busy;
+        assert(!ata_wait_read_data(&unit,first));
+        assert(sends==1 && waits==0 && aborts==0 && waitios==1 && signal_clears==1);
+        assert(reads<6*TF_STATUS_POLL_LOOPS);
+    }
+    puts("PASS: TF4060 no-IRQ reads preserve settling, delayed readiness, errors and timeout");
+
     reset(); use_mover=true; task.tf.caps=1; unit.xferMethod=tf_block_move;
     unit.flags.xferMultiple=true; unit.multipleCount=8;
     ULONG actual;
@@ -275,13 +359,14 @@ int main(void) {
 }
 '''
 
-names = ["ata_wait_drq", "ata_tf_wait_status_irq", "ata_wait_data",
+names = ["ata_wait_drq", "ata_tf_wait_status_slow", "ata_tf_wait_status",
+         "ata_wait_data", "ata_wait_read_data",
          "ata_wait_complete", "ata_read", "ata_write", "ata_readwrite",
          "ata_set_pio", "scsi_ata_passthrough"]
 with tempfile.TemporaryDirectory(prefix="lide-ata-") as directory:
     path = Path(directory)
     for tf in (False, True):
-        selected = [n for n in names if tf or n != "ata_tf_wait_status_irq"]
+        selected = [n for n in names if tf or not n.startswith("ata_tf_")]
         source = preamble + "\n".join(function("ata.c", n) for n in selected)
         source += function("atapi.c", "atapi_wait_drq") + tests
         (path / "test.c").write_text(source)

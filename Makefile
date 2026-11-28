@@ -57,6 +57,7 @@ all:	$(BUILDDIR)/$(PROJECT) \
 test:
 	python3 tests/run_ata.py
 	python3 tests/run_tfide.py
+	python3 tests/run_tfirq.py
 
 OBJDIR = obj/$(TARGET)
 

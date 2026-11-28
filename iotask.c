@@ -68,13 +68,16 @@ asm (
 /**
  * tf_irq_install
  *
- * Add the INT2 server and unmask the TF IDE interrupt
+ * Add the INT2 server and unmask the legacy TF IDE interrupt
  * Must be called from the IO task, which owns the signal
  *
  * @param itask Pointer to the IO task
 */
 static void tf_irq_install(struct IOTask *itask) {
     struct ExecBase *SysBase = itask->SysBase;
+
+    /* TF4060 polls transfers; init leaves nIEN set and the board IRQ masked. */
+    if (itask->tf.board) return;
 
     if ((itask->irqSigBit = AllocSignal(-1)) == -1) {
         Info("TF: No free signal, polling the drive\n");
