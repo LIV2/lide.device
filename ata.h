@@ -24,7 +24,7 @@
 #define NEXT_REG   0x4
 
 #define TF_IRQ_PRI        20  // Same INT2 server priority as ehide
-#define TF_IRQ_POLL_LOOPS 100 // Status polls before sleeping on the interrupt
+#define TF_STATUS_POLL_LOOPS 100 // Status polls before starting the timeout
 
 #elif defined(SIMPLE_IDE)
 

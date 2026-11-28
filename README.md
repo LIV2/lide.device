@@ -93,7 +93,9 @@ Differences from the other supported boards:
 * On TF4060 firmware advertising the read block mover, aligned reads into
   TF RAM use hardware transfers with cache maintenance. Other buffers and
   all writes use CPU copies. `lidetool` reports `tf_block_move` for this mode
-* Reads and writes poll briefly before waiting on the drive interrupt,
+* TF4060 transfers use polling with IDE interrupts disabled. CPU word
+  reads use a short status loop and a timer-bounded polling fallback
+* Legacy TF interfaces poll briefly before waiting on the drive interrupt,
   with a timer bounding the wait
 
 Use `lidetool -u 0 -m 2` to select CPU word copies, or `-m 3` to enable

@@ -101,37 +101,28 @@ static bool ata_wait_drq(struct IDEUnit *unit, ULONG tries, bool fast) {
 
 #ifdef TF_IDE
 /**
- * ata_tf_wait_status_irq
+ * ata_tf_wait_status_slow
  *
- * Wait for data or command completion, sleeping on the drive interrupt
+ * Wait for data or command completion after the initial status polls
  *
  * Status is checked through the alternate status register, which does not clear INTRQ.
  * The interrupt signal is only ever cleared by Wait(), so an interrupt that arrives
  * before the check, or one left over from an earlier poll, only causes one more check.
+ * Without an interrupt server, poll status and check the same timeout periodically.
  *
  * @param unit Pointer to an IDEUnit struct
  * @param data True for DRQ set, false for DRQ clear at command completion
  * @returns True on the expected status, false on error or timeout
 */
-static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
+static bool __attribute__((noinline)) ata_tf_wait_status_slow(struct IDEUnit *unit, bool data) {
     struct ExecBase *SysBase    = unit->SysBase;
     struct IOTask *itask        = unit->itask;
     struct timerequest *tr      = itask->tr;
     ULONG timerSig              = 1UL << tr->tr_node.io_Message.mn_ReplyPort->mp_SigBit;
     bool timedOut               = false;
     bool result                 = false;
+    UWORD polls                 = 0;
     UBYTE status;
-
-    ata_cia_settle();
-
-    // Drives with a buffer often have the next block ready straight away
-    for (int i=0; i<TF_IRQ_POLL_LOOPS; i++) {
-        status = *unit->drive.alt_status;
-        if ((status & ata_flag_busy) == 0) {
-            if (status & (ata_flag_error | ata_flag_df)) return false;
-            if (!!(status & ata_flag_drq) == data) return true;
-        }
-    }
 
     tr->tr_node.io_Command = TR_ADDREQUEST;
     tr->tr_time.tv_sec     = ATA_DRQ_WAIT_S;
@@ -153,6 +144,14 @@ static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
             break;
         }
 
+        if (!itask->irqInstalled) {
+            if (++polls == TF_STATUS_POLL_LOOPS) {
+                polls = 0;
+                timedOut = (CheckIO((struct IORequest *)tr) != NULL);
+            }
+            continue;
+        }
+
         if (Wait(itask->irqSigMask | timerSig) & timerSig) {
             timedOut = (CheckIO((struct IORequest *)tr) != NULL);
         }
@@ -163,6 +162,23 @@ static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
     SetSignal(0,timerSig);
 
     return result;
+}
+
+/* Keep the common ready path free of the timer wait's register saves.
+ * Callers supply the settling interval before the first status read.
+ */
+static inline bool __attribute__((always_inline)) ata_tf_wait_status(struct IDEUnit *unit, bool data) {
+    UBYTE expected = data ? ata_flag_drq : 0;
+
+    for (int i=0; i<TF_STATUS_POLL_LOOPS; i++) {
+        UBYTE status = *unit->drive.alt_status;
+        if ((status & (ata_flag_busy | ata_flag_drq | ata_flag_error | ata_flag_df)) == expected)
+            return true;
+        if ((status & ata_flag_busy) == 0 && (status & (ata_flag_error | ata_flag_df)))
+            return false;
+    }
+
+    return ata_tf_wait_status_slow(unit,data);
 }
 #endif
 
@@ -178,15 +194,36 @@ static bool ata_tf_wait_status_irq(struct IDEUnit *unit, bool data) {
 */
 static inline bool ata_wait_data(struct IDEUnit *unit, bool irq) {
 #ifdef TF_IDE
-    if (irq && unit->itask->irqInstalled) return ata_tf_wait_status_irq(unit,true);
+    if (irq && unit->itask->irqInstalled) {
+        ata_cia_settle();
+        return ata_tf_wait_status(unit,true);
+    }
 #endif
     return ata_wait_drq(unit,ATA_DRQ_WAIT_COUNT,true);
+}
+
+/* Between PIO read blocks, one discarded alternate-status access supplies
+ * the required PIO cycle without acknowledging the drive interrupt.
+ * Command starts and other transfer paths retain the CIA settling delay.
+ */
+static inline bool ata_wait_read_data(struct IDEUnit *unit, bool firstBlock) {
+#ifdef TF_IDE
+    if (unit->itask->tf.board && unit->xferMethod == word_move) {
+        if (firstBlock) ata_cia_settle();
+        else (void)*unit->drive.alt_status;
+        return ata_tf_wait_status(unit,true);
+    }
+#endif
+    return ata_wait_data(unit,true);
 }
 
 /* A command is complete only after both BSY and DRQ have cleared. */
 static bool ata_wait_complete(struct IDEUnit *unit, bool irq) {
 #ifdef TF_IDE
-    if (irq && unit->itask->irqInstalled) return ata_tf_wait_status_irq(unit,false);
+    if (irq && unit->itask->irqInstalled) {
+        ata_cia_settle();
+        return ata_tf_wait_status(unit,false);
+    }
 #endif
     ata_cia_settle();
     for (ULONG i=0; i<ATA_BSY_WAIT_COUNT; i++) {
@@ -670,12 +707,14 @@ static BYTE ata_read(void *buffer, uint64_t lba, ULONG count, ULONG *actual, str
         lba += txn_count;
 
         ULONG txn_bytes = txn_count << 9;
+        bool firstBlock = true;
 
         while (txn_count) {
-            if (!ata_wait_data(unit,true)) {
+            if (!ata_wait_read_data(unit,firstBlock)) {
                 ata_save_error(unit);
                 return IOERR_UNITBUSY;
             }
+            firstBlock = false;
 
             ULONG block = (txn_count < multipleCount) ? txn_count : multipleCount;
             txn_count -= block;
